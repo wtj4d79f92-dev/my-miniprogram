@@ -1,0 +1,86 @@
+.cal-confirm {
+  font-size: 30rpx;
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.cal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10rpx 0 24rpx;
+}
+
+.cal-month {
+  min-width: 240rpx;
+  text-align: center;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72rpx;
+  height: 60rpx;
+  font-size: 44rpx;
+  color: var(--brand);
+}
+
+.cal-week {
+  display: flex;
+  padding: 0 24rpx 8rpx;
+}
+
+.cal-week-item {
+  flex: 1;
+  text-align: center;
+  font-size: 24rpx;
+  color: var(--text-light);
+}
+
+.cal-grid {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 0 24rpx 32rpx;
+}
+
+.cal-cell {
+  width: 14.285%;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cal-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  font-size: 28rpx;
+  color: var(--text);
+}
+
+.cal-cell.out .cal-day {
+  color: #cbd5d5;
+}
+
+.cal-cell.today .cal-day {
+  color: var(--brand);
+  font-weight: 600;
+  background: var(--brand-soft);
+}
+
+.cal-cell.selected .cal-day {
+  color: #ffffff;
+  background: linear-gradient(135deg, #00b578 0%, #43cea2 100%);
+}
+
+.cal-cell.disabled .cal-day {
+  color: #dfe6e5;
+}

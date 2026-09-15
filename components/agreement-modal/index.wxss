@@ -1,0 +1,52 @@
+.agreement-sheet {
+  display: flex;
+  flex-direction: column;
+  height: 78vh;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.agreement-meta {
+  padding: 0 32rpx 16rpx;
+  font-size: 22rpx;
+  color: var(--text-light);
+}
+
+.agreement-body {
+  flex: 1;
+  height: 0;
+  padding: 0 32rpx;
+  box-sizing: border-box;
+}
+
+.agreement-block {
+  margin-bottom: 22rpx;
+}
+
+.agreement-text {
+  font-size: 26rpx;
+  line-height: 1.75;
+  color: var(--text-sub);
+}
+
+.agreement-strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.agreement-space {
+  height: 24rpx;
+}
+
+.agreement-actions {
+  display: flex;
+  padding: 20rpx 32rpx 24rpx;
+  border-top: 2rpx solid var(--line);
+}
+
+.agreement-btn {
+  flex: 1;
+}
+
+.agreement-btn + .agreement-btn {
+  margin-left: 20rpx;
+}

@@ -1,0 +1,4 @@
+<view class="avatar avatar-{{size}} {{ring ? 'avatar-ring' : ''}}" style="background: {{color}};">
+  <image wx:if="{{url}}" class="avatar-img" src="{{url}}" mode="aspectFill"></image>
+  <text wx:else class="avatar-text">{{text}}</text>
+</view>

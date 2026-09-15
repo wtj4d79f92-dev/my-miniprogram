@@ -1,10 +1,37 @@
 {
   "pages": [
-    "pages/index/index"
+    "pages/home/home",
+    "pages/square/index",
+    "pages/usercenter/index",
+    "pages/activity/detail/index",
+    "pages/activity/publish/index",
+    "pages/user/activity-list/index",
+    "pages/feedback/index"
   ],
   "window": {
     "navigationBarTextStyle": "black",
     "navigationStyle": "custom"
+  },
+  "tabBar": {
+    "custom": true,
+    "color": "#9AA5B1",
+    "selectedColor": "#00B578",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/home/home",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/square/index",
+        "text": "广场"
+      },
+      {
+        "pagePath": "pages/usercenter/index",
+        "text": "我的"
+      }
+    ]
   },
   "style": "v2",
   "renderer": "skyline",

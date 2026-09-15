@@ -1,0 +1,369 @@
+.publish-page {
+  background: var(--bg);
+}
+
+.card + .card {
+  margin-top: 24rpx;
+}
+
+.card:first-child {
+  margin-top: 16rpx;
+}
+
+.form-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20rpx;
+}
+
+.form-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.form-sub {
+  font-size: 22rpx;
+  color: var(--text-light);
+}
+
+.required {
+  color: #ff5a5a;
+}
+
+/* 必填项校验未通过的红色提示 */
+.form-error {
+  display: block;
+  margin: 8rpx 0 14rpx 190rpx;
+  font-size: 22rpx;
+  color: #ff5a5a;
+  line-height: 1.5;
+}
+
+.form-error.qr-error {
+  margin-left: 0;
+}
+
+.form-error.agree-error {
+  margin: 6rpx 0 0 58rpx;
+}
+
+.cover-upload {
+  display: flex;
+}
+
+.cover-preview {
+  position: relative;
+  width: 100%;
+  height: 300rpx;
+  border-radius: 16rpx;
+  overflow: hidden;
+}
+
+.cover-img {
+  width: 100%;
+  height: 100%;
+}
+
+.cover-remove {
+  position: absolute;
+  right: 16rpx;
+  top: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52rpx;
+  height: 52rpx;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: #ffffff;
+  font-size: 26rpx;
+}
+
+.cover-add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 240rpx;
+  border-radius: 16rpx;
+  border: 2rpx dashed #cfdedb;
+  background: #f8fbfa;
+}
+
+.cover-add-icon {
+  font-size: 48rpx;
+  color: var(--brand);
+}
+
+.cover-add-text {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: var(--text-sub);
+}
+
+.type-grid {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.type-item {
+  width: 20%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 20rpx;
+}
+
+.type-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 84rpx;
+  height: 84rpx;
+  border-radius: 26rpx;
+  font-size: 38rpx;
+  border: 4rpx solid transparent;
+}
+
+.type-item.active .type-icon {
+  border-color: var(--brand);
+}
+
+.type-item.active .type-name {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.type-name {
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  color: var(--text-sub);
+}
+
+.form-row {
+  display: flex;
+  align-items: center;
+  padding: 22rpx 0;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.form-row:last-child {
+  border-bottom: none;
+}
+
+.form-row.column {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.form-label {
+  width: 190rpx;
+  flex: none;
+  font-size: 28rpx;
+  color: var(--text);
+}
+
+.form-input {
+  flex: 1;
+  font-size: 28rpx;
+  color: var(--text);
+}
+
+.form-picker {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 28rpx;
+  color: var(--text);
+}
+
+.form-arrow {
+  color: var(--text-light);
+  font-size: 32rpx;
+}
+
+.tag-select {
+  display: flex;
+}
+
+.tag-option {
+  margin-right: 18rpx;
+  padding: 10rpx 28rpx;
+  border-radius: 999rpx;
+  background: #f2f6f5;
+  color: var(--text-sub);
+  font-size: 24rpx;
+}
+
+.tag-option.active {
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.location-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin-top: 16rpx;
+}
+
+.location-btn {
+  flex: none;
+  margin-left: 20rpx;
+  padding: 12rpx 28rpx;
+  border-radius: 999rpx;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 24rpx;
+}
+
+.fee-switch {
+  display: flex;
+  padding: 4rpx;
+  border-radius: 999rpx;
+  background: #f2f6f5;
+}
+
+.fee-option {
+  padding: 10rpx 30rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  color: var(--text-sub);
+}
+
+.fee-option.active {
+  background: #ffffff;
+  color: var(--brand);
+  font-weight: 600;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.06);
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+}
+
+.stepper-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: #f2f6f5;
+  color: var(--text);
+  font-size: 32rpx;
+}
+
+.stepper-value {
+  min-width: 100rpx;
+  text-align: center;
+  font-size: 30rpx;
+  color: var(--text);
+}
+
+.qr-upload {
+  display: flex;
+}
+
+.qr-preview {
+  display: flex;
+  align-items: center;
+}
+
+.qr-img {
+  width: 220rpx;
+  height: 220rpx;
+  border-radius: 16rpx;
+  background: #f7fafa;
+}
+
+.qr-actions {
+  margin-left: 28rpx;
+}
+
+.qr-action {
+  margin-bottom: 18rpx;
+  padding: 12rpx 28rpx;
+  border-radius: 999rpx;
+  background: #f2f6f5;
+  color: var(--text-sub);
+  font-size: 24rpx;
+}
+
+.qr-action.danger {
+  color: #ff5a5a;
+}
+
+.qr-add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 240rpx;
+  height: 240rpx;
+  border-radius: 16rpx;
+  border: 2rpx dashed #cfdedb;
+  background: #f8fbfa;
+}
+
+.desc-input {
+  width: 100%;
+  height: 220rpx;
+  font-size: 28rpx;
+  color: var(--text);
+  line-height: 1.7;
+}
+
+.agree-row {
+  display: flex;
+  align-items: center;
+  margin-top: 30rpx;
+  padding: 0 8rpx;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36rpx;
+  height: 36rpx;
+  margin-right: 14rpx;
+  border-radius: 50%;
+  border: 2rpx solid #cbd5d5;
+  color: #ffffff;
+  font-size: 22rpx;
+}
+
+.checkbox.checked {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+.agree-text {
+  font-size: 24rpx;
+  color: var(--text-sub);
+}
+
+.agree-link {
+  font-size: 24rpx;
+  color: var(--brand);
+}
+
+/* 提交栏不浮动：作为页面纵向布局的最后一段，滚动区自然止于其上方。
+   悬浮在滚动容器之上时点击会落到下面的表单内容上，表现为"点发布没反应" */
+.submit-bar {
+  flex: none;
+  padding: 16rpx 24rpx calc(16rpx + env(safe-area-inset-bottom));
+  background: #ffffff;
+  border-top: 2rpx solid var(--line);
+}
+
+.submit-btn {
+  width: 100%;
+}

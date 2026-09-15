@@ -1,0 +1,162 @@
+<view class="page tab-page">
+  <navigation-bar title="我的" back="{{false}}" color="#2D3748" background="#FFFFFF"></navigation-bar>
+
+  <scroll-view class="page-scroll tab-page-scroll" scroll-y>
+    <view class="scroll-body">
+      <!-- 用户卡片 -->
+      <view class="user-card card">
+        <view class="user-main" bindtap="onUserCardTap">
+          <avatar
+            url="{{user.avatarUrl}}"
+            color="{{user ? user.avatarColor : '#CBD5D5'}}"
+            text="{{user ? user.avatarText : '友'}}"
+            size="lg"
+          ></avatar>
+          <view class="user-info">
+            <text class="user-name">{{user ? user.nickName : '未登录'}}</text>
+            <text wx:if="{{user}}" class="user-id">ID：{{user.userId}}</text>
+            <text class="user-bio">{{user ? (user.bio || '和有趣的人一起出发') : '登录后可使用报名、发布等功能'}}</text>
+          </view>
+          <text class="user-arrow">›</text>
+        </view>
+        <view wx:if="{{!user}}" class="btn-primary login-btn" bindtap="onLoginTap"><text>微信一键登录</text></view>
+      </view>
+
+      <!-- 完善资料提示 -->
+      <view wx:if="{{needProfile}}" class="profile-tip" bindtap="openProfile">
+        <text class="profile-tip-text">完善头像昵称，让好友认出你</text>
+        <text class="profile-tip-arrow">›</text>
+      </view>
+
+      <!-- 统计区 -->
+      <view class="stats card">
+        <view class="stat-item" data-tab="joined" bindtap="goActivityList">
+          <text class="stat-value">{{joinedCount}}</text>
+          <text class="stat-label">我参与的</text>
+        </view>
+        <view class="stat-divider"></view>
+        <view class="stat-item" data-tab="published" bindtap="goActivityList">
+          <text class="stat-value">{{publishedCount}}</text>
+          <text class="stat-label">我发布的</text>
+        </view>
+      </view>
+
+      <!-- 功能入口 -->
+      <view class="entry-group card">
+        <view wx:if="{{user && !user.phone}}" class="entry" bindtap="openPhone">
+          <text class="entry-icon">📱</text>
+          <view class="entry-main">
+            <text class="entry-title">绑定手机号（可选）</text>
+            <text class="entry-desc">用于找回账号与活动联系</text>
+          </view>
+          <text class="entry-arrow">›</text>
+        </view>
+        <view class="entry" data-tab="joined" bindtap="goActivityList">
+          <text class="entry-icon">🎒</text>
+          <text class="entry-title">我的参与</text>
+          <text class="entry-arrow">›</text>
+        </view>
+        <view class="entry" data-tab="published" bindtap="goActivityList">
+          <text class="entry-icon">📣</text>
+          <text class="entry-title">我的发布</text>
+          <text class="entry-arrow">›</text>
+        </view>
+        <view class="entry" bindtap="goPublish">
+          <text class="entry-icon">✨</text>
+          <text class="entry-title">发起新活动</text>
+          <text class="entry-arrow">›</text>
+        </view>
+        <view class="entry" bindtap="goSquare">
+          <text class="entry-icon">🧭</text>
+          <text class="entry-title">逛逛活动广场</text>
+          <text class="entry-arrow">›</text>
+        </view>
+        <view class="entry" bindtap="goFeedback">
+          <text class="entry-icon">💬</text>
+          <text class="entry-title">意见反馈</text>
+          <text class="entry-arrow">›</text>
+        </view>
+        <view class="entry" bindtap="showAbout">
+          <text class="entry-icon">ℹ️</text>
+          <text class="entry-title">关于旷行吖</text>
+          <text class="entry-arrow">›</text>
+        </view>
+      </view>
+
+      <view class="version"><text>{{texts.version}}</text></view>
+    </view>
+  </scroll-view>
+
+  <!-- 资料编辑弹窗 -->
+  <view wx:if="{{showProfile}}">
+    <view class="mask" bindtap="closeProfile"></view>
+    <view class="dialog profile-dialog">
+      <view class="profile-head">
+        <text class="profile-title">完善头像昵称</text>
+        <text class="sheet-close" bindtap="closeProfile">✕</text>
+      </view>
+      <text class="profile-sub">设置后将展示在你的活动卡片中</text>
+      <button class="avatar-picker" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar">
+        <avatar url="{{editAvatar}}" color="{{user.avatarColor}}" text="{{editNickName}}" size="lg"></avatar>
+        <text class="avatar-picker-tip">点击选择微信头像</text>
+      </button>
+      <view class="nick-row">
+        <text class="nick-label">昵称</text>
+        <input
+          class="nick-input"
+          type="nickname"
+          value="{{editNickName}}"
+          maxlength="20"
+          placeholder="请输入昵称"
+          bindinput="onNickInput"
+        />
+      </view>
+      <view class="btn-primary profile-save" bindtap="saveProfile"><text>{{saving ? '保存中…' : '保存'}}</text></view>
+      <view class="btn-ghost profile-skip" bindtap="closeProfile"><text>暂不完善</text></view>
+    </view>
+  </view>
+
+  <!-- 手机号绑定弹窗 -->
+  <view wx:if="{{showPhone}}">
+    <view class="mask" bindtap="closePhone"></view>
+    <view class="dialog phone-dialog">
+      <view class="profile-head">
+        <text class="profile-title">绑定手机号（可选）</text>
+        <text class="sheet-close" bindtap="closePhone">✕</text>
+      </view>
+      <block wx:if="{{useMock}}">
+        <input
+          class="login-input"
+          type="number"
+          maxlength="11"
+          placeholder="请输入 11 位手机号"
+          value="{{phoneInput}}"
+          bindinput="onPhoneInput"
+        />
+      </block>
+      <view class="phone-agree">
+        <view class="checkbox {{phoneAgreed ? 'checked' : ''}}" bindtap="togglePhoneAgree"><text wx:if="{{phoneAgreed}}">✓</text></view>
+        <text class="agree-text" bindtap="togglePhoneAgree">我已阅读并同意</text>
+        <text class="agree-link" catchtap="openService">《用户服务协议》</text>
+        <text class="agree-text">和</text>
+        <text class="agree-link" catchtap="openPrivacy">《隐私政策》</text>
+      </view>
+      <block wx:if="{{useMock}}">
+        <view
+          class="btn-primary phone-btn {{phoneAgreed ? '' : 'disabled'}}"
+          bindtap="submitPhoneMock"
+        ><text>{{binding ? '绑定中…' : '绑定手机号'}}</text></view>
+      </block>
+      <block wx:else>
+        <button
+          class="btn-primary phone-btn {{phoneAgreed ? '' : 'disabled'}}"
+          open-type="getPhoneNumber"
+          bindgetphonenumber="onGetPhoneNumber"
+        ><text>{{binding ? '绑定中…' : '绑定手机号'}}</text></button>
+      </block>
+    </view>
+  </view>
+
+  <agreement-modal id="agreement-modal"></agreement-modal>
+  <login-modal id="login-modal" bindlogin="onLogin"></login-modal>
+</view>

@@ -1,0 +1,38 @@
+.tabs {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 2rpx solid var(--line);
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 26rpx 0;
+  font-size: 28rpx;
+  color: var(--text-sub);
+}
+
+.tab.active {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.tab.active text {
+  padding-bottom: 10rpx;
+  border-bottom: 6rpx solid var(--brand);
+  border-radius: 4rpx;
+}
+
+.loading-tip {
+  padding: 80rpx 0;
+  text-align: center;
+  color: var(--text-light);
+  font-size: 26rpx;
+}
+
+.bottom-space {
+  height: 60rpx;
+}

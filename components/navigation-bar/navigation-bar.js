@@ -97,6 +97,14 @@ Component({
         })
       }
       this.triggerEvent('back', { delta: data.delta }, {})
+    },
+    home() {
+      wx.switchTab({
+        url: '/pages/home/home',
+        fail: () => {
+          wx.reLaunch({ url: '/pages/home/home' })
+        }
+      })
     }
   },
 })

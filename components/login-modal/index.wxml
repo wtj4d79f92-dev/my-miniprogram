@@ -1,0 +1,38 @@
+<view wx:if="{{visible}}">
+  <view class="mask" bindtap="close"></view>
+  <view class="dialog login-dialog" catchtap="noop">
+    <view class="login-head">
+      <text class="login-title">登录旷行吖</text>
+      <text class="sheet-close" bindtap="close">✕</text>
+    </view>
+    <text class="login-sub">登录后可报名、发布活动，并与搭子保持联系</text>
+
+    <block wx:if="{{useMock}}">
+      <input
+        class="login-input"
+        type="number"
+        maxlength="11"
+        placeholder="请输入 11 位手机号"
+        value="{{phone}}"
+        bindinput="onPhoneInput"
+      />
+      <view class="btn-primary login-btn" bindtap="submitPhone">
+        <text>{{submitting ? '登录中…' : '一键登录'}}</text>
+      </view>
+      <view class="btn-ghost login-skip" bindtap="skip">
+        <text>跳过，体验浏览</text>
+      </view>
+      <text class="login-tips">演示模式下不会发送短信，登录信息仅保存在本机</text>
+    </block>
+
+    <block wx:else>
+      <button class="btn-primary login-btn" open-type="getPhoneNumber" bindgetphonenumber="onGetPhoneNumber">
+        <text>微信手机号快捷登录</text>
+      </button>
+      <view class="btn-ghost login-skip" bindtap="skip">
+        <text>跳过，体验浏览</text>
+      </view>
+      <text class="login-tips">手机号用于找回账号与活动联系，拒绝授权不影响浏览</text>
+    </block>
+  </view>
+</view>

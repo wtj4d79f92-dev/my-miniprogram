@@ -1,0 +1,69 @@
+.tab-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+  /* 框架把 tabBar 根节点挂到独立渲染层时是 pointer-events: none，
+     这里显式打开，否则底部导航收不到点击事件 */
+  pointer-events: auto;
+  display: flex;
+  height: calc(110rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: #ffffff;
+  border-top: 2rpx solid #edf2f2;
+}
+
+.tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  /* tabBar 的样式作用域拿不到 page 上的 CSS 变量，颜色一律用字面量；
+     安全区一起算进点击区域，否则 tabBar 下半截点不动 */
+  padding-bottom: env(safe-area-inset-bottom);
+  box-sizing: border-box;
+}
+
+.tab-icon {
+  width: 44rpx;
+  height: 44rpx;
+  background-color: #9aa5b1;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.tab-icon-home {
+  -webkit-mask-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M12 3.1 2.8 10.4V21h6.6v-6.1h5.2V21h6.6V10.4z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M12 3.1 2.8 10.4V21h6.6v-6.1h5.2V21h6.6V10.4z'/%3E%3C/svg%3E");
+}
+
+.tab-icon-square {
+  -webkit-mask-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M12 2.6a9.4 9.4 0 1 0 0 18.8 9.4 9.4 0 0 0 0-18.8zm3.9 5.5-2.2 6.2-6.2 2.2 2.2-6.2z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M12 2.6a9.4 9.4 0 1 0 0 18.8 9.4 9.4 0 0 0 0-18.8zm3.9 5.5-2.2 6.2-6.2 2.2 2.2-6.2z'/%3E%3C/svg%3E");
+}
+
+.tab-icon-user {
+  -webkit-mask-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M12 12.4a4.4 4.4 0 1 0 0-8.8 4.4 4.4 0 0 0 0 8.8zm0 2.1c-4.2 0-7.6 2.3-7.6 5.2V21h15.2v-1.3c0-2.9-3.4-5.2-7.6-5.2z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M12 12.4a4.4 4.4 0 1 0 0-8.8 4.4 4.4 0 0 0 0 8.8zm0 2.1c-4.2 0-7.6 2.3-7.6 5.2V21h15.2v-1.3c0-2.9-3.4-5.2-7.6-5.2z'/%3E%3C/svg%3E");
+}
+
+.tab-text {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: #9aa5b1;
+}
+
+.tab-item.active .tab-icon {
+  background-color: #00b578;
+}
+
+.tab-item.active .tab-text {
+  color: #00b578;
+  font-weight: 600;
+}

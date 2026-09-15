@@ -1,0 +1,9 @@
+{
+  "usingComponents": {
+    "navigation-bar": "/components/navigation-bar/navigation-bar",
+    "city-picker": "/components/city-picker/index",
+    "login-modal": "/components/login-modal/index",
+    "activity-card": "/components/activity-card/index",
+    "empty-state": "/components/empty-state/index"
+  }
+}

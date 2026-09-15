@@ -1,0 +1,52 @@
+<view class="page">
+  <navigation-bar title="我的活动" color="#2D3748" background="#FFFFFF"></navigation-bar>
+
+  <view class="tabs">
+    <view class="tab {{tab === 'joined' ? 'active' : ''}}" data-tab="joined" bindtap="switchTab">
+      <text>我参与的</text>
+    </view>
+    <view class="tab {{tab === 'published' ? 'active' : ''}}" data-tab="published" bindtap="switchTab">
+      <text>我发布的</text>
+    </view>
+  </view>
+
+  <scroll-view
+    class="page-scroll"
+    scroll-y
+    refresher-enabled="{{true}}"
+    refresher-triggered="{{refreshing}}"
+    bindrefresherrefresh="onRefresh"
+  >
+    <view class="scroll-body">
+      <activity-card
+        wx:for="{{list}}"
+        wx:key="id"
+        act="{{item}}"
+        showToolbar="{{tab === 'published'}}"
+        bindtapcard="onCardTap"
+        bindtoggle="onToggle"
+      ></activity-card>
+
+      <empty-state
+        wx:if="{{!loading && !list.length && tab === 'joined'}}"
+        icon="🎒"
+        text="还没有参与活动"
+        buttonText="去逛逛"
+        bindaction="goSquare"
+      ></empty-state>
+
+      <empty-state
+        wx:if="{{!loading && !list.length && tab === 'published'}}"
+        icon="📣"
+        text="还没有发布过活动"
+        buttonText="去发布"
+        bindaction="goPublish"
+      ></empty-state>
+
+      <view wx:if="{{loading}}" class="loading-tip"><text>加载中…</text></view>
+      <view class="bottom-space"></view>
+    </view>
+  </scroll-view>
+
+  <login-modal id="login-modal" bindlogin="onLogin"></login-modal>
+</view>

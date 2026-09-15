@@ -1,0 +1,53 @@
+.login-dialog {
+  padding: 36rpx 36rpx 40rpx;
+}
+
+.login-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.login-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.login-sub {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: var(--text-sub);
+  line-height: 1.6;
+}
+
+.login-input {
+  margin-top: 32rpx;
+  height: 92rpx;
+  padding: 0 28rpx;
+  border-radius: 16rpx;
+  background: #f6f8f8;
+  font-size: 30rpx;
+  color: var(--text);
+}
+
+.login-btn {
+  margin-top: 28rpx;
+  width: 100%;
+  border: none;
+  line-height: 88rpx;
+}
+
+.login-skip {
+  margin-top: 20rpx;
+}
+
+.login-tips {
+  display: block;
+  margin-top: 24rpx;
+  font-size: 22rpx;
+  color: var(--text-light);
+  text-align: center;
+  line-height: 1.6;
+}

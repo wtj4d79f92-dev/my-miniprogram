@@ -1,0 +1,63 @@
+<view class="act-card" bindtap="onTap">
+  <view class="act-cover" style="background: {{act.bg}};">
+    <image wx:if="{{act.cover}}" class="act-cover-img" src="{{act.cover}}" mode="aspectFill"></image>
+    <view wx:else class="poster">
+      <view class="poster-badge"><text>AA</text></view>
+      <text class="poster-title">AA组队</text>
+      <text class="poster-sub">和志同道合的人一起出发</text>
+    </view>
+    <view class="act-type"><text>{{act.typeName}}</text></view>
+    <view wx:if="{{act.isClosed}}" class="act-closed"><text>已关闭</text></view>
+  </view>
+
+  <view class="act-body">
+    <view class="act-title-row">
+      <text wx:if="{{act.showMetrics && act.difficulty}}" class="act-difficulty">{{act.difficultyText}}</text>
+      <text class="tag tag-orange act-tag" wx:for="{{act.tagNames}}" wx:key="*this">{{item}}</text>
+      <text class="act-title ellipsis">{{act.title}}</text>
+    </view>
+
+    <view class="act-row">
+      <avatar url="{{act.organizer.avatarUrl}}" color="{{act.organizer.avatarColor}}" text="{{act.organizer.avatarText}}" size="xs"></avatar>
+      <text class="act-organizer ellipsis">{{act.organizer.nickName}}</text>
+      <text class="act-date">{{act.dateText}}</text>
+    </view>
+
+    <view class="act-row">
+      <text class="act-label">地点</text>
+      <text class="act-location ellipsis">{{act.location}}</text>
+    </view>
+
+    <view class="act-row" wx:if="{{act.showMetrics}}">
+      <text class="act-label">全程</text>
+      <text class="act-metric">{{act.distance}}km</text>
+      <text class="act-label gap">爬升</text>
+      <text class="act-metric">{{act.elevationGain}}m</text>
+    </view>
+
+    <view class="act-foot">
+      <view class="act-avatars">
+        <avatar
+          wx:for="{{act.avatarList}}"
+          wx:key="openid"
+          url="{{item.avatarUrl}}"
+          color="{{item.avatarColor}}"
+          text="{{item.avatarText}}"
+          size="xs"
+          ring="{{true}}"
+        ></avatar>
+        <text class="act-people">{{act.peopleText}}</text>
+      </view>
+      <text class="act-fee">{{act.feeText}}</text>
+    </view>
+
+    <view wx:if="{{showToolbar}}" class="act-toolbar">
+      <text class="act-status {{act.isClosed ? 'closed' : 'recruiting'}}">{{act.isClosed ? '已关闭' : '招募中'}}</text>
+      <view class="act-toggle" catchtap="onToggle">
+        <text>{{act.isClosed ? '打开' : '关闭'}}</text>
+      </view>
+    </view>
+
+    <slot name="footer"></slot>
+  </view>
+</view>

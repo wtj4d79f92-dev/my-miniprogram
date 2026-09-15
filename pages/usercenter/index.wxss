@@ -1,0 +1,279 @@
+.user-card {
+  margin-top: 16rpx;
+}
+
+.user-main {
+  display: flex;
+  align-items: center;
+}
+
+.user-info {
+  flex: 1;
+  margin-left: 24rpx;
+  display: flex;
+  flex-direction: column;
+}
+
+.user-name {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.user-id {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: var(--text-light);
+}
+
+.user-bio {
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  color: var(--text-sub);
+}
+
+.user-arrow {
+  font-size: 40rpx;
+  color: var(--text-light);
+}
+
+.login-btn {
+  margin-top: 26rpx;
+  width: 100%;
+}
+
+.profile-tip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20rpx;
+  padding: 24rpx;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, #e6f8f1 0%, #e8f3fb 100%);
+}
+
+.profile-tip-text {
+  font-size: 26rpx;
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.profile-tip-arrow {
+  font-size: 30rpx;
+  color: var(--brand);
+}
+
+.stats {
+  display: flex;
+  align-items: center;
+  margin-top: 24rpx;
+  padding: 30rpx 0;
+}
+
+.stat-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.stat-value {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--brand);
+}
+
+.stat-label {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: var(--text-sub);
+}
+
+.stat-divider {
+  width: 2rpx;
+  height: 60rpx;
+  background: var(--line);
+}
+
+.entry-group {
+  margin-top: 24rpx;
+  padding: 8rpx 24rpx;
+}
+
+.entry {
+  display: flex;
+  align-items: center;
+  padding: 28rpx 0;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.entry:last-child {
+  border-bottom: none;
+}
+
+.entry-icon {
+  width: 52rpx;
+  font-size: 30rpx;
+}
+
+.entry-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.entry-title {
+  flex: 1;
+  font-size: 28rpx;
+  color: var(--text);
+}
+
+.entry-desc {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: var(--text-light);
+}
+
+.entry-arrow {
+  font-size: 32rpx;
+  color: var(--text-light);
+}
+
+.version {
+  padding: 50rpx 0 20rpx;
+  text-align: center;
+}
+
+.version text {
+  font-size: 22rpx;
+  color: var(--text-light);
+}
+
+.profile-dialog {
+  padding: 36rpx 36rpx 30rpx;
+}
+
+.profile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.profile-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.profile-sub {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  color: var(--text-sub);
+}
+
+.avatar-picker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 30rpx;
+  background: transparent;
+  border: none;
+  padding: 0;
+  line-height: 1.4;
+}
+
+.avatar-picker::after {
+  border: none;
+}
+
+.avatar-picker-tip {
+  margin-top: 14rpx;
+  font-size: 22rpx;
+  color: var(--text-light);
+}
+
+.nick-row {
+  display: flex;
+  align-items: center;
+  margin-top: 30rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  background: #f6f8f8;
+}
+
+.nick-label {
+  width: 90rpx;
+  font-size: 28rpx;
+  color: var(--text-sub);
+}
+
+.nick-input {
+  flex: 1;
+  font-size: 28rpx;
+  color: var(--text);
+}
+
+.profile-save {
+  margin-top: 30rpx;
+}
+
+.profile-skip {
+  margin-top: 18rpx;
+}
+
+.phone-dialog {
+  padding: 36rpx 36rpx 30rpx;
+}
+
+.login-input {
+  margin-top: 30rpx;
+  height: 92rpx;
+  padding: 0 28rpx;
+  border-radius: 16rpx;
+  background: #f6f8f8;
+  font-size: 30rpx;
+  color: var(--text);
+}
+
+.phone-agree {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 24rpx;
+}
+
+.phone-btn {
+  margin-top: 28rpx;
+  width: 100%;
+  border: none;
+  line-height: 88rpx;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34rpx;
+  height: 34rpx;
+  margin-right: 12rpx;
+  border-radius: 50%;
+  border: 2rpx solid #cbd5d5;
+  color: #ffffff;
+  font-size: 22rpx;
+}
+
+.checkbox.checked {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+.agree-text {
+  font-size: 24rpx;
+  color: var(--text-sub);
+}
+
+.agree-link {
+  font-size: 24rpx;
+  color: var(--brand);
+}

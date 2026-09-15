@@ -1,0 +1,19 @@
+.city-confirm {
+  font-size: 30rpx;
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.city-picker {
+  width: 100%;
+  height: 440rpx;
+}
+
+.picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx;
+  font-size: 30rpx;
+  color: var(--text);
+}

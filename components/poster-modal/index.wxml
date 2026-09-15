@@ -1,0 +1,15 @@
+<view wx:if="{{visible}}">
+  <view class="mask" bindtap="close"></view>
+  <view class="poster-layer">
+    <view class="poster-wrap">
+      <canvas id="poster-canvas" type="2d" class="poster-canvas"></canvas>
+      <view wx:if="{{generating}}" class="poster-loading"><text>海报生成中…</text></view>
+    </view>
+    <text class="poster-tip">长按海报可转发给好友</text>
+    <view class="poster-actions">
+      <view class="btn-ghost poster-btn" bindtap="close"><text>关闭</text></view>
+      <view class="btn-ghost poster-btn" bindtap="forward"><text>转发</text></view>
+      <view class="btn-primary poster-btn" bindtap="save"><text>保存图片</text></view>
+    </view>
+  </view>
+</view>

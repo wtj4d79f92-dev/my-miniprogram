@@ -1,0 +1,33 @@
+<view wx:if="{{visible}}">
+  <view class="mask" bindtap="cancel"></view>
+  <view class="sheet calendar-sheet" catchtap="noop">
+    <view class="sheet-head">
+      <text class="sheet-close" bindtap="cancel">取消</text>
+      <text class="sheet-title">{{title}}</text>
+      <text class="cal-confirm" bindtap="confirm">确定</text>
+    </view>
+
+    <view class="cal-toolbar">
+      <view class="cal-nav" bindtap="prevMonth"><text>‹</text></view>
+      <text class="cal-month">{{monthText}}</text>
+      <view class="cal-nav" bindtap="nextMonth"><text>›</text></view>
+    </view>
+
+    <view class="cal-week">
+      <text class="cal-week-item" wx:for="{{weekHead}}" wx:key="*this">{{item}}</text>
+    </view>
+
+    <view class="cal-grid">
+      <view
+        class="cal-cell {{item.out ? 'out' : ''}} {{item.selected ? 'selected' : ''}} {{item.today ? 'today' : ''}} {{item.disabled ? 'disabled' : ''}}"
+        wx:for="{{cells}}"
+        wx:key="ts"
+        data-ts="{{item.ts}}"
+        data-disabled="{{item.disabled}}"
+        bindtap="onSelect"
+      >
+        <text class="cal-day">{{item.day}}</text>
+      </view>
+    </view>
+  </view>
+</view>

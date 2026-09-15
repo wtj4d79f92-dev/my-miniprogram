@@ -1,0 +1,18 @@
+<view wx:if="{{visible}}">
+  <view class="mask" bindtap="close"></view>
+  <view class="sheet" catchtap="noop">
+    <view class="sheet-head">
+      <text class="sheet-close" bindtap="close">取消</text>
+      <text class="sheet-title">选择城市</text>
+      <text class="city-confirm" bindtap="confirm">确定</text>
+    </view>
+    <picker-view class="city-picker" indicator-style="height: 88rpx;" value="{{value}}" bindchange="onPickerChange">
+      <picker-view-column>
+        <view class="picker-item" wx:for="{{provinceNames}}" wx:key="*this">{{item}}</view>
+      </picker-view-column>
+      <picker-view-column>
+        <view class="picker-item" wx:for="{{cityLabels}}" wx:key="*this">{{item}}</view>
+      </picker-view-column>
+    </picker-view>
+  </view>
+</view>

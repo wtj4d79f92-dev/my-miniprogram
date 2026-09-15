@@ -1,0 +1,8 @@
+{
+  "usingComponents": {
+    "navigation-bar": "/components/navigation-bar/navigation-bar",
+    "login-modal": "/components/login-modal/index",
+    "agreement-modal": "/components/agreement-modal/index",
+    "calendar-picker": "/components/calendar-picker/index"
+  }
+}

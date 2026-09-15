@@ -1,0 +1,27 @@
+<view wx:if="{{visible}}">
+  <view class="mask" bindtap="close"></view>
+  <view class="sheet agreement-sheet" catchtap="noop">
+    <view class="sheet-head">
+      <text class="sheet-title">{{title}}</text>
+      <text class="sheet-close" bindtap="close">✕</text>
+    </view>
+    <text class="agreement-meta">更新日期：{{updatedAt}}</text>
+    <scroll-view class="agreement-body" scroll-y type="list">
+      <view class="agreement-block" wx:for="{{blocks}}" wx:key="key">
+        <text class="agreement-text">
+          <text
+            wx:for="{{item.segments}}"
+            wx:for-item="seg"
+            wx:key="i"
+            class="{{seg.strong ? 'agreement-strong' : ''}}"
+          >{{seg.text}}</text>
+        </text>
+      </view>
+      <view class="agreement-space"></view>
+    </scroll-view>
+    <view class="agreement-actions">
+      <view class="btn-ghost agreement-btn" bindtap="close"><text>暂不同意</text></view>
+      <view class="btn-primary agreement-btn" bindtap="agree"><text>同意并继续</text></view>
+    </view>
+  </view>
+</view>

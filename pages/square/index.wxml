@@ -1,0 +1,117 @@
+<view class="page tab-page">
+  <navigation-bar title="活动广场" back="{{false}}" color="#2D3748" background="#FFFFFF"></navigation-bar>
+
+  <view class="square-head">
+    <!-- 城市栏 -->
+    <view class="locate-bar">
+      <view class="locate-left" bindtap="onLocateTap">
+        <text class="locate-icon">📍</text>
+        <text class="locate-city">{{locationDenied ? '定位未开启' : cityLabel}}</text>
+      </view>
+      <view class="locate-switch" bindtap="openCityPicker"><text>切换城市</text></view>
+    </view>
+
+    <!-- 搜索栏 -->
+    <view class="search-row">
+      <text class="search-icon">🔍</text>
+      <input
+        class="search-input"
+        value="{{keyword}}"
+        placeholder="{{texts.searchPlaceholderSquare}}"
+        confirm-type="search"
+        bindinput="onKeywordInput"
+        bindconfirm="onKeywordConfirm"
+      />
+      <text wx:if="{{keyword}}" class="search-clear" bindtap="onKeywordClear">✕</text>
+      <view class="search-submit" bindtap="onKeywordConfirm"><text>搜索</text></view>
+    </view>
+
+    <!-- 类型 Tab -->
+    <scroll-view class="type-tabs" scroll-x scroll-into-view="{{tabScrollId}}" scroll-with-animation>
+      <view class="type-tabs-inner">
+        <view
+          class="type-tab {{type === item.key ? 'active' : ''}}"
+          wx:for="{{typeTabs}}"
+          wx:key="key"
+          id="tab-{{item.key}}"
+          data-type="{{item.key}}"
+          bindtap="onTypeTap"
+        >
+          <text>{{item.emoji ? item.emoji + ' ' : ''}}{{item.name}}</text>
+        </view>
+      </view>
+    </scroll-view>
+
+    <!-- 排序栏 -->
+    <view class="sort-bar">
+      <view class="sort-options">
+        <text
+          class="sort-option {{sort === item.value ? 'active' : ''}}"
+          wx:for="{{sortOptions}}"
+          wx:key="value"
+          data-sort="{{item.value}}"
+          bindtap="onSortTap"
+        >{{item.label}}</text>
+      </view>
+      <view class="weekday-filter" bindtap="toggleWeekday">
+        <text class="weekday-text">{{weekdayLabel}}</text>
+        <text class="weekday-arrow">{{weekdayOpen ? '▲' : '▼'}}</text>
+      </view>
+    </view>
+
+    <view wx:if="{{weekdayOpen}}" class="weekday-panel">
+      <view
+        class="weekday-item {{weekday === item.value ? 'active' : ''}}"
+        wx:for="{{weekdayOptions}}"
+        wx:key="value"
+        data-value="{{item.value}}"
+        bindtap="onWeekdayTap"
+      >{{item.label}}</view>
+    </view>
+  </view>
+
+  <scroll-view
+    class="page-scroll tab-page-scroll"
+    scroll-y
+    refresher-enabled="{{true}}"
+    refresher-triggered="{{refreshing}}"
+    bindrefresherrefresh="onRefresh"
+    bindscrolltolower="onScrollToLower"
+    lower-threshold="80"
+  >
+    <view class="scroll-body">
+      <view wx:if="{{fallbackTip}}" class="fallback-tip"><text>{{fallbackTip}}</text></view>
+
+      <activity-card
+        wx:for="{{list}}"
+        wx:key="id"
+        act="{{item}}"
+        bindtapcard="onCardTap"
+      ></activity-card>
+
+      <empty-state
+        wx:if="{{empty}}"
+        icon="🔍"
+        text="没有找到相关活动，发布一个吧"
+        buttonText="去发布"
+        bindaction="goPublish"
+      ></empty-state>
+
+      <view wx:if="{{list.length}}" class="load-more">
+        <text wx:if="{{loadingMore}}" class="load-more-text">加载中…</text>
+        <text wx:elif="{{hasMore}}" class="load-more-text" bindtap="onLoadMoreTap">点击加载更多</text>
+        <text wx:else class="load-more-text">已经到底啦</text>
+      </view>
+
+      <view wx:if="{{loading}}" class="loading-tip"><text>加载中…</text></view>
+    </view>
+  </scroll-view>
+
+  <view class="fab" bindtap="goPublish">
+    <text class="fab-plus">＋</text>
+    <text class="fab-text">发布</text>
+  </view>
+
+  <city-picker id="city-picker" city="{{city}}" bindchange="onCityChange"></city-picker>
+  <login-modal id="login-modal" bindlogin="onLogin"></login-modal>
+</view>

@@ -1,0 +1,106 @@
+<view class="page tab-page">
+  <navigation-bar title="{{texts.appName}}" back="{{false}}" color="#2D3748" background="#FFFFFF"></navigation-bar>
+
+  <scroll-view
+    class="page-scroll tab-page-scroll"
+    scroll-y
+    enhanced="{{false}}"
+    refresher-enabled="{{true}}"
+    refresher-triggered="{{refreshing}}"
+    bindrefresherrefresh="onRefresh"
+  >
+    <view class="scroll-body">
+      <!-- 定位栏 -->
+      <view class="locate-bar">
+        <view class="locate-left" bindtap="onLocateTap">
+          <text class="locate-icon">📍</text>
+          <text class="locate-city">{{locationDenied ? '定位未开启' : cityLabel}}</text>
+          <text class="locate-tips">{{locationDenied ? '点击开启' : '点击重新定位'}}</text>
+        </view>
+        <view class="locate-switch" bindtap="openCityPicker">
+          <text>切换城市</text>
+        </view>
+      </view>
+
+      <!-- 搜索入口 -->
+      <view class="search-entry" bindtap="goSquare">
+        <text class="search-icon">🔍</text>
+        <text class="search-placeholder">{{texts.searchPlaceholderHome}}</text>
+        <view class="search-btn"><text>搜索</text></view>
+      </view>
+
+      <!-- 横幅轮播 -->
+      <swiper
+        class="banner"
+        autoplay="{{true}}"
+        interval="4000"
+        circular="{{true}}"
+        indicator-dots="{{true}}"
+        indicator-color="rgba(255,255,255,0.6)"
+        indicator-active-color="#00B578"
+      >
+        <swiper-item wx:for="{{banners}}" wx:key="_id">
+          <view class="banner-item" style="background: {{item.bg}};" data-action="{{item.action}}" bindtap="onBannerTap">
+            <text class="banner-emoji">{{item.emoji}}</text>
+            <text class="banner-title">{{item.title}}</text>
+            <text class="banner-sub">{{item.subtitle}}</text>
+          </view>
+        </swiper-item>
+      </swiper>
+
+      <!-- 户外玩法 -->
+      <view class="section-head">
+        <text class="section-title">发现户外玩法</text>
+        <text class="section-more" data-type="" bindtap="goSquare">全部 ›</text>
+      </view>
+      <view class="type-grid card">
+        <view class="type-item" wx:for="{{typeGrid}}" wx:key="key" data-type="{{item.key}}" bindtap="onTypeTap">
+          <view class="type-icon" style="background: {{item.color}}33;">
+            <text>{{item.emoji}}</text>
+          </view>
+          <text class="type-name">{{item.name}}</text>
+        </view>
+      </view>
+
+      <!-- 回退提示条 -->
+      <view wx:if="{{fallbackTip}}" class="fallback-tip">
+        <text>{{fallbackTip}}</text>
+      </view>
+
+      <!-- 热门组队 -->
+      <view class="section-head" wx:if="{{hotList.length}}">
+        <text class="section-title">热门组队</text>
+        <text class="section-more" data-type="" bindtap="goSquare">更多 ›</text>
+      </view>
+      <activity-card
+        wx:for="{{hotList}}"
+        wx:key="id"
+        act="{{item}}"
+        bindtapcard="onCardTap"
+      ></activity-card>
+
+      <!-- 最新发布 -->
+      <view class="section-head" wx:if="{{newestList.length}}">
+        <text class="section-title">最新发布</text>
+      </view>
+      <activity-card
+        wx:for="{{newestList}}"
+        wx:key="id"
+        act="{{item}}"
+        bindtapcard="onCardTap"
+      ></activity-card>
+
+      <empty-state wx:if="{{!loading && !hotList.length && !newestList.length}}" icon="🏕" text="附近还没有活动，换个城市或发布一个吧"></empty-state>
+
+      <view class="footer"><text>{{texts.footer}}</text></view>
+    </view>
+  </scroll-view>
+
+  <view class="fab" bindtap="goPublish">
+    <text class="fab-plus">＋</text>
+    <text class="fab-text">发布</text>
+  </view>
+
+  <city-picker id="city-picker" city="{{city}}" bindchange="onCityChange"></city-picker>
+  <login-modal id="login-modal" bindlogin="onLogin"></login-modal>
+</view>

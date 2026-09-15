@@ -1,0 +1,24 @@
+<view class="page">
+  <navigation-bar title="意见反馈" color="#2D3748" background="#FFFFFF"></navigation-bar>
+
+  <scroll-view class="page-scroll" scroll-y>
+    <view class="scroll-body">
+      <view class="card feedback-card">
+        <textarea
+          class="feedback-input"
+          value="{{content}}"
+          maxlength="500"
+          placeholder="请描述你的意见、建议或遇到的问题"
+          bindinput="onInput"
+        />
+        <text class="feedback-count">{{count}}/500</text>
+      </view>
+
+      <view class="btn-primary submit-btn {{submitting ? 'disabled' : ''}}" bindtap="submit">
+        <text>{{submitting ? '提交中…' : '提交反馈'}}</text>
+      </view>
+
+      <text class="feedback-footer">你的反馈将仅用于产品改进分析，感谢支持</text>
+    </view>
+  </scroll-view>
+</view>
