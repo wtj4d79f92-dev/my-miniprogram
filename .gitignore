@@ -1,2 +1,5 @@
 # macOS 系统文件
 .DS_Store
+
+# 微信开发者工具个人私有配置（记录本地编译模式与偏好，由工具自动生成）
+project.private.config.json
