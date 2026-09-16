@@ -1,4 +1,6 @@
-// 全局字典：活动类型、标签、难度、星期筛选、默认横幅、默认文案
+// 服务端字典副本：与前端 utils/dict.js 保持一致
+// 云函数打包时只会上传本目录，无法 require 小程序根目录的文件，因此这里保留一份镜像。
+// 修改类型 / 标签 / 默认横幅时，两处都要改。
 
 /** 活动类型字典（key / 名称 / emoji / 主题色 / 渐变） */
 const ACTIVITY_TYPES = [
@@ -14,43 +16,14 @@ const ACTIVITY_TYPES = [
   { key: 'other', name: '其他', emoji: '🎉', color: '#A8DADC', from: '#E0EAFC', to: '#CFDEF3' },
 ]
 
-/** 活动标签（仅自驾游 / 徒步 / 爬山可选） */
-const ACTIVITY_TAGS = [
-  { key: 'needOwner', name: '缺车主' },
-  { key: 'needPassenger', name: '缺乘客' },
-]
-
 /** 带标签能力的类型 */
 const TAG_TYPES = ['driving', 'hiking', 'climbing']
 /** 带难度 / 全程 / 爬升的类型 */
 const METRIC_TYPES = ['hiking', 'climbing']
+/** 合法标签 key */
+const TAG_KEYS = ['needOwner', 'needPassenger']
 
-/** 难度 1-10 星 */
-const DIFFICULTY_OPTIONS = Array.from({ length: 10 }, (_, i) => {
-  const star = i + 1
-  return { value: star, label: `${star}星`, short: `${star}★` }
-})
-
-/** 集合时间（星期）筛选 */
-const WEEKDAY_OPTIONS = [
-  { value: -1, label: '不限日期' },
-  { value: 1, label: '周一' },
-  { value: 2, label: '周二' },
-  { value: 3, label: '周三' },
-  { value: 4, label: '周四' },
-  { value: 5, label: '周五' },
-  { value: 6, label: '周六' },
-  { value: 0, label: '周日' },
-]
-
-/** 广场排序 */
-const SORT_OPTIONS = [
-  { value: 'time', label: '即将开始' },
-  { value: 'latest', label: '最新发布' },
-  { value: 'hot', label: '最热门' },
-]
-
-/** 默认横幅（后台无数据时使用，与云函数默认数据保持一致） */
+/** 默认横幅：banners 集合为空时由 home 接口写入 */
 const DEFAULT_BANNERS = [
   {
     _id: 'banner_default_1',
@@ -81,27 +54,7 @@ const DEFAULT_BANNERS = [
   },
 ]
 
-/** 默认文案 */
-const TEXTS = {
-  appName: '旷行吖',
-  slogan: '和志同道合的人一起出发',
-  searchPlaceholderHome: '搜活动、地点，加入旷行吖',
-  searchPlaceholderSquare: '搜索活动、地点',
-  footer: '— 和志同道合的人一起出发 —',
-  version: '旷行吖 v1.0.0',
-  about:
-    '旷行吖是一款户外运动组队小程序，支持自驾游、徒步、打球、骑行、健身、游泳、露营等玩法，一键发起活动、快速摇人组队。',
-  coastSlogan: '和志同道合的人一起出发',
-  defaultPosterTitle: 'AA组队',
-  defaultPosterSubtitle: '和志同道合的人一起出发',
-}
-
 const TYPE_MAP = ACTIVITY_TYPES.reduce((acc, item) => {
-  acc[item.key] = item
-  return acc
-}, {})
-
-const TAG_MAP = ACTIVITY_TAGS.reduce((acc, item) => {
   acc[item.key] = item
   return acc
 }, {})
@@ -117,39 +70,29 @@ function typeGradient(key) {
   return `linear-gradient(135deg, ${type.from} 0%, ${type.to} 100%)`
 }
 
-/** 类型是否支持标签 */
 function supportsTags(key) {
   return TAG_TYPES.indexOf(key) > -1
 }
 
-/** 类型是否支持难度 / 全程 / 爬升 */
 function supportsMetrics(key) {
   return METRIC_TYPES.indexOf(key) > -1
 }
 
-function tagName(key) {
-  return (TAG_MAP[key] && TAG_MAP[key].name) || ''
+/** 过滤掉字典外的标签，避免前端传入任意值 */
+function sanitizeTags(tags) {
+  if (!Array.isArray(tags)) return []
+  return tags.filter((key) => TAG_KEYS.indexOf(key) > -1)
 }
-
-/** 类型网格：9 个玩法 + 其他 */
-const TYPE_GRID = ACTIVITY_TYPES
 
 module.exports = {
   ACTIVITY_TYPES,
-  TYPE_GRID,
-  TYPE_MAP,
-  ACTIVITY_TAGS,
-  TAG_MAP,
   TAG_TYPES,
   METRIC_TYPES,
-  DIFFICULTY_OPTIONS,
-  WEEKDAY_OPTIONS,
-  SORT_OPTIONS,
+  TAG_KEYS,
   DEFAULT_BANNERS,
-  TEXTS,
   getType,
   typeGradient,
   supportsTags,
   supportsMetrics,
-  tagName,
+  sanitizeTags,
 }

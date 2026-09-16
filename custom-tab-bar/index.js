@@ -1,5 +1,7 @@
 Component({
   data: {
+    // 整屏登录页需要独占屏幕时置为 true
+    hidden: false,
     selected: 0,
     list: [
       { pagePath: '/pages/home/home', text: '首页', icon: 'home' },

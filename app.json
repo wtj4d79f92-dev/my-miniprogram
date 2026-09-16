@@ -46,6 +46,15 @@
     }
   },
   "componentFramework": "glass-easel",
+  "permission": {
+    "scope.userLocation": {
+      "desc": "你的位置信息将用于自动匹配同城活动与发布时选择集合地点"
+    }
+  },
+  "requiredPrivateInfos": [
+    "getLocation",
+    "chooseLocation"
+  ],
   "sitemapLocation": "sitemap.json",
   "lazyCodeLoading": "requiredComponents"
 }

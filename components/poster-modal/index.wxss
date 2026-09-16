@@ -22,7 +22,8 @@
   box-shadow: 0 20rpx 60rpx rgba(0, 0, 0, 0.25);
 }
 
-.poster-canvas {
+.poster-img {
+  display: block;
   width: 560rpx;
   height: 956rpx;
 }
@@ -53,8 +54,22 @@
   margin-top: 24rpx;
 }
 
-.poster-btn {
+/* 三个按钮统一尺寸：全局 .btn-ghost 为 72rpx、.btn-primary 为 88rpx，这里拉平 */
+.poster-actions .poster-btn {
   flex: 1;
   margin: 0 10rpx;
-  background: #ffffff;
+  height: 80rpx;
+  font-size: 28rpx;
+}
+
+/* 浅色次要按钮：深色蒙层上保持白底深字，文案清晰可读 */
+.poster-actions .btn-ghost {
+  background: rgba(255, 255, 255, 0.92);
+  color: #2d3748;
+}
+
+/* 主按钮保留品牌渐变，避免被上面的浅底样式覆盖成白底白字 */
+.poster-actions .btn-primary {
+  background: linear-gradient(135deg, #00b578 0%, #43cea2 100%);
+  color: #ffffff;
 }

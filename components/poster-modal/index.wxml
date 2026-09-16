@@ -2,8 +2,15 @@
   <view class="mask" bindtap="close"></view>
   <view class="poster-layer">
     <view class="poster-wrap">
-      <canvas id="poster-canvas" type="2d" class="poster-canvas"></canvas>
+      <image
+        wx:if="{{posterPath}}"
+        class="poster-img"
+        src="{{posterPath}}"
+        mode="aspectFill"
+        show-menu-by-longpress
+      ></image>
       <view wx:if="{{generating}}" class="poster-loading"><text>海报生成中…</text></view>
+      <view wx:elif="{{!posterPath}}" class="poster-loading"><text>海报生成失败，请重试</text></view>
     </view>
     <text class="poster-tip">长按海报可转发给好友</text>
     <view class="poster-actions">

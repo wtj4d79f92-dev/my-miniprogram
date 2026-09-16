@@ -1,53 +1,417 @@
-.login-dialog {
-  padding: 36rpx 36rpx 40rpx;
+/* 整屏登录页：盖住自定义 tabBar（z-index 999） */
+.login-page {
+  position: fixed;
+  left: 0;
+  top: 0;
+  /* Skyline 下固定定位的 top/bottom 不会同时撑满，这里显式给宽高 */
+  width: 100%;
+  height: 100vh;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  box-sizing: border-box;
 }
 
-.login-head {
+/* 自定义导航栏：左侧返回箭头 + 居中标题（右侧留给系统胶囊） */
+.login-nav {
+  position: relative;
+  flex: none;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  background: #ffffff;
 }
 
-.login-title {
+.login-nav-title {
   font-size: 34rpx;
   font-weight: 600;
   color: var(--text);
 }
 
-.login-sub {
-  display: block;
-  margin-top: 12rpx;
+.login-nav-back {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 96rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-nav-back-hover {
+  opacity: 0.5;
+}
+
+.icon-chevron {
+  width: 22rpx;
+  height: 22rpx;
+  border-left: 4rpx solid var(--text);
+  border-bottom: 4rpx solid var(--text);
+  transform: rotate(45deg);
+  margin-left: 8rpx;
+}
+
+.login-main {
+  flex: 1;
+  height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 48rpx;
+  box-sizing: border-box;
+}
+
+.login-scroll {
+  flex: 1;
+  height: 0;
+  width: 100%;
+}
+
+.login-scroll-space {
+  height: 40rpx;
+}
+
+/* 品牌区：应用名 + 下方主 logo */
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 56rpx;
+}
+
+.brand-name {
+  font-size: 42rpx;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 2rpx;
+}
+
+.brand-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 48rpx;
+}
+
+.brand-art-logo {
+  width: 220rpx;
+  height: 220rpx;
+  border-radius: 48rpx;
+  box-shadow: 0 18rpx 44rpx rgba(45, 55, 72, 0.16);
+}
+
+/* 登录原因（来自登录守卫） */
+.login-reason {
+  margin-top: 44rpx;
+  padding: 10rpx 26rpx;
+  border-radius: 999rpx;
+  background: var(--brand-soft);
+}
+
+.login-reason-text {
   font-size: 24rpx;
-  color: var(--text-sub);
+  color: var(--brand);
+}
+
+.login-hint {
+  margin-top: 28rpx;
+  font-size: 26rpx;
+  color: var(--text-light);
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* 协议勾选 */
+.agree-row {
+  width: 100%;
+  margin-top: 56rpx;
+  display: flex;
+  align-items: flex-start;
+}
+
+.agree-row-shake {
+  animation: agree-shake 0.5s ease-in-out;
+}
+
+@keyframes agree-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-12rpx);
+  }
+  40% {
+    transform: translateX(12rpx);
+  }
+  60% {
+    transform: translateX(-8rpx);
+  }
+  80% {
+    transform: translateX(8rpx);
+  }
+}
+
+.checkbox {
+  flex: none;
+  width: 40rpx;
+  height: 40rpx;
+  margin-top: 4rpx;
+  border: 2rpx solid #c9d6d1;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.checkbox-checked {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+.checkbox-tick {
+  width: 18rpx;
+  height: 10rpx;
+  margin-top: -4rpx;
+  border-left: 4rpx solid #ffffff;
+  border-bottom: 4rpx solid #ffffff;
+  transform: rotate(-45deg);
+}
+
+.agree-text {
+  flex: 1;
+  margin-left: 16rpx;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 26rpx;
   line-height: 1.6;
 }
 
-.login-input {
-  margin-top: 32rpx;
-  height: 92rpx;
-  padding: 0 28rpx;
-  border-radius: 16rpx;
-  background: #f6f8f8;
-  font-size: 30rpx;
-  color: var(--text);
+.agree-plain {
+  color: #4a5568;
+}
+
+.agree-link {
+  color: var(--brand);
+}
+
+/* 登录按钮组 */
+.login-actions {
+  width: 100%;
+  margin-top: 48rpx;
+  display: flex;
+  flex-direction: column;
 }
 
 .login-btn {
-  margin-top: 28rpx;
   width: 100%;
-  border: none;
-  line-height: 88rpx;
+  box-sizing: border-box;
 }
 
-.login-skip {
-  margin-top: 20rpx;
+.login-btn-main {
+  min-height: 128rpx;
+  border-radius: 24rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #00b578 0%, #43cea2 100%);
+  box-shadow: 0 12rpx 30rpx rgba(0, 181, 120, 0.22);
 }
 
-.login-tips {
-  display: block;
+.login-btn-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.login-btn-sub {
+  margin-top: 8rpx;
+  font-size: 26rpx;
+  letter-spacing: 2rpx;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.login-btn-ghost {
+  min-height: 104rpx;
   margin-top: 24rpx;
+  border: 2rpx solid #e3eaea;
+  border-radius: 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.login-btn-single {
+  min-height: 104rpx;
+}
+
+.login-btn-disabled {
+  opacity: 0.45;
+}
+
+/* 云模式下的手机号授权按钮：还原 button 默认样式，样式交给内层 view */
+.login-btn-reset {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  line-height: normal;
+  font-size: inherit;
+  color: inherit;
+}
+
+.login-btn-reset::after {
+  border: none;
+}
+
+.switch-phone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12rpx 40rpx;
+  margin-top: 44rpx;
+}
+
+.switch-phone-text {
+  margin-left: 12rpx;
+  font-size: 28rpx;
+  color: var(--text);
+}
+
+.icon-phone {
+  width: 28rpx;
+  height: 44rpx;
+  border: 3rpx solid var(--text);
+  border-radius: 8rpx;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 6rpx;
+  box-sizing: border-box;
+}
+
+.icon-phone-line {
+  width: 10rpx;
+  height: 3rpx;
+  border-radius: 2rpx;
+  background: var(--text);
+}
+
+/* 底部「暂不登录」固定在最下方 */
+.login-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16rpx 0 calc(32rpx + env(safe-area-inset-bottom));
+}
+
+.not-login {
+  padding: 20rpx 60rpx;
+  font-size: 28rpx;
+  color: var(--text-sub);
+}
+
+/* ② 输入手机号 */
+.login-main-phone {
+  align-items: stretch;
+  padding-top: 60rpx;
+}
+
+.phone-title {
+  font-size: 44rpx;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.phone-sub {
+  margin-top: 16rpx;
+  font-size: 26rpx;
+  color: var(--text-light);
+  line-height: 1.6;
+}
+
+.phone-field {
+  display: flex;
+  align-items: center;
+  margin-top: 64rpx;
+  padding-bottom: 20rpx;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.phone-prefix {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.phone-input {
+  flex: 1;
+  height: 64rpx;
+  margin-left: 24rpx;
+  font-size: 34rpx;
+  color: var(--text);
+}
+
+.phone-placeholder {
+  color: #c3cdcd;
+}
+
+.phone-tips {
+  margin-top: 28rpx;
   font-size: 22rpx;
   color: var(--text-light);
-  text-align: center;
   line-height: 1.6;
+  text-align: center;
+}
+
+/* ③ 协议正文 */
+.login-main-agreement {
+  align-items: stretch;
+  padding-top: 24rpx;
+}
+
+.agreement-meta {
+  font-size: 22rpx;
+  color: var(--text-light);
+}
+
+.agreement-body {
+  flex: 1;
+  height: 0;
+  margin-top: 24rpx;
+}
+
+.agreement-block {
+  margin-bottom: 22rpx;
+}
+
+.agreement-text {
+  font-size: 26rpx;
+  line-height: 1.75;
+  color: var(--text-sub);
+}
+
+.agreement-strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.agreement-space {
+  height: 24rpx;
+}
+
+.agreement-back {
+  flex: none;
+  margin-bottom: calc(20rpx + env(safe-area-inset-bottom));
 }

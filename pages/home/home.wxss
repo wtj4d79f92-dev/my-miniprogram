@@ -108,7 +108,9 @@
 }
 
 .type-item {
-  width: 20%;
+  /* 百分比宽度在部分机型会被向上取整，5×20% 溢出导致第 5 个换行，这里留 1px 余量 */
+  flex: 0 0 calc(20% - 1px);
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -121,6 +123,7 @@
   justify-content: center;
   width: 88rpx;
   height: 88rpx;
+  overflow: hidden;
   border-radius: 28rpx;
   font-size: 40rpx;
 }
@@ -129,6 +132,10 @@
   margin-top: 10rpx;
   font-size: 22rpx;
   color: var(--text-sub);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fallback-tip {

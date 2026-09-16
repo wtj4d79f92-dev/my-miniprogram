@@ -15,14 +15,14 @@ app.js / app.json / app.wxss      全局入口、路由与 tabBar、主题变量
 pages/
   home/home                       首页：定位、横幅、玩法入口、热门 / 最新
   square/index                    活动广场：类型 / 城市 / 星期 / 排序 / 搜索 / 分页
-  activity/detail/index           活动详情：报名退出、协议、群二维码、分享、海报
+  activity/detail/index           活动详情：报名退出、发起人关闭 / 打开活动、协议、群二维码、分享、海报
   activity/publish/index          发布活动：表单校验、自研日历、地图选点、类型联动
   usercenter/index                个人中心：登录、资料编辑、手机号绑定、入口聚合
   user/activity-list/index        我的活动：我参与的 / 我发布的（关闭、打开）
   feedback/index                  意见反馈
-components/                       活动卡片、头像、登录弹窗、城市选择、日历、协议弹窗、海报、空态
+components/                       活动卡片、头像、登录页、城市选择、日历、协议弹窗、海报、空态
 custom-tab-bar/                   自定义底部导航（首页 / 广场 / 我的）
-behaviors/login-behavior.js       登录守卫：弹窗说明 → 一键登录 → 继续原操作
+behaviors/login-behavior.js       登录守卫：全屏登录页 → 登录成功 → 继续原操作
 services/
   config.js                       数据层开关（useMock / useCloud、云环境、地图 key）
   api.js                          统一服务层，Mock 与云函数接口签名一致

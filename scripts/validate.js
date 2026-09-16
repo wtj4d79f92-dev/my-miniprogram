@@ -192,6 +192,127 @@ jsFiles.forEach((file) => {
 })
 log(jsFiles.length > 0, `检查 JS 文件数量：${jsFiles.length}`)
 
+/* -------------- 3.5 Page / Component 配置重复成员名检查 -------------- */
+/**
+ * 同一对象字面量里重复定义同名成员时，后面的会静默覆盖前面的：
+ * 例如分享面板的 bindtap 与页面生命周期同名，点击就会没有任何反应。
+ * 这类问题既不报语法错误，也无法被上面的「事件处理函数存在」检查发现。
+ */
+function stripCommentsAndStrings(source) {
+  let out = ''
+  for (let i = 0; i < source.length; i++) {
+    const char = source[i]
+    if (char === '"' || char === "'" || char === '`') {
+      out += char + char
+      i += 1
+      while (i < source.length && source[i] !== char) {
+        if (source[i] === '\\') {
+          out += source[i]
+          i += 1
+        }
+        if (source[i] === '\n') out += '\n'
+        i += 1
+      }
+      continue
+    }
+    if (char === '/' && source[i + 1] === '/') {
+      while (i < source.length && source[i] !== '\n') i += 1
+      out += '\n'
+      continue
+    }
+    if (char === '/' && source[i + 1] === '*') {
+      i += 2
+      while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) {
+        if (source[i] === '\n') out += '\n'
+        i += 1
+      }
+      i += 1
+      continue
+    }
+    out += char
+  }
+  return out
+}
+
+/** 取 Page({...}) / Component({...}) / Behavior({...}) 的配置对象源码 */
+function extractConfigObject(source, callName) {
+  const matched = new RegExp(`^\\s*${callName}\\(\\s*\\{`, 'm').exec(source)
+  if (!matched) return ''
+  let index = source.indexOf('{', matched.index)
+  const start = index
+  let depth = 0
+  for (; index < source.length; index += 1) {
+    const char = source[index]
+    if (char === '"' || char === "'" || char === '`') {
+      index += 1
+      while (index < source.length && source[index] !== char) {
+        if (source[index] === '\\') index += 1
+        index += 1
+      }
+      continue
+    }
+    if (char === '/' && source[index + 1] === '/') {
+      while (index < source.length && source[index] !== '\n') index += 1
+      continue
+    }
+    if (char === '/' && source[index + 1] === '*') {
+      const end = source.indexOf('*/', index + 2)
+      index = end === -1 ? source.length : end + 1
+      continue
+    }
+    if (char === '{') depth += 1
+    else if (char === '}') {
+      depth -= 1
+      if (depth === 0) return source.slice(start, index + 1)
+    }
+  }
+  return ''
+}
+
+/** 按顶层逗号切分，取出配置对象的成员名 */
+function topLevelMemberNames(objectText) {
+  const text = stripCommentsAndStrings(objectText)
+  const names = []
+  let depth = 0
+  let memberStart = 1
+  const collect = (segment) => {
+    const matched =
+      /^\s*(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(/.exec(segment) ||
+      /^\s*['"]?([A-Za-z_$][\w$]*)['"]?\s*:/.exec(segment)
+    if (matched) names.push(matched[1])
+  }
+  for (let i = 1; i < text.length - 1; i += 1) {
+    const char = text[i]
+    if (char === '[' || char === '(' || char === '{') depth += 1
+    else if (char === ']' || char === ')' || char === '}') depth -= 1
+    else if (char === ',' && depth === 0) {
+      collect(text.slice(memberStart, i))
+      memberStart = i + 1
+    }
+  }
+  collect(text.slice(memberStart, text.length - 1))
+  return names
+}
+
+let duplicatedMemberFiles = 0
+jsFiles.forEach((file) => {
+  const source = fs.readFileSync(file, 'utf8')
+  ;['Page', 'Component', 'Behavior'].forEach((callName) => {
+    const objectText = extractConfigObject(source, callName)
+    if (!objectText) return
+    const names = topLevelMemberNames(objectText)
+    const duplicated = names.filter((name, index) => names.indexOf(name) !== index)
+    if (duplicated.length) {
+      duplicatedMemberFiles += 1
+      log(
+        false,
+        `配置成员重复定义（后者会覆盖前者）：${path.relative(ROOT, file)} → ${[...new Set(duplicated)].join('、')}`
+      )
+    }
+  })
+})
+log(duplicatedMemberFiles === 0, '页面 / 组件配置无重复成员名')
+
 /* ----------------------- 4. Mock 业务链路冒烟测试 ----------------------- */
 
 function createWxStub() {
@@ -224,10 +345,12 @@ global.getApp = () => ({
 global.Behavior = (options) => options
 global.Component = () => {}
 
-const api = require(path.join(ROOT, 'services/api'))
 const config = require(path.join(ROOT, 'services/config'))
+// 冒烟测试覆盖的是 Mock 数据层，强制走本地模型，不受 config.useMock 开关影响
+config.useMock = true
 config.mockDelay = 0
 
+const api = require(path.join(ROOT, 'services/api'))
 const steps = []
 
 function step(name, promise) {

@@ -194,8 +194,8 @@
   </scroll-view>
 
   <view class="submit-bar">
-    <view class="btn-primary submit-btn {{submitting ? 'disabled' : ''}}" bindtap="submit">
-      <text>{{submitting ? '发布中…' : '发布活动'}}</text>
+    <view class="btn-primary submit-btn {{submitting || published ? 'disabled' : ''}}" bindtap="submit">
+      <text>{{published ? '发布成功' : (submitting ? '发布中…' : '发布活动')}}</text>
     </view>
   </view>
 

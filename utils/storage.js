@@ -4,6 +4,7 @@ const KEYS = {
   pendingType: 'square_pending_type',
   user: 'my_user',
   userCounter: 'my_user_counter',
+  lastPhone: 'my_last_phone',
   published: 'my_published',
   joined: 'my_joined',
   feedback: 'my_feedback',

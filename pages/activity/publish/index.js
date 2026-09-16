@@ -9,6 +9,9 @@ const {
 const { formatCardDate, startOfDay, addDays } = require('../../../utils/util')
 const loginBehavior = require('../../../behaviors/login-behavior')
 const ui = require('../../../utils/ui')
+const config = require('../../../services/config')
+
+const LOGIN_REASON = '发布活动需要先登录，是否立即登录？'
 
 Page({
   behaviors: [loginBehavior],
@@ -24,6 +27,7 @@ Page({
     showMetrics: true,
     agreed: false,
     submitting: false,
+    published: false,
     descCount: 0,
     startLabel: '',
     endLabel: '',
@@ -66,6 +70,17 @@ Page({
   onShow() {
     const app = getApp()
     this.setData({ user: app.globalData.user })
+  },
+
+  onReady() {
+    // 进入发布页先确认登录态：未登录直接拉起全屏登录页，避免填完表单才发现要登录
+    this.ensureLogin(LOGIN_REASON).then((user) => {
+      if (user) return
+      // 用户选择「暂不登录」：没有登录态发布不了，直接退回来源页，别让表单白填
+      wx.navigateBack({
+        fail: () => wx.reLaunch({ url: '/pages/home/home' }),
+      })
+    })
   },
 
   /* ---------------------------- 基础字段 ---------------------------- */
@@ -309,7 +324,18 @@ Page({
   },
 
   submit() {
-    if (this.data.submitting) return
+    // 发布中或已发布（等待跳转详情）时不再响应，避免重复创建
+    if (this.data.submitting || this.data.published) return
+    this.ensureLogin(LOGIN_REASON).then((user) => {
+      if (!user) return
+      this.handleLoginSuccess(user)
+      this.doSubmit()
+    })
+  },
+
+  /** 登录态确认后的真正提交：校验 → 上传图片 → 创建活动 */
+  doSubmit() {
+    if (this.data.submitting || this.data.published) return
     const result = this.validate()
     this.setData({ errors: result.errors })
     if (result.first) {
@@ -335,21 +361,69 @@ Page({
     })
     this.setData({ submitting: true })
     wx.showLoading({ title: '发布中', mask: true })
-    api
-      .create({ form: payload })
+    this.uploadFiles(payload)
+      .then((form) => api.create({ form }))
       .then((activity) => {
         wx.hideLoading()
-        this.setData({ submitting: false })
+        // 保持按钮锁定，直到自动跳转到新活动详情页
+        this.setData({ published: true })
         ui.toast('发布成功', 'success')
         setTimeout(() => {
-          wx.redirectTo({ url: `/pages/activity/detail/index?id=${activity.id}` })
-        }, 1200)
+          const url = `/pages/activity/detail/index?id=${activity.id}`
+          wx.redirectTo({
+            url,
+            fail: () => {
+              // 极端情况下（例如页面栈异常）退化为普通跳转
+              wx.navigateTo({ url })
+            },
+          })
+        }, 1000)
       })
       .catch((err) => {
         wx.hideLoading()
         this.setData({ submitting: false })
+        // 服务端登录态失效（例如本地缓存与云环境不一致）：清掉本地登录态并拉起登录页，登录后继续发布
+        if (err && err.code === 'UNAUTHORIZED') {
+          const app = getApp()
+          if (app && app.applyUser) app.applyUser(null)
+          else if (app) app.setUser(null)
+          ui.toast('登录已过期，请重新登录')
+          this.openLoginModal(LOGIN_REASON).then((user) => {
+            if (!user) return
+            this.handleLoginSuccess(user)
+            this.doSubmit()
+          })
+          return
+        }
         ui.toast((err && err.message) || '发布失败，请重试')
       })
+  },
+
+  /**
+   * 云模式：封面 / 群二维码此时还是本机临时路径，先上传到云存储换成 fileID 再提交
+   * Mock 模式直接透传，保持本地流程不变
+   */
+  uploadFiles(payload) {
+    if (config.useMock) return Promise.resolve(payload)
+    const upload = (path, name) => {
+      const source = String(path || '')
+      // 没选图，或已经是云存储文件，直接返回
+      if (!source || source.indexOf('cloud://') === 0 || source.indexOf('http') === 0) {
+        return Promise.resolve(source)
+      }
+      const ext = (source.match(/\.([a-zA-Z0-9]+)$/) || [])[1] || 'png'
+      return new Promise((resolve, reject) => {
+        wx.cloud.uploadFile({
+          cloudPath: `activity/${name}/${Date.now()}-${Math.floor(Math.random() * 100000)}.${ext}`,
+          filePath: source,
+          success: (res) => resolve(res.fileID),
+          fail: () => reject(new Error('图片上传失败，请检查网络后重试')),
+        })
+      })
+    }
+    return Promise.all([upload(payload.cover, 'cover'), upload(payload.groupQrCode, 'qrcode')]).then(
+      (res) => Object.assign({}, payload, { cover: res[0], groupQrCode: res[1] })
+    )
   },
 
   onLogin(e) {

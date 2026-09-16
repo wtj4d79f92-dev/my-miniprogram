@@ -48,7 +48,9 @@
 }
 
 .cal-cell {
-  width: 14.285%;
+  /* 7 列：14.285% 几乎没有余量，机型取整后会变成每行 6 个，这里留 1px */
+  flex: 0 0 calc(14.285% - 1px);
+  min-width: 0;
   height: 88rpx;
   display: flex;
   align-items: center;

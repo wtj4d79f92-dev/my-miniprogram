@@ -126,7 +126,9 @@
 }
 
 .info-item {
-  width: 50%;
+  /* 预留 1px，避免部分机型取整后每行只排得下 1 个 */
+  flex: 0 0 calc(50% - 1px);
+  min-width: 0;
   display: flex;
   flex-direction: column;
   margin-bottom: 22rpx;
@@ -174,7 +176,9 @@
 }
 
 .member {
-  width: 25%;
+  /* 预留 1px，避免部分机型取整后每行只排得下 3 个 */
+  flex: 0 0 calc(25% - 1px);
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -286,6 +290,13 @@
   background: #ffffff;
   border: 2rpx solid var(--brand);
   color: var(--brand);
+}
+
+/* 发起人的「关闭活动」：中性次要按钮，避免与报名主按钮混淆 */
+.main-btn.manage {
+  background: #ffffff;
+  border: 2rpx solid #cbd5d5;
+  color: var(--text);
 }
 
 .not-found {

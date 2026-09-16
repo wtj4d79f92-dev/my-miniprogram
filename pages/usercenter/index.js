@@ -40,8 +40,14 @@ Page({
     const user = app.globalData.user
     this.setData({
       user,
-      needProfile: !!user && (!user.avatarUrl || user.nickName === '微信用户'),
+      needProfile: this.needProfileOf(user),
     })
+  },
+
+  /** 头像或昵称未完善时需要引导（已登录、但缺少头像或仍是默认昵称） */
+  needProfileOf(user) {
+    if (!user) return false
+    return !user.avatarUrl || !user.nickName || user.nickName === '微信用户'
   },
 
   loadStats() {
@@ -76,7 +82,9 @@ Page({
     this.openProfile()
   },
 
-  onUserChanged() {
+  onUserChanged(user) {
+    // 资料保存 / 登录后 user 已更新，需同步重算引导提示，否则会一直显示
+    this.setData({ needProfile: this.needProfileOf(user || this.data.user) })
     this.loadStats()
   },
 

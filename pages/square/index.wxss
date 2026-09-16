@@ -151,7 +151,9 @@
 }
 
 .weekday-item {
-  width: 25%;
+  /* 预留 1px，避免部分机型取整后每行只排得下 3 个 */
+  flex: 0 0 calc(25% - 1px);
+  min-width: 0;
   text-align: center;
   padding: 14rpx 0;
   font-size: 26rpx;
