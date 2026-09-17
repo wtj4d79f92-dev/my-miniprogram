@@ -2,6 +2,22 @@
   background: var(--bg);
 }
 
+.field-row-tap {
+  align-items: center;
+}
+
+/* 地点可点击调起地图，给一个轻量的「可点」提示 */
+.field-nav {
+  flex: none;
+  margin-left: 16rpx;
+  padding: 2rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  line-height: 1.6;
+  color: var(--brand);
+  background: var(--brand-soft);
+}
+
 .detail-body {
   padding: 0 24rpx;
 }
@@ -28,21 +44,7 @@
   align-items: center;
 }
 
-.poster-badge {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100rpx;
-  height: 100rpx;
-  border-radius: 28rpx;
-  background: rgba(255, 255, 255, 0.9);
-  color: var(--brand);
-  font-size: 40rpx;
-  font-weight: 700;
-}
-
 .cover-title {
-  margin-top: 18rpx;
   font-size: 36rpx;
   font-weight: 700;
   color: #ffffff;
@@ -409,4 +411,41 @@
 .qr-btn {
   width: 100%;
   margin-top: 26rpx;
+}
+
+/* 审核状态提示条：仅发起人可见（未过审的活动其他人拿不到数据） */
+.audit-banner {
+  display: flex;
+  flex-direction: column;
+  margin-top: 20rpx;
+  padding: 24rpx;
+  border-radius: 20rpx;
+}
+
+.audit-banner.pending {
+  background: rgba(217, 134, 0, 0.12);
+}
+
+.audit-banner.rejected {
+  background: rgba(227, 77, 89, 0.12);
+}
+
+.audit-banner-title {
+  margin-bottom: 8rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.audit-banner.pending .audit-banner-title {
+  color: #d98600;
+}
+
+.audit-banner.rejected .audit-banner-title {
+  color: #e34d59;
+}
+
+.audit-banner-desc {
+  color: var(--text-sub);
+  font-size: 24rpx;
+  line-height: 36rpx;
 }

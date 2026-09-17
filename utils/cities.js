@@ -115,6 +115,49 @@ function provinceOfCity(name) {
   return found ? found.province : ''
 }
 
+/** 省份简称：去掉「省 / 市 / 自治区 / 特别行政区」与民族名称，用于省名模糊匹配 */
+function provinceShortName(name) {
+  return String(name || '').replace(
+    /(省|市|自治区|特别行政区|维吾尔|壮族|回族|蒙古|藏族|苗族|侗族|土家族|彝族|白族|傣族|哈萨克|朝鲜族|羌族)/g,
+    ''
+  )
+}
+
+/** 按省名 / 省简称找到省份，不是省份时返回 null（选择器回填与省级筛选用它） */
+function provinceByName(name) {
+  const value = String(name || '').trim()
+  if (!value) return null
+  for (let i = 0; i < PROVINCES.length; i += 1) {
+    if (PROVINCES[i].name === value) return PROVINCES[i]
+  }
+  const short = provinceShortName(value)
+  if (short.length < 2) return null
+  for (let i = 0; i < PROVINCES.length; i += 1) {
+    if (provinceShortName(PROVINCES[i].name) === short) return PROVINCES[i]
+  }
+  return null
+}
+
+/**
+ * 所选地区 -> 归一化城市列表，前后端筛选统一口径：
+ * - 空值：返回 []，表示「全部 / 全国」，不做城市过滤；
+ * - 城市名 / 直辖市名：返回单个城市，如「广州」-> ['广州']；
+ * - 省 / 自治区 / 特别行政区名或简称：返回全省城市，如「广东省」-> ['广州', '深圳', ...]。
+ *
+ * 城市优先于省份，避免「吉林」这类与省简称同名的城市把范围放大到全省。
+ * @returns {string[]} 归一化城市名列表
+ */
+function regionCityKeys(region) {
+  const value = String(region || '').trim()
+  // 「全部 / 全国」是选择器的展示文案，语义等同空值
+  if (!value || value === '全部' || value === '全国') return []
+  if (cityByName(value)) return [normalizeCity(value)]
+  const province = provinceByName(value)
+  if (province) return province.cities.map((city) => normalizeCity(city))
+  // 表里没有的地区：按原值等值匹配，保持与历史行为一致
+  return [normalizeCity(value)]
+}
+
 /** 全部城市（归一化名 -> 完整名），按名称长度倒序，避免短名误匹配 */
 const ALL_CITIES = PROVINCES.reduce((acc, province) => {
   province.cities.forEach((city) => {
@@ -136,7 +179,7 @@ function matchCity(address) {
 
   for (let i = 0; i < PROVINCE_NAMES.length; i += 1) {
     const provinceName = PROVINCE_NAMES[i]
-    const short = provinceName.replace(/(省|市|自治区|特别行政区|维吾尔|壮族|回族|蒙古|藏族|苗族|侗族|土家族|彝族|白族|傣族|哈萨克|朝鲜族|羌族|自治州|地区)/g, '')
+    const short = provinceShortName(provinceName)
     const hit = text.indexOf(provinceName) > -1 || (short.length >= 2 && text.indexOf(short) > -1)
     if (!hit) continue
     const province = PROVINCES[i]
@@ -177,6 +220,35 @@ function nearestCity(lng, lat) {
   return bestDistance <= 2.25 ? best : ''
 }
 
+/**
+ * 城市中心坐标（归一化城市名 -> 经纬度）。
+ * 未配置地图 key、地址又解析不出坐标时，用它给地图选点一个合理的初始位置。
+ * @returns {{ latitude: number, longitude: number } | null}
+ */
+function cityCoords(name) {
+  const target = normalizeCity(name)
+  if (!target) return null
+  for (let i = 0; i < CITY_COORDS.length; i += 1) {
+    if (normalizeCity(CITY_COORDS[i].name) === target) {
+      return { latitude: CITY_COORDS[i].lat, longitude: CITY_COORDS[i].lng }
+    }
+  }
+  return null
+}
+
+/**
+ * 地区值 -> 单个城市，只落到唯一城市时才算数（省份 / 全部 / 未知值返回 ''）。
+ *
+ * 用于「发布者当前城市」这类兜底：集合地点里写不出城市（如手输「双流区润和路附近」）时，
+ * 服务端用它把活动归到发布者所在城市，否则活动城市为空，按城市筛选时永远看不到。
+ * @param {string} region 地区值：城市名 / 省名 / 空
+ * @returns {string} 归一化城市名，无法唯一确定时返回 ''
+ */
+function singleCityKey(region) {
+  const keys = regionCityKeys(region)
+  return keys.length === 1 ? keys[0] : ''
+}
+
 module.exports = {
   PROVINCES,
   CITY_COORDS,
@@ -184,6 +256,11 @@ module.exports = {
   normalizeCity,
   cityByName,
   provinceOfCity,
+  provinceShortName,
+  provinceByName,
+  regionCityKeys,
+  singleCityKey,
   matchCity,
   nearestCity,
+  cityCoords,
 }

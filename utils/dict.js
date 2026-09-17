@@ -76,7 +76,7 @@ const DEFAULT_BANNERS = [
     subtitle: '自驾拼车 说走就走',
     emoji: '🌊',
     bg: 'linear-gradient(135deg, #89F7FE 0%, #66A6FF 100%)',
-    action: { type: 'publish' },
+    action: { type: 'square', value: 'driving' },
     sort: 3,
   },
 ]
@@ -92,7 +92,8 @@ const TEXTS = {
   about:
     '旷行吖是一款户外运动组队小程序，支持自驾游、徒步、打球、骑行、健身、游泳、露营等玩法，一键发起活动、快速摇人组队。',
   coastSlogan: '和志同道合的人一起出发',
-  defaultPosterTitle: 'AA组队',
+  // 默认封面（无封面图时使用）：主标题 + 副标题
+  defaultPosterTitle: '旷行吖',
   defaultPosterSubtitle: '和志同道合的人一起出发',
 }
 
@@ -100,6 +101,30 @@ const TYPE_MAP = ACTIVITY_TYPES.reduce((acc, item) => {
   acc[item.key] = item
   return acc
 }, {})
+
+/**
+ * 默认横幅的历史动作：老版本「想去看海呀」配的是「去发布」，点击会落到发布页，
+ * 与「跳广场并按当前定位城市 + 自驾游筛选」的产品定义不符。
+ * 只升级仍是默认标题 + 历史动作的固定默认横幅，后台改过的横幅原样返回。
+ */
+const LEGACY_BANNER_ACTIONS = [{ _id: 'banner_default_3', action: { type: 'publish' } }]
+
+function sameAction(a, b) {
+  const left = a || {}
+  const right = b || {}
+  return (left.type || '') === (right.type || '') && (left.value || '') === (right.value || '')
+}
+
+/** 把仍是历史动作的默认横幅升级成最新动作（与云函数 upgradeDefaultBannerActions 保持一致） */
+function normalizeBanners(list) {
+  return (list || []).map((item) => {
+    const legacy = LEGACY_BANNER_ACTIONS.filter((row) => row._id === item._id)[0]
+    if (!legacy || !sameAction(item.action, legacy.action)) return item
+    const target = DEFAULT_BANNERS.filter((row) => row._id === item._id)[0]
+    if (!target || item.title !== target.title || sameAction(target.action, legacy.action)) return item
+    return Object.assign({}, item, { action: target.action })
+  })
+}
 
 const TAG_MAP = ACTIVITY_TAGS.reduce((acc, item) => {
   acc[item.key] = item
@@ -146,6 +171,7 @@ module.exports = {
   WEEKDAY_OPTIONS,
   SORT_OPTIONS,
   DEFAULT_BANNERS,
+  normalizeBanners,
   TEXTS,
   getType,
   typeGradient,

@@ -60,6 +60,7 @@ Page({
       user: app.globalData.user,
       city: app.globalData.city,
       cityLabel: app.globalData.city || '全部',
+      locationDenied: app.globalData.locationDenied,
     })
     // 首页玩法 / 横幅带参进入
     const pendingType = getStorage(KEYS.pendingType, '')

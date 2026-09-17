@@ -1,0 +1,261 @@
+<view class="page admin-page">
+  <navigation-bar title="活动审核" color="#2D3748" background="#FFFFFF"></navigation-bar>
+
+  <!-- 无权限：把 openid 露出来，方便配置到 admin 云函数的 ADMIN_OPENIDS -->
+  <view wx:if="{{isAdmin === false}}" class="denied">
+    <text class="denied-icon">🔒</text>
+    <text class="denied-title">没有审核权限</text>
+    <text class="denied-desc">
+      审核台仅对运营开放。如需开通，请把下面这段 openid 加入 admin 云函数的环境变量 ADMIN_OPENIDS，或写入 admins 集合。
+    </text>
+    <view class="denied-openid"><text selectable="{{true}}">{{myOpenid || '未获取到 openid'}}</text></view>
+    <view class="btn-primary denied-btn" bindtap="goBack"><text>返回</text></view>
+  </view>
+
+  <block wx:else>
+    <view class="stats">
+      <view class="stat" data-status="pending" bindtap="switchTab">
+        <text class="stat-num pending">{{stats.pending}}</text>
+        <text class="stat-label">待审核</text>
+      </view>
+      <view class="stat" data-status="approved" bindtap="switchTab">
+        <text class="stat-num">{{stats.approved}}</text>
+        <text class="stat-label">已通过</text>
+      </view>
+      <view class="stat" data-status="rejected" bindtap="switchTab">
+        <text class="stat-num">{{stats.rejected}}</text>
+        <text class="stat-label">已驳回</text>
+      </view>
+      <view class="stat" data-status="all" bindtap="switchTab">
+        <text class="stat-num">{{stats.total}}</text>
+        <text class="stat-label">全部</text>
+      </view>
+    </view>
+
+    <view class="tabs">
+      <view
+        wx:for="{{tabs}}"
+        wx:key="key"
+        class="tab {{status === item.key ? 'active' : ''}}"
+        data-status="{{item.key}}"
+        bindtap="switchTab"
+      >
+        <text>{{item.label}}</text>
+      </view>
+    </view>
+
+    <view class="search">
+      <input
+        class="search-input"
+        value="{{keyword}}"
+        placeholder="搜索标题 / 地点 / 发起人"
+        confirm-type="search"
+        bindinput="onSearchInput"
+        bindconfirm="onSearchConfirm"
+      />
+      <view class="search-btn" bindtap="onSearchConfirm"><text>搜索</text></view>
+    </view>
+
+    <scroll-view
+      class="page-scroll"
+      scroll-y
+      refresher-enabled="{{true}}"
+      refresher-triggered="{{refreshing}}"
+      bindrefresherrefresh="onRefresh"
+      bindscrolltolower="loadMore"
+    >
+      <view class="scroll-body">
+        <view wx:for="{{list}}" wx:key="id" class="audit-card">
+          <view class="audit-card-head">
+            <image
+              wx:if="{{item.coverSrc && !item.coverFailed}}"
+              class="audit-cover"
+              src="{{item.coverSrc}}"
+              mode="aspectFill"
+              binderror="onCardImageError"
+              data-id="{{item.id}}"
+            ></image>
+            <view wx:else class="audit-cover audit-cover-empty"><text>{{item.emoji}}</text></view>
+            <view class="audit-card-main">
+              <text class="audit-title">{{item.title}}</text>
+              <text class="audit-meta">{{item.typeName}} · {{item.city || '未匹配城市'}} · {{item.peopleText}}</text>
+              <text class="audit-meta">地点：{{item.location}}</text>
+              <text class="audit-meta">集合：{{item.startLabel}}</text>
+              <text class="audit-meta">发起人：{{item.organizerName}}</text>
+              <view wx:if="{{item.machineReview || item.machinePending || item.coverBroken || item.qrBroken || item.coverUnreachable}}" class="machine-flags">
+                <text wx:if="{{item.coverBroken}}" class="machine-flag review">封面失效</text>
+                <text wx:if="{{item.coverUnreachable}}" class="machine-flag review">封面读不到</text>
+                <text wx:if="{{item.qrBroken}}" class="machine-flag review">二维码失效</text>
+                <text wx:if="{{item.machineReview}}" class="machine-flag review">机器需复核</text>
+                <text wx:if="{{item.machinePending}}" class="machine-flag pending">图片检测中</text>
+              </view>
+            </view>
+          </view>
+
+          <view wx:if="{{item.auditRejected}}" class="audit-remark">
+            <text>驳回原因：{{item.auditReason}}</text>
+          </view>
+
+          <view class="audit-card-foot">
+            <text class="audit-status {{item.auditStatus}}">{{item.statusText}}</text>
+            <view class="audit-actions">
+              <view class="audit-btn ghost" data-id="{{item.id}}" catchtap="openDetail"><text>查看详情</text></view>
+              <block wx:if="{{item.auditStatus === 'pending' || item.auditStatus === 'rejected'}}">
+                <view class="audit-btn danger" data-id="{{item.id}}" catchtap="onRejectTap"><text>驳回</text></view>
+                <view class="audit-btn primary" data-id="{{item.id}}" catchtap="onApproveTap"><text>通过</text></view>
+              </block>
+            </view>
+          </view>
+        </view>
+
+        <empty-state
+          wx:if="{{!loading && !list.length}}"
+          icon="✅"
+          text="{{status === 'pending' ? '暂无待审核活动' : '没有符合条件的活动'}}"
+        ></empty-state>
+
+        <view wx:if="{{loading}}" class="loading-tip"><text>加载中…</text></view>
+        <view wx:if="{{loadingMore}}" class="loading-tip"><text>加载更多…</text></view>
+        <view wx:if="{{!loading && !hasMore && list.length > 1}}" class="loading-tip"><text>没有更多了</text></view>
+
+        <view class="migrate" bindtap="migrateHistory">
+          <text>审核能力上线前的历史活动，点此补齐全量审核状态</text>
+        </view>
+        <view class="bottom-space"></view>
+      </view>
+    </scroll-view>
+  </block>
+
+  <!-- 活动详情：审核前看完整信息 -->
+  <view wx:if="{{detail}}">
+    <view class="mask" bindtap="closeDetail"></view>
+    <view class="sheet sheet-detail">
+      <view class="sheet-head">
+        <text class="sheet-title">活动详情</text>
+        <text class="sheet-close" bindtap="closeDetail">✕</text>
+      </view>
+      <!-- scroll-view 必须有确定高度才会滚动，这里靠 .sheet-detail 的固定高度 + flex:1 撑开 -->
+      <scroll-view class="sheet-scroll" scroll-y>
+        <view class="sheet-body">
+          <!-- 列表字段先到、完整字段后到，加载中给一句提示，避免把列表快照当完整详情看 -->
+          <view wx:if="{{detailLoading}}" class="sheet-tip"><text>正在加载完整详情…</text></view>
+
+          <image
+            wx:if="{{detail.coverSrc && !detail.coverFailed}}"
+            class="sheet-cover"
+            src="{{detail.coverSrc}}"
+            mode="aspectFill"
+            binderror="onDetailImageError"
+            data-field="cover"
+          ></image>
+          <view wx:else class="sheet-cover sheet-cover-empty">
+            <text class="sheet-cover-emoji">{{detail.emoji}}</text>
+            <text class="sheet-cover-tip">{{detail.coverFailText}}</text>
+            <text wx:if="{{detail.coverUnreachable}}" class="sheet-cover-fileid" selectable="{{true}}">{{detail.coverFileID}}</text>
+          </view>
+
+          <text class="sheet-title-text">{{detail.title}}</text>
+          <view class="sheet-rows">
+            <view class="sheet-row"><text class="sheet-label">类型</text><text class="sheet-value">{{detail.typeName}}</text></view>
+            <view class="sheet-row"><text class="sheet-label">城市</text><text class="sheet-value">{{detail.city || '未匹配'}}</text></view>
+            <view class="sheet-row"><text class="sheet-label">地点</text><text class="sheet-value">{{detail.location}}</text></view>
+            <view class="sheet-row"><text class="sheet-label">集合</text><text class="sheet-value">{{detail.startLabel}}</text></view>
+            <view class="sheet-row"><text class="sheet-label">费用</text><text class="sheet-value">{{detail.feeText}}</text></view>
+            <view class="sheet-row"><text class="sheet-label">人数</text><text class="sheet-value">{{detail.peopleText}}</text></view>
+            <view class="sheet-row"><text class="sheet-label">发起人</text><text class="sheet-value">{{detail.organizerName}}</text></view>
+            <view class="sheet-row"><text class="sheet-label">状态</text><text class="sheet-value">{{detail.statusText}}</text></view>
+            <view wx:if="{{detail.auditMetaText}}" class="sheet-row">
+              <text class="sheet-label">审核时间</text>
+              <text class="sheet-value">{{detail.auditMetaText}}</text>
+            </view>
+          </view>
+
+          <view class="sheet-section">
+            <text class="sheet-section-title">机器初审</text>
+            <view class="machine-row">
+              <text class="machine-label">文本内容</text>
+              <text class="machine-value {{detail.machineTextStatus}}">{{detail.machineTextLabel}}</text>
+            </view>
+            <view wx:if="{{detail.machineImages.length}}" class="machine-images">
+              <view wx:for="{{detail.machineImages}}" wx:key="fileID" class="machine-image">
+                <image class="machine-thumb" src="{{item.src}}" mode="aspectFill"></image>
+                <text class="machine-value {{item.className}}">{{item.labelText}}</text>
+              </view>
+            </view>
+            <text wx:else class="sheet-desc">未发起图片内容安全检测</text>
+          </view>
+
+          <view class="sheet-section">
+            <text class="sheet-section-title">活动介绍</text>
+            <text class="sheet-desc">{{detail.desc || '未填写活动介绍'}}</text>
+          </view>
+          <view class="sheet-section">
+            <text class="sheet-section-title">活动群二维码</text>
+            <image
+              wx:if="{{detail.qrPreview && detail.qrSrc && !detail.qrFailed}}"
+              class="sheet-qr"
+              src="{{detail.qrSrc}}"
+              mode="aspectFit"
+              binderror="onDetailImageError"
+              data-field="qr"
+            ></image>
+            <text wx:else class="sheet-desc">{{detail.qrFailText}}</text>
+          </view>
+        </view>
+      </scroll-view>
+
+      <!-- 审核按钮固定在弹层底部，不用把详情滚到最后才能操作 -->
+      <view class="sheet-actions">
+        <view class="audit-btn ghost" bindtap="closeDetail"><text>关闭</text></view>
+        <view
+          wx:if="{{detail.auditStatus === 'pending' || detail.auditStatus === 'rejected'}}"
+          class="audit-btn danger"
+          bindtap="onRejectTap"
+        >
+          <text>驳回</text>
+        </view>
+        <view
+          wx:if="{{detail.auditStatus === 'pending' || detail.auditStatus === 'rejected'}}"
+          class="audit-btn primary"
+          bindtap="onApproveTap"
+        >
+          <text>通过审核</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 驳回原因 -->
+  <view wx:if="{{showReject}}">
+    <view class="mask" bindtap="closeReject"></view>
+    <view class="sheet sheet-reject">
+      <view class="sheet-head">
+        <text class="sheet-title">驳回原因</text>
+        <text class="sheet-close" bindtap="closeReject">✕</text>
+      </view>
+      <text class="reject-tip">原因会展示给发起人，请写清楚需要修改的地方</text>
+      <view class="reject-presets">
+        <view
+          wx:for="{{rejectPresets}}"
+          wx:key="*this"
+          class="reject-preset {{rejectRemark === item ? 'active' : ''}}"
+          data-reason="{{item}}"
+          bindtap="pickRejectReason"
+        >
+          <text>{{item}}</text>
+        </view>
+      </view>
+      <textarea
+        class="reject-input"
+        value="{{rejectRemark}}"
+        maxlength="200"
+        placeholder="填写驳回原因（必填，最多 200 字）"
+        bindinput="onRejectInput"
+      ></textarea>
+      <view class="sheet-actions">
+        <view class="audit-btn ghost" bindtap="closeReject"><text>取消</text></view>
+        <view class="audit-btn danger {{acting ? 'disabled' : ''}}" bindtap="submitReject"><text>确认驳回</text></view>
+      </view>
+    </view>
+  </view>
+</view>

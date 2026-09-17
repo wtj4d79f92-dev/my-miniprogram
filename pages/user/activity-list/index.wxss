@@ -33,6 +33,52 @@
   font-size: 26rpx;
 }
 
+/* 审核状态提示：驳回原因 + 修改入口，沿用卡片底部插槽 */
+.audit-box {
+  margin-top: 20rpx;
+  padding-top: 20rpx;
+  border-top: 2rpx solid var(--line);
+}
+
+.audit-reason {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 16rpx;
+}
+
+.audit-label {
+  flex-shrink: 0;
+  margin-right: 12rpx;
+  padding: 2rpx 12rpx;
+  border-radius: 6rpx;
+  background: rgba(227, 77, 89, 0.12);
+  color: #e34d59;
+  font-size: 22rpx;
+}
+
+.audit-text {
+  flex: 1;
+  color: var(--text-sub);
+  font-size: 24rpx;
+  line-height: 34rpx;
+}
+
+.audit-edit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 64rpx;
+  border-radius: 999rpx;
+  border: 2rpx solid var(--brand);
+  color: var(--brand);
+  font-size: 26rpx;
+}
+
+.audit-pending-text {
+  color: #d98600;
+  font-size: 24rpx;
+}
+
 .bottom-space {
   height: 60rpx;
 }

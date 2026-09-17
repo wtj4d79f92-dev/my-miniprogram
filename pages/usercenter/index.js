@@ -15,6 +15,10 @@ Page({
     joinedCount: 0,
     publishedCount: 0,
     needProfile: false,
+    // 用户量少，暂时不在「我的」展示用户 ID，需要时改回 true 即可
+    showUserId: false,
+    // 是否是审核人：决定「活动审核」入口是否展示
+    isAdmin: false,
     // 资料编辑弹窗
     showProfile: false,
     editAvatar: '',
@@ -33,6 +37,29 @@ Page({
     }
     this.syncUser()
     this.loadStats()
+    this.checkAdmin()
+  },
+
+  /**
+   * 审核入口显隐：一次会话只问一次，避免每次切回「我的」都打一次云函数。
+   * 权限本身以 admin 云函数按 openid 的判断为准，这里只影响入口是否出现。
+   */
+  checkAdmin() {
+    if (this._adminChecked) return
+    api
+      .adminWhoami()
+      .then((res) => {
+        this._adminChecked = true
+        this.setData({ isAdmin: !!(res && res.isAdmin) })
+        return null
+      })
+      .catch(() => {
+        this.setData({ isAdmin: false })
+      })
+  },
+
+  goAdminAudit() {
+    wx.navigateTo({ url: '/pages/admin/audit/index' })
   },
 
   syncUser() {

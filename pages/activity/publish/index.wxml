@@ -1,5 +1,5 @@
 <view class="page publish-page">
-  <navigation-bar title="发起活动" color="#2D3748" background="#FFFFFF"></navigation-bar>
+  <navigation-bar title="{{pageTitle}}" color="#2D3748" background="#FFFFFF"></navigation-bar>
 
   <scroll-view class="page-scroll" scroll-y>
     <view class="scroll-body">
@@ -95,6 +95,7 @@
             <view class="location-btn" bindtap="chooseLocation"><text>地图</text></view>
           </view>
         </view>
+        <text wx:if="{{cityTip}}" class="form-tip">{{cityTip}}</text>
         <text wx:if="{{errors.location}}" class="form-error">{{errors.location}}</text>
       </view>
 
@@ -114,13 +115,13 @@
           </picker>
         </view>
         <view class="form-row">
-          <text class="form-label">全程长度 <text class="required">*</text></text>
-          <input class="form-input" type="digit" value="{{form.distance}}" placeholder="单位 km" bindinput="onDistanceInput" />
+          <text class="form-label">全程长度</text>
+          <input class="form-input" type="digit" value="{{form.distance}}" placeholder="选填，单位 km" bindinput="onDistanceInput" />
         </view>
         <text wx:if="{{errors.distance}}" class="form-error">{{errors.distance}}</text>
         <view class="form-row">
-          <text class="form-label">累计爬升 <text class="required">*</text></text>
-          <input class="form-input" type="digit" value="{{form.elevationGain}}" placeholder="单位 m" bindinput="onElevationInput" />
+          <text class="form-label">累计爬升</text>
+          <input class="form-input" type="digit" value="{{form.elevationGain}}" placeholder="选填，单位 m" bindinput="onElevationInput" />
         </view>
         <text wx:if="{{errors.elevationGain}}" class="form-error">{{errors.elevationGain}}</text>
       </view>
@@ -190,12 +191,17 @@
         <text class="agree-link" catchtap="openPublishAgreement">《活动发布免责协议》</text>
       </view>
       <text wx:if="{{errors.agreement}}" class="form-error agree-error">{{errors.agreement}}</text>
+
+      <!-- 审核说明：提交后不会立刻出现在广场 -->
+      <view class="audit-tip">
+        <text>提交后由平台审核，通过后才会展示在广场；审核中仅你自己可见。</text>
+      </view>
     </view>
   </scroll-view>
 
   <view class="submit-bar">
     <view class="btn-primary submit-btn {{submitting || published ? 'disabled' : ''}}" bindtap="submit">
-      <text>{{published ? '发布成功' : (submitting ? '发布中…' : '发布活动')}}</text>
+      <text>{{published ? '已提交审核' : (submitting ? '提交中…' : submitText)}}</text>
     </view>
   </view>
 

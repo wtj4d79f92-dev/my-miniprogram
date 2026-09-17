@@ -2,7 +2,9 @@
   "permissions": {
     "openapi": [
       "phonenumber.getPhoneNumber",
-      "wxacode.getUnlimited"
+      "wxacode.getUnlimited",
+      "security.msgSecCheck",
+      "security.mediaCheckAsync"
     ]
   }
 }

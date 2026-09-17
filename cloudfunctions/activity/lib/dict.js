@@ -49,7 +49,7 @@ const DEFAULT_BANNERS = [
     subtitle: '自驾拼车 说走就走',
     emoji: '🌊',
     bg: 'linear-gradient(135deg, #89F7FE 0%, #66A6FF 100%)',
-    action: { type: 'publish' },
+    action: { type: 'square', value: 'driving' },
     sort: 3,
   },
 ]

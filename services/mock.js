@@ -2,9 +2,12 @@
 const { KEYS, getStorage, setStorage } = require('../utils/storage')
 const { getType, DEFAULT_BANNERS, tagName } = require('../utils/dict')
 const { createRandom, pickInt, deepClone, startOfDay } = require('../utils/util')
+const { regionCityKeys } = require('../utils/cities')
 
 const MOCK_JOIN_MAP = 'mock_join_map'
 const MOCK_STATUS_MAP = 'mock_status_map'
+// 本地审核结果覆盖：{ [活动id]: { auditStatus, auditRemark, auditTime, auditBy } }
+const MOCK_AUDIT_MAP = 'mock_audit_map'
 
 /** 活动种子数据：覆盖多城市、多类型、多星期、招募中 / 已关闭 */
 const SEEDS = [
@@ -127,6 +130,11 @@ function buildBaseActivities() {
       },
       createTime: today + (index - 6) * 7200000,
       status: 'recruiting',
+      // 种子数据视为平台既有内容，审核状态直接给已通过
+      auditStatus: 'approved',
+      auditRemark: '',
+      auditTime: 0,
+      auditBy: 'seed',
       miniQrCode: '',
     }
   })
@@ -137,6 +145,7 @@ function allActivities() {
   const published = getStorage(KEYS.published, []) || []
   const joinMap = getStorage(MOCK_JOIN_MAP, {}) || {}
   const statusMap = getStorage(MOCK_STATUS_MAP, {}) || {}
+  const auditMap = getStorage(MOCK_AUDIT_MAP, {}) || {}
   const list = buildBaseActivities().concat(published.map((item) => deepClone(item)))
   return list.map((item) => {
     const activity = item
@@ -154,8 +163,20 @@ function allActivities() {
     if (statusMap[activity.id]) {
       activity.status = statusMap[activity.id]
     }
+    if (auditMap[activity.id]) {
+      Object.assign(activity, auditMap[activity.id])
+    }
+    // 审核能力上线前的本地缓存数据没有该字段，按已通过处理（与云函数端口径一致）
+    if (activity.auditStatus !== 'pending' && activity.auditStatus !== 'rejected') {
+      activity.auditStatus = 'approved'
+    }
     return activity
   })
+}
+
+/** 公开可见活动：审核中 / 未通过的对其他用户不可见，与云函数端 nin 条件等价 */
+function visibleActivities() {
+  return allActivities().filter((item) => item.auditStatus === 'approved')
 }
 
 function findActivity(id) {
@@ -170,6 +191,13 @@ function saveStatus(id, status) {
   const statusMap = getStorage(MOCK_STATUS_MAP, {}) || {}
   statusMap[id] = status
   setStorage(MOCK_STATUS_MAP, statusMap)
+}
+
+/** 本地审核结果覆盖：只写差异，基础数据保持只读 */
+function saveAudit(id, patch) {
+  const auditMap = getStorage(MOCK_AUDIT_MAP, {}) || {}
+  auditMap[id] = Object.assign({}, auditMap[id] || {}, patch)
+  setStorage(MOCK_AUDIT_MAP, auditMap)
 }
 
 function saveJoin(activityId, members) {
@@ -188,10 +216,11 @@ function memberOf(user) {
   }
 }
 
+/** 地区筛选：空值 = 全国；城市 = 单城；省份 = 全省（口径与云函数 cityCondition 一致） */
 function cityFilter(list, city) {
-  if (!city) return list
-  const target = normalizeCityName(city)
-  return list.filter((item) => normalizeCityName(item.city) === target)
+  const keys = regionCityKeys(city)
+  if (!keys.length) return list
+  return list.filter((item) => keys.indexOf(normalizeCityName(item.city)) > -1)
 }
 
 function error(code, message) {
@@ -205,11 +234,14 @@ module.exports = {
   MOCK_USERS,
   MOCK_JOIN_MAP,
   MOCK_STATUS_MAP,
+  MOCK_AUDIT_MAP,
   DEFAULT_BANNERS,
   buildBaseActivities,
   allActivities,
+  visibleActivities,
   findActivity,
   saveStatus,
+  saveAudit,
   saveJoin,
   memberOf,
   cityFilter,

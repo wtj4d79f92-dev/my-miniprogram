@@ -26,21 +26,7 @@
   justify-content: center;
 }
 
-.poster-badge {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 84rpx;
-  height: 84rpx;
-  border-radius: 24rpx;
-  background: rgba(255, 255, 255, 0.9);
-  color: var(--brand);
-  font-size: 34rpx;
-  font-weight: 700;
-}
-
 .poster-title {
-  margin-top: 16rpx;
   font-size: 32rpx;
   font-weight: 700;
   color: #ffffff;
@@ -142,6 +128,18 @@
   color: var(--text);
 }
 
+/* 地点可点：点一下就用地图软件导航，和详情页同一套行为 */
+.act-nav {
+  flex: none;
+  margin-left: 12rpx;
+  padding: 0 12rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  line-height: 1.7;
+  color: var(--brand);
+  background: var(--brand-soft);
+}
+
 .act-metric {
   font-size: 24rpx;
   color: var(--text);
@@ -196,6 +194,23 @@
 
 .act-status.closed {
   color: var(--text-light);
+}
+
+.act-status.pending {
+  color: #d98600;
+}
+
+.act-status.rejected {
+  color: #e34d59;
+}
+
+/* 审核中 / 未通过时封面右上角的角标：与「已关闭」共用样式，仅换底色 */
+.act-audit-pending {
+  background: rgba(217, 134, 0, 0.9);
+}
+
+.act-audit-rejected {
+  background: rgba(227, 77, 89, 0.9);
 }
 
 .act-toggle {

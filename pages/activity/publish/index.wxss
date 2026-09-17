@@ -49,6 +49,25 @@
   margin: 6rpx 0 0 58rpx;
 }
 
+/* 集合地点缺省市时的归属提示（不是报错，用弱化色） */
+.form-tip {
+  display: block;
+  margin: 4rpx 0 14rpx 190rpx;
+  font-size: 22rpx;
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+
+.audit-tip {
+  margin: 24rpx 8rpx 0;
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  background: var(--brand-soft);
+  color: var(--text-sub);
+  font-size: 24rpx;
+  line-height: 34rpx;
+}
+
 .cover-upload {
   display: flex;
 }

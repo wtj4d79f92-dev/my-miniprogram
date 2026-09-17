@@ -1,0 +1,9 @@
+{
+  "name": "contentCheck",
+  "version": "1.0.0",
+  "description": "旷行吖 · 内容安全异步检测结果回调（消息推送接收方）",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

@@ -25,7 +25,20 @@
         showToolbar="{{tab === 'published'}}"
         bindtapcard="onCardTap"
         bindtoggle="onToggle"
-      ></activity-card>
+      >
+        <view slot="footer" wx:if="{{item.auditRejected}}" class="audit-box">
+          <view class="audit-reason">
+            <text class="audit-label">未通过原因</text>
+            <text class="audit-text">{{item.auditReason}}</text>
+          </view>
+          <view class="audit-edit" data-id="{{item.id}}" catchtap="onEdit">
+            <text>修改后重新提交</text>
+          </view>
+        </view>
+        <view slot="footer" wx:elif="{{item.auditPending && tab === 'published'}}" class="audit-box">
+          <text class="audit-pending-text">已提交审核，通过后将展示在广场</text>
+        </view>
+      </activity-card>
 
       <empty-state
         wx:if="{{!loading && !list.length && tab === 'joined'}}"

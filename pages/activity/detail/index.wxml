@@ -13,13 +13,29 @@
       <view class="detail-body" wx:if="{{activity}}">
         <!-- 顶部封面 -->
         <view class="cover" style="background: {{activity.coverGradient}};">
-          <image wx:if="{{activity.cover}}" class="cover-img" src="{{activity.cover}}" mode="aspectFill"></image>
+          <image
+            wx:if="{{activity.coverSrc}}"
+            class="cover-img"
+            src="{{activity.coverSrc}}"
+            mode="aspectFill"
+            binderror="onCoverError"
+          ></image>
           <view wx:else class="cover-poster">
-            <view class="poster-badge"><text>AA</text></view>
-            <text class="cover-title">AA组队</text>
-            <text class="cover-sub">和志同道合的人一起出发</text>
+            <text class="cover-title">{{poster.title}}</text>
+            <text class="cover-sub">{{poster.sub}}</text>
           </view>
           <view class="cover-type"><text>{{activity.typeName}}</text></view>
+        </view>
+
+        <!-- 审核状态：只有发起人自己能看到未过审的活动，所以这条提示只对发起人出现 -->
+        <view wx:if="{{!activity.auditApproved}}" class="audit-banner {{activity.auditStatus}}">
+          <text class="audit-banner-title">{{activity.auditPending ? '活动审核中' : '审核未通过'}}</text>
+          <text class="audit-banner-desc" wx:if="{{activity.auditPending}}">
+            已提交平台审核，通过后才会出现在广场，期间仅你自己可见。
+          </text>
+          <text class="audit-banner-desc" wx:else>
+            未通过原因：{{activity.auditReason}}
+          </text>
         </view>
 
         <!-- 主体信息 -->
@@ -42,16 +58,18 @@
             <text class="organizer-date">{{activity.startLabel}}</text>
           </view>
 
-          <view class="field-row">
+          <!-- 点击地点调起地图：选中地图软件后地址会一起带过去导航 -->
+          <view class="field-row field-row-tap" bindtap="onLocationTap">
             <text class="field-label">地点</text>
             <text class="field-value">{{activity.location}}</text>
+            <text class="field-nav">导航 ›</text>
           </view>
 
-          <view class="field-row" wx:if="{{activity.showMetrics}}">
+          <view class="field-row" wx:if="{{activity.showMetrics && activity.hasDistance}}">
             <text class="field-label">全程</text>
             <text class="field-value">{{activity.distance}} km</text>
           </view>
-          <view class="field-row" wx:if="{{activity.showMetrics}}">
+          <view class="field-row" wx:if="{{activity.showMetrics && activity.hasElevationGain}}">
             <text class="field-label">爬升</text>
             <text class="field-value">{{activity.elevationGain}} m</text>
           </view>
@@ -161,11 +179,12 @@
       <text class="qr-title">报名成功，扫码加入活动群</text>
       <view class="qr-box">
         <image
-          wx:if="{{activity.groupQrCode && !qrPlaceholder}}"
+          wx:if="{{activity.qrSrc && !qrPlaceholder}}"
           class="qr-img"
-          src="{{activity.groupQrCode}}"
+          src="{{activity.qrSrc}}"
           mode="aspectFit"
           show-menu-by-longpress
+          binderror="onQrError"
         ></image>
         <view wx:else class="qr-placeholder">
           <text class="qr-placeholder-text">活动群二维码</text>

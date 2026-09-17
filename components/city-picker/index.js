@@ -1,4 +1,4 @@
-const { PROVINCES, normalizeCity, cityByName } = require('../../utils/cities')
+const { PROVINCES, normalizeCity, cityByName, provinceByName } = require('../../utils/cities')
 
 Component({
   options: {
@@ -28,21 +28,29 @@ Component({
   },
 
   methods: {
-    /** 打开选择器，按当前城市定位到对应省 / 市 */
+    /**
+     * 打开选择器，按当前选区定位：
+     * - 城市：定位到「省 + 市」；
+     * - 省份（省 + 全部）：定位到「省 + 全部」，重开时能看出当前是全省筛选。
+     */
     open(city) {
-      const target = normalizeCity(city || this.data.city)
+      const value = String(city || this.data.city || '').trim()
+      const found = value ? cityByName(value) : null
       let provinceIndex = 0
       let cityIndex = 0
-      if (target) {
-        const found = cityByName(target)
-        if (found) {
-          const pIndex = PROVINCES.findIndex((item) => item.name === found.province)
-          if (pIndex > -1) {
-            provinceIndex = pIndex + 1
-            const cities = PROVINCES[pIndex].cities
-            const cIndex = cities.findIndex((item) => normalizeCity(item) === target)
-            cityIndex = cIndex > -1 ? cIndex + 1 : 0
-          }
+      if (found) {
+        const pIndex = PROVINCES.findIndex((item) => item.name === found.province)
+        if (pIndex > -1) {
+          provinceIndex = pIndex + 1
+          const cities = PROVINCES[pIndex].cities
+          const cIndex = cities.findIndex((item) => normalizeCity(item) === found.key)
+          cityIndex = cIndex > -1 ? cIndex + 1 : 0
+        }
+      } else {
+        const province = provinceByName(value)
+        if (province) {
+          const pIndex = PROVINCES.findIndex((item) => item.name === province.name)
+          provinceIndex = pIndex > -1 ? pIndex + 1 : 0
         }
       }
       this.setData({ visible: true })
@@ -82,10 +90,20 @@ Component({
     },
 
     confirm() {
-      const key = this.data.cityKeys[this.data.cityIndex] || ''
-      const label = this.data.cityLabels[this.data.cityIndex] || '全部'
+      const { provinceIndex, cityIndex } = this.data
+      // 选了省但城市列还是「全部」时，按全省筛选；省也选「全部」才是全国
+      const province = provinceIndex > 0 ? PROVINCES[provinceIndex - 1] : null
+      let key = ''
+      let label = '全部'
+      if (cityIndex > 0) {
+        key = this.data.cityKeys[cityIndex] || ''
+        label = this.data.cityLabels[cityIndex] || '全部'
+      } else if (province) {
+        key = province.name
+        label = province.name
+      }
       this.setData({ visible: false })
-      this.triggerEvent('change', { city: key, label: label === '全部' ? '全部' : label })
+      this.triggerEvent('change', { city: key, label: label || '全部' })
     },
 
     close() {

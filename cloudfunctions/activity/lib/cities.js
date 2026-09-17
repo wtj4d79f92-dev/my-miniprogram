@@ -46,6 +46,60 @@ function normalizeCity(name) {
   return value.replace(/市$/, '')
 }
 
+/** 反向：根据归一化城市名找到完整城市名 */
+function cityByName(name) {
+  const target = normalizeCity(name)
+  if (!target) return null
+  for (let i = 0; i < PROVINCES.length; i += 1) {
+    const province = PROVINCES[i]
+    for (let j = 0; j < province.cities.length; j += 1) {
+      if (normalizeCity(province.cities[j]) === target) {
+        return { province: province.name, city: province.cities[j], key: target }
+      }
+    }
+  }
+  return null
+}
+
+/** 省份简称：去掉「省 / 市 / 自治区 / 特别行政区」与民族名称，用于省名模糊匹配 */
+function provinceShortName(name) {
+  return String(name || '').replace(
+    /(省|市|自治区|特别行政区|维吾尔|壮族|回族|蒙古|藏族|苗族|侗族|土家族|彝族|白族|傣族|哈萨克|朝鲜族|羌族)/g,
+    ''
+  )
+}
+
+/** 按省名 / 省简称找到省份，不是省份时返回 null */
+function provinceByName(name) {
+  const value = String(name || '').trim()
+  if (!value) return null
+  for (let i = 0; i < PROVINCES.length; i += 1) {
+    if (PROVINCES[i].name === value) return PROVINCES[i]
+  }
+  const short = provinceShortName(value)
+  if (short.length < 2) return null
+  for (let i = 0; i < PROVINCES.length; i += 1) {
+    if (provinceShortName(PROVINCES[i].name) === short) return PROVINCES[i]
+  }
+  return null
+}
+
+/**
+ * 所选地区 -> 归一化城市列表，与前端 utils/cities.js 的 regionCityKeys 保持一致：
+ * 空值返回 []（不过滤），城市返回单城，省份返回全省城市。
+ * 城市优先于省份，避免「吉林」这类与省简称同名的城市把范围放大到全省。
+ * @returns {string[]}
+ */
+function regionCityKeys(region) {
+  const value = String(region || '').trim()
+  // 「全部 / 全国」是选择器的展示文案，语义等同空值
+  if (!value || value === '全部' || value === '全国') return []
+  if (cityByName(value)) return [normalizeCity(value)]
+  const province = provinceByName(value)
+  if (province) return province.cities.map((city) => normalizeCity(city))
+  return [normalizeCity(value)]
+}
+
 /** 全部城市（归一化名 -> 完整名），按名称长度倒序，避免短名误匹配 */
 const ALL_CITIES = PROVINCES.reduce((acc, province) => {
   province.cities.forEach((city) => {
@@ -90,9 +144,27 @@ function matchCity(address) {
   return ''
 }
 
+/**
+ * 地区值 -> 单个城市，只落到唯一城市时才算数（省份 / 全部 / 未知值返回 ''）。
+ *
+ * 用于「发布者当前城市」兜底：集合地点写不出城市（如手输「双流区润和路附近」）时，
+ * 把活动归到发布者所在城市，避免 city 为空、按城市筛选永远查不到。
+ * @param {string} region 地区值：城市名 / 省名 / 空
+ * @returns {string} 归一化城市名，无法唯一确定时返回 ''
+ */
+function singleCityKey(region) {
+  const keys = regionCityKeys(region)
+  return keys.length === 1 ? keys[0] : ''
+}
+
 module.exports = {
   PROVINCES,
   ALL_CITIES,
   normalizeCity,
+  cityByName,
+  provinceShortName,
+  provinceByName,
+  regionCityKeys,
+  singleCityKey,
   matchCity,
 }

@@ -14,7 +14,7 @@
           ></avatar>
           <view class="user-info">
             <text class="user-name">{{user ? user.nickName : '未登录'}}</text>
-            <text wx:if="{{user}}" class="user-id">ID：{{user.userId}}</text>
+            <text wx:if="{{user && showUserId}}" class="user-id">ID：{{user.userId}}</text>
             <text class="user-bio">{{user ? (user.bio || '和有趣的人一起出发') : '登录后可使用报名、发布等功能'}}</text>
           </view>
           <text class="user-arrow">›</text>
@@ -74,6 +74,14 @@
         <view class="entry" bindtap="goFeedback">
           <text class="entry-icon">💬</text>
           <text class="entry-title">意见反馈</text>
+          <text class="entry-arrow">›</text>
+        </view>
+        <view wx:if="{{isAdmin}}" class="entry" bindtap="goAdminAudit">
+          <text class="entry-icon">🛡️</text>
+          <view class="entry-main">
+            <text class="entry-title">活动审核</text>
+            <text class="entry-desc">审阅用户提交的活动</text>
+          </view>
           <text class="entry-arrow">›</text>
         </view>
         <view class="entry" bindtap="showAbout">

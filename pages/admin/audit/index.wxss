@@ -1,0 +1,577 @@
+.admin-page {
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ------------------------------ 无权限 ------------------------------ */
+.denied {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 160rpx 60rpx 0;
+  text-align: center;
+}
+
+.denied-icon {
+  font-size: 96rpx;
+}
+
+.denied-title {
+  margin-top: 24rpx;
+  color: var(--text);
+  font-size: 34rpx;
+  font-weight: 600;
+}
+
+.denied-desc {
+  margin-top: 16rpx;
+  color: var(--text-sub);
+  font-size: 26rpx;
+  line-height: 40rpx;
+}
+
+.denied-openid {
+  width: 100%;
+  margin-top: 28rpx;
+  padding: 22rpx 24rpx;
+  border-radius: 16rpx;
+  background: #ffffff;
+  color: var(--text-sub);
+  font-size: 24rpx;
+  word-break: break-all;
+}
+
+.denied-btn {
+  width: 320rpx;
+  margin-top: 48rpx;
+}
+
+/* ------------------------------ 统计 ------------------------------ */
+.stats {
+  display: flex;
+  margin: 16rpx 24rpx 0;
+  padding: 24rpx 0;
+  border-radius: 24rpx;
+  background: #ffffff;
+}
+
+.stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.stat-num {
+  color: var(--text);
+  font-size: 36rpx;
+  font-weight: 600;
+}
+
+.stat-num.pending {
+  color: #d98600;
+}
+
+.stat-label {
+  margin-top: 6rpx;
+  color: var(--text-light);
+  font-size: 22rpx;
+}
+
+.tabs {
+  display: flex;
+  margin: 20rpx 24rpx 0;
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20rpx 0;
+  color: var(--text-sub);
+  font-size: 28rpx;
+}
+
+.tab.active {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.tab.active text {
+  padding-bottom: 8rpx;
+  border-bottom: 6rpx solid var(--brand);
+  border-radius: 4rpx;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  margin: 16rpx 24rpx 0;
+  padding: 0 12rpx 0 24rpx;
+  border-radius: 999rpx;
+  background: #ffffff;
+}
+
+.search-input {
+  flex: 1;
+  height: 76rpx;
+  color: var(--text);
+  font-size: 26rpx;
+}
+
+.search-btn {
+  padding: 12rpx 24rpx;
+  border-radius: 999rpx;
+  color: var(--brand);
+  font-size: 26rpx;
+}
+
+/* ------------------------------ 审核卡片 ------------------------------ */
+.audit-card {
+  margin-top: 20rpx;
+  padding: 24rpx;
+  border-radius: 24rpx;
+  background: #ffffff;
+}
+
+.audit-card-head {
+  display: flex;
+}
+
+.audit-cover {
+  flex-shrink: 0;
+  width: 150rpx;
+  height: 150rpx;
+  margin-right: 20rpx;
+  border-radius: 16rpx;
+  background: var(--line);
+}
+
+.audit-cover-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 52rpx;
+}
+
+.audit-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.audit-title {
+  margin-bottom: 8rpx;
+  color: var(--text);
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.audit-meta {
+  margin-top: 4rpx;
+  color: var(--text-sub);
+  font-size: 24rpx;
+  line-height: 34rpx;
+}
+
+.audit-remark {
+  margin-top: 16rpx;
+  padding: 16rpx 20rpx;
+  border-radius: 12rpx;
+  background: rgba(227, 77, 89, 0.1);
+  color: #e34d59;
+  font-size: 24rpx;
+  line-height: 34rpx;
+}
+
+/* 机器初审标记：需要人工复核的照片，优先看 */
+.machine-flags {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 10rpx;
+}
+
+.machine-flag {
+  margin-right: 12rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 6rpx;
+  font-size: 22rpx;
+}
+
+.machine-flag.review {
+  background: rgba(217, 134, 0, 0.12);
+  color: #d98600;
+}
+
+.machine-flag.pending {
+  background: var(--line);
+  color: var(--text-light);
+}
+
+.machine-row {
+  display: flex;
+  align-items: center;
+  margin-top: 12rpx;
+}
+
+.machine-label {
+  width: 150rpx;
+  color: var(--text-light);
+  font-size: 26rpx;
+}
+
+.machine-value {
+  font-size: 26rpx;
+}
+
+.machine-value.pass {
+  color: var(--brand);
+}
+
+.machine-value.review {
+  color: #d98600;
+}
+
+.machine-value.risky {
+  color: #e34d59;
+}
+
+.machine-value.pending,
+.machine-value.unknown {
+  color: var(--text-light);
+}
+
+.machine-images {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 16rpx;
+}
+
+.machine-image {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0 24rpx 16rpx 0;
+}
+
+.machine-thumb {
+  width: 160rpx;
+  height: 160rpx;
+  margin-bottom: 8rpx;
+  border-radius: 12rpx;
+  background: var(--line);
+}
+
+.audit-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20rpx;
+  padding-top: 20rpx;
+  border-top: 2rpx solid var(--line);
+}
+
+.audit-status {
+  font-size: 24rpx;
+}
+
+.audit-status.pending {
+  color: #d98600;
+}
+
+.audit-status.approved {
+  color: var(--brand);
+}
+
+.audit-status.rejected {
+  color: #e34d59;
+}
+
+.audit-actions {
+  display: flex;
+  align-items: center;
+}
+
+.audit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 120rpx;
+  height: 60rpx;
+  margin-left: 16rpx;
+  padding: 0 24rpx;
+  border-radius: 999rpx;
+  font-size: 26rpx;
+}
+
+.audit-btn.primary {
+  background: var(--brand);
+  color: #ffffff;
+}
+
+.audit-btn.danger {
+  border: 2rpx solid #e34d59;
+  color: #e34d59;
+}
+
+.audit-btn.ghost {
+  border: 2rpx solid var(--line);
+  color: var(--text-sub);
+}
+
+.audit-btn.disabled {
+  opacity: 0.6;
+}
+
+.loading-tip {
+  padding: 40rpx 0;
+  text-align: center;
+  color: var(--text-light);
+  font-size: 26rpx;
+}
+
+.migrate {
+  margin-top: 40rpx;
+  padding: 24rpx;
+  border-radius: 16rpx;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--text-light);
+  font-size: 22rpx;
+  text-align: center;
+}
+
+.bottom-space {
+  height: 60rpx;
+}
+
+/* ------------------------------ 弹层 ------------------------------ */
+.mask {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  max-height: 84vh;
+  padding: 32rpx 32rpx calc(32rpx + env(safe-area-inset-bottom));
+  border-radius: 32rpx 32rpx 0 0;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.sheet-detail {
+  /* 固定高度：scroll-view 没有确定高度就不会滚动，内容会被顶出屏幕外 */
+  height: 84vh;
+}
+
+.sheet-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sheet-title {
+  color: var(--text);
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.sheet-close {
+  padding: 8rpx 12rpx;
+  color: var(--text-light);
+  font-size: 32rpx;
+}
+
+.sheet-scroll {
+  /* 沿用页面级滚动区的写法：flex:1 + height:0 才有确定的滚动高度 */
+  flex: 1;
+  height: 0;
+  min-height: 0;
+}
+
+.sheet-body {
+  padding-bottom: 8rpx;
+}
+
+.sheet-tip {
+  margin-bottom: 16rpx;
+  padding: 12rpx 20rpx;
+  border-radius: 12rpx;
+  background: var(--bg);
+  color: var(--text-light);
+  font-size: 24rpx;
+}
+
+.sheet-cover {
+  width: 100%;
+  height: 300rpx;
+  margin-top: 20rpx;
+  border-radius: 20rpx;
+  background: var(--line);
+}
+
+.sheet-cover-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 40rpx;
+  box-sizing: border-box;
+}
+
+.sheet-cover-emoji {
+  font-size: 72rpx;
+  line-height: 88rpx;
+}
+
+.sheet-cover-tip {
+  margin-top: 8rpx;
+  color: var(--text-light);
+  font-size: 24rpx;
+  line-height: 34rpx;
+  text-align: center;
+}
+
+/* 云存储里确实读不到时，把文件 ID 露出来，方便运营贴给开发去云存储控制台查 */
+.sheet-cover-fileid {
+  margin-top: 12rpx;
+  color: var(--text-light);
+  font-size: 20rpx;
+  line-height: 28rpx;
+  text-align: center;
+  word-break: break-all;
+}
+
+.sheet-title-text {
+  display: block;
+  margin-top: 20rpx;
+  color: var(--text);
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.sheet-rows {
+  margin-top: 16rpx;
+}
+
+.sheet-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 12rpx 0;
+}
+
+.sheet-label {
+  width: 150rpx;
+  color: var(--text-light);
+  font-size: 26rpx;
+}
+
+.sheet-value {
+  flex: 1;
+  color: var(--text);
+  font-size: 26rpx;
+  line-height: 36rpx;
+}
+
+.sheet-section {
+  margin-top: 20rpx;
+  padding-top: 20rpx;
+  border-top: 2rpx solid var(--line);
+}
+
+.sheet-section-title {
+  color: var(--text);
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.sheet-desc {
+  display: block;
+  margin-top: 12rpx;
+  color: var(--text-sub);
+  font-size: 26rpx;
+  line-height: 40rpx;
+}
+
+.sheet-qr {
+  width: 320rpx;
+  height: 320rpx;
+  margin-top: 16rpx;
+  border-radius: 16rpx;
+  background: var(--line);
+}
+
+.sheet-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 24rpx;
+  padding-top: 24rpx;
+  border-top: 2rpx solid var(--line);
+}
+
+.sheet-actions .audit-btn {
+  min-width: 160rpx;
+  height: 72rpx;
+}
+
+/* ------------------------------ 驳回 ------------------------------ */
+.sheet-reject {
+  max-height: 80vh;
+}
+
+.reject-tip {
+  display: block;
+  margin-top: 12rpx;
+  color: var(--text-light);
+  font-size: 24rpx;
+}
+
+.reject-presets {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 20rpx;
+}
+
+.reject-preset {
+  margin: 0 16rpx 16rpx 0;
+  padding: 12rpx 24rpx;
+  border-radius: 999rpx;
+  background: var(--bg);
+  color: var(--text-sub);
+  font-size: 24rpx;
+}
+
+.reject-preset.active {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.reject-input {
+  width: 100%;
+  height: 200rpx;
+  margin-top: 12rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 26rpx;
+  box-sizing: border-box;
+}

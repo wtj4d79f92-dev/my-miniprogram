@@ -67,6 +67,13 @@ Page({
     wx.navigateTo({ url: `/pages/activity/detail/index?id=${e.detail.id}` })
   },
 
+  /** 审核未通过：带着活动 id 进入发布页，表单预填后重新提交审核 */
+  onEdit(e) {
+    const id = (e.detail && e.detail.id) || e.currentTarget.dataset.id
+    if (!id) return
+    wx.navigateTo({ url: `/pages/activity/publish/index?id=${id}` })
+  },
+
   onToggle(e) {
     const id = e.detail.id
     const status = e.detail.status

@@ -1,7 +1,9 @@
 const api = require('../../../services/api')
+const { TEXTS } = require('../../../utils/dict')
 const { formatCardDate } = require('../../../utils/util')
 const loginBehavior = require('../../../behaviors/login-behavior')
 const ui = require('../../../utils/ui')
+const location = require('../../../utils/location')
 
 Page({
   behaviors: [loginBehavior],
@@ -9,6 +11,11 @@ Page({
   data: {
     id: '',
     activity: null,
+    // 默认封面（无封面图时展示）的文案，与 utils/dict.js 同一份来源
+    poster: {
+      title: TEXTS.defaultPosterTitle,
+      sub: TEXTS.defaultPosterSubtitle,
+    },
     loading: true,
     notFound: false,
     agreed: false,
@@ -55,6 +62,14 @@ Page({
     activity.startLabel = formatCardDate(activity.startTime)
     activity.endLabel = activity.endTime ? formatCardDate(activity.endTime) : '待定'
     activity.coverGradient = activity.bg
+    // 封面 / 群二维码是发起人上传的云存储文件，客户端直连 cloud:// 可能被存储权限拦下，
+    // 云函数已换好 https 临时链接（coverUrl / qrUrl），这里优先用它渲染
+    // 报名 / 退出 / 关闭活动等动作的返回体没有带临时链接，缓存住已经换到的地址复用，避免封面闪回占位图
+    this._mediaUrl = this._mediaUrl || {}
+    if (activity.coverUrl) this._mediaUrl[activity.cover] = activity.coverUrl
+    if (activity.qrUrl) this._mediaUrl[activity.groupQrCode] = activity.qrUrl
+    activity.coverSrc = activity.coverUrl || this._mediaUrl[activity.cover] || activity.cover
+    activity.qrSrc = activity.qrUrl || this._mediaUrl[activity.groupQrCode] || activity.groupQrCode
     activity.joinedPeople = raw.joinedPeople || []
     activity.avatarList = raw.joinedPeople || []
     activity.isClosed = raw.status === 'closed'
@@ -67,6 +82,8 @@ Page({
     } else if (activity.isFull) {
       statusText = '已满'
     }
+    // 未过审的活动只有发起人看得到，状态位直接展示审核结果
+    if (!activity.auditApproved) statusText = activity.auditText
 
     // 登录后 globalData 已同步，优先取最新登录态
     const app = getApp()
@@ -79,9 +96,15 @@ Page({
     // style 为空使用主色按钮，outline / manage 为次要按钮样式
     let mainBtn = { text: '我要报名', disabled: false, mode: 'join', style: '' }
     if (isOrganizer) {
-      mainBtn = activity.isClosed
-        ? { text: '重新打开活动', disabled: false, mode: 'toggle', style: '' }
-        : { text: '关闭活动', disabled: false, mode: 'toggle', style: 'manage' }
+      if (activity.auditPending) {
+        mainBtn = { text: '审核中，暂不可操作', disabled: true, mode: 'audit', style: 'manage' }
+      } else if (activity.auditRejected) {
+        mainBtn = { text: '修改后重新提交', disabled: false, mode: 'edit', style: '' }
+      } else {
+        mainBtn = activity.isClosed
+          ? { text: '重新打开活动', disabled: false, mode: 'toggle', style: '' }
+          : { text: '关闭活动', disabled: false, mode: 'toggle', style: 'manage' }
+      }
     } else if (activity.isClosed) {
       mainBtn = { text: '已关闭', disabled: true, mode: 'closed', style: '' }
     } else if (activity.isFull && !joined) {
@@ -104,6 +127,28 @@ Page({
     this.setData({ agreed: !this.data.agreed })
   },
 
+  /**
+   * 点击「地点」：调起微信内置地图，用户在页面里选地图软件（高德 / 百度 / 腾讯 / 苹果地图）
+   * 后，坐标与地址一起带过去直接开始导航。
+   * 老活动只有地址文本没有坐标，交给 openNavigation 按地址解析（缺省市的短地址会补上城市再解析），
+   * 仍解析不出来就引导用户在地图上点一次，选中后照样直接调起导航。
+   */
+  onLocationTap() {
+    const activity = this.data.activity
+    if (!activity || !activity.location) return
+    location
+      .openNavigation({
+        name: activity.location,
+        address: activity.locationAddress || activity.location,
+        city: activity.city,
+        latitude: activity.locationLat,
+        longitude: activity.locationLng,
+      })
+      .then((result) => {
+        if (result === 'failed') ui.toast('打开地图失败，请稍后重试')
+      })
+  },
+
   openJoinAgreement() {
     const modal = this.selectComponent('#agreement-modal')
     if (modal) modal.open('join')
@@ -124,7 +169,12 @@ Page({
 
   onMainTap() {
     const mode = this.data.mainBtn.mode
-    if (mode === 'closed' || mode === 'full') return
+    if (mode === 'closed' || mode === 'full' || mode === 'audit') return
+    if (mode === 'edit') {
+      // 驳回后回到发布页，表单预填原内容，重新提交审核
+      wx.navigateTo({ url: `/pages/activity/publish/index?id=${this.data.id}` })
+      return
+    }
     if (mode === 'toggle') {
       this.toggleActivity()
       return
@@ -176,6 +226,48 @@ Page({
       // 已勾选免责协议即视为完成报名确认，直接提交，不再二次弹窗
       this.submitJoin()
     })
+  },
+
+  /** 封面加载失败：临时链接过期或读取被拦时按 fileID 重取一次，仍失败退回默认海报 */
+  onCoverError() {
+    this.refreshMedia('cover')
+  },
+
+  /** 群二维码加载失败：同上 */
+  onQrError() {
+    this.refreshMedia('groupQrCode')
+  },
+
+  /**
+   * 按 fileID 重新换一次临时链接。
+   * 临时链接默认 2 小时过期，页面长时间停留后图片会失效，这里做一次兜底刷新。
+   */
+  refreshMedia(field) {
+    const activity = this.data.activity
+    if (!activity) return
+    const fileID = String(activity[field] || '')
+    if (fileID.indexOf('cloud://') !== 0) {
+      // 本机临时路径 / https 地址重取也没用，直接退回占位
+      if (field === 'cover') this.setData({ activity: Object.assign({}, activity, { coverSrc: '' }) })
+      return
+    }
+    const srcKey = field === 'cover' ? 'coverSrc' : 'qrSrc'
+    api
+      .media([fileID])
+      .then((media) => {
+        const current = this.data.activity
+        if (!current || current.id !== activity.id) return
+        const entry = media && media[fileID]
+        this._mediaUrl = this._mediaUrl || {}
+        if (entry && entry.url) this._mediaUrl[fileID] = entry.url
+        const patch = entry && entry.url ? { [srcKey]: entry.url } : { [srcKey]: '' }
+        this.setData({ activity: Object.assign({}, current, patch) })
+      })
+      .catch(() => {
+        const current = this.data.activity
+        if (!current || current.id !== activity.id) return
+        this.setData({ activity: Object.assign({}, current, { [srcKey]: '' }) })
+      })
   },
 
   /** 未勾选免责协议：弹窗提醒，可直接跳转协议正文 */
@@ -273,7 +365,8 @@ Page({
     return {
       title: `${activity.title}，一起来组队吧！`,
       path: `/pages/activity/detail/index?id=${activity.id}`,
-      imageUrl: activity.cover || '',
+      // 分享卡片只认可访问的图片地址，优先用云函数换好的 https 临时链接
+      imageUrl: activity.coverSrc || activity.cover || '',
     }
   },
 

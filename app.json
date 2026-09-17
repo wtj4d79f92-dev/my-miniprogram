@@ -6,7 +6,8 @@
     "pages/activity/detail/index",
     "pages/activity/publish/index",
     "pages/user/activity-list/index",
-    "pages/feedback/index"
+    "pages/feedback/index",
+    "pages/admin/audit/index"
   ],
   "window": {
     "navigationBarTextStyle": "black",

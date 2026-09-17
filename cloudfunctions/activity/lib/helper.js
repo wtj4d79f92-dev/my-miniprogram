@@ -5,6 +5,8 @@ const LIMITS = {
   title: 30,
   desc: 500,
   location: 50,
+  // 地图选点反查出的地址：不展示，只用于城市匹配与地址检索
+  locationAddress: 100,
   nickName: 30,
   bio: 60,
   url: 500,
@@ -44,6 +46,22 @@ function num(value, fallback) {
 
 function limitRange(value, min, max) {
   return Math.min(max, Math.max(min, value))
+}
+
+/**
+ * 经纬度清洗：非数字或落在可导航范围之外的值一律存 0。
+ *
+ * 与前端 utils/location.js 的 usableCoord 同一口径（中国大致范围 lat 3~54 / lng 73~136）：
+ * 存 0 表示「这个活动没有坐标」，前端点地址时改走地址文本解析，不会拿脏数据去开地图。
+ * @param {*} value 前端表单带上的纬度 / 经度
+ * @param {'lat' | 'lng'} kind 纬度还是经度
+ */
+function coord(value, kind) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 0
+  const min = kind === 'lat' ? 3 : 73
+  const max = kind === 'lat' ? 54 : 136
+  return parsed >= min && parsed <= max ? parsed : 0
 }
 
 /** 转义正则元字符：关键字搜索走 db.RegExp，不能让用户输入当成正则 */
@@ -89,6 +107,7 @@ module.exports = {
   text,
   num,
   limitRange,
+  coord,
   escapeRegExp,
   memberOf,
   withId,

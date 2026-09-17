@@ -392,6 +392,23 @@ const flow = (async () => {
   const cityList = await step('广场-城市筛选', api.list({ pageIndex: 0, pageSize: 20, city: '杭州', sort: 'hot' }))
   log(cityList.list.length > 0 && cityList.list.every((item) => item.city === '杭州'), '广场：城市筛选生效')
 
+  // 省份筛选：省 + 全部要看全省，省份与城市都选「全部」才是全国
+  const { provinceOfCity } = require(path.join(ROOT, 'utils/cities'))
+  const provinceList = await step('广场-省份筛选', api.list({ pageIndex: 0, pageSize: 50, city: '广东省', sort: 'hot' }))
+  log(
+    provinceList.list.length > 0 && provinceList.list.every((item) => provinceOfCity(item.city) === '广东省'),
+    '广场：省 + 全部筛选出广东范围内的活动'
+  )
+  const nationList = await step('广场-全部地区', api.list({ pageIndex: 0, pageSize: 100, city: '', sort: 'hot' }))
+  log(nationList.total > provinceList.total, '广场：全部 + 全部展示全国活动')
+
+  const homeProvince = await step('首页-省份筛选', api.home({ city: '广东省' }))
+  const homeProvinceList = homeProvince.hotList.concat(homeProvince.newestList)
+  log(
+    homeProvinceList.length > 0 && homeProvinceList.every((item) => provinceOfCity(item.city) === '广东省'),
+    '首页：省 + 全部筛选出广东范围内的活动'
+  )
+
   // 详情
   const target = hiking.list[0]
   const detail = await step('详情', api.detail(target.id))
@@ -422,6 +439,91 @@ const flow = (async () => {
   log(created.city === '杭州', '发布：按集合地点自动匹配城市')
   log(created.status === 'recruiting' && created.joinedCount === 0, '发布：服务端补全状态与成员列表')
   log(created.organizer.openid === user.openid, '发布：写入发起人快照')
+  log(created.auditStatus === 'pending', '发布：新活动进入待审核队列')
+  log(created.machineCheck.text.suggest === 'pass', '内容安全：正常内容记录机器初审结论')
+
+  // 内容安全（Mock 用关键词模拟云端 msgSecCheck）
+  let riskyError = ''
+  try {
+    await api.create({
+      form: {
+        type: 'hiking',
+        title: '违规测试活动',
+        location: '浙江省杭州市 西湖',
+        startTime: Date.now() + 86400000,
+        endTime: Date.now() + 2 * 86400000,
+        groupQrCode: 'mock://qr',
+      },
+    })
+  } catch (e) {
+    riskyError = e.code
+  }
+  log(riskyError === 'CONTENT_RISKY', '内容安全：命中违规关键词直接拦截')
+
+  // 审核前：活动不能出现在广场 / 首页，也不能被别人报名
+  const afterCreate = await step('审核前广场', api.list({ pageIndex: 0, pageSize: 100, sort: 'latest' }))
+  log(afterCreate.list.every((item) => item.id !== created.id), '审核中：活动不出现在广场列表')
+  const homeAfterCreate = await step('审核前首页', api.home({ city: '杭州' }))
+  const homeVisible = homeAfterCreate.hotList.concat(homeAfterCreate.newestList)
+  log(homeVisible.every((item) => item.id !== created.id), '审核中：活动不出现在首页')
+  let pendingJoinError = ''
+  try {
+    await api.join(created.id)
+  } catch (e) {
+    pendingJoinError = e.code
+  }
+  log(pendingJoinError === 'AUDIT_PENDING', '审核中：报名被拒绝并返回 AUDIT_PENDING')
+  const ownerPreview = await step('审核中我的发布', api.mine('published'))
+  log(ownerPreview.some((item) => item.id === created.id), '审核中：发起人仍能在「我发布的」看到自己的活动')
+
+  // 审核后台：待审列表 → 驳回 → 修改重提 → 通过
+  const whoami = await step('管理员身份', api.adminWhoami())
+  log(whoami.isAdmin === true, '审核台：识别审核人身份')
+  const pendingList = await step('待审列表', api.adminList({ status: 'pending' }))
+  log(pendingList.list.some((item) => item.id === created.id), '审核台：待审列表包含新活动')
+  log(pendingList.stats.pending >= 1, '审核台：待审数量统计可用')
+
+  const rejected = await step('审核驳回', api.adminReject(created.id, '活动介绍过于简略，请补充路线与装备说明'))
+  log(rejected.auditStatus === 'rejected', '审核台：驳回写入审核状态')
+  const rejectedDetail = await step('驳回后详情', api.detail(created.id))
+  log(rejectedDetail.auditStatus === 'rejected' && !!rejectedDetail.auditRemark, '审核台：发起人能看到驳回原因')
+  let emptyRemarkError = ''
+  try {
+    await api.adminReject(created.id, '   ')
+  } catch (e) {
+    emptyRemarkError = e.code
+  }
+  log(emptyRemarkError === 'INVALID_PARAM', '审核台：驳回必须填写原因')
+
+  const edited = await step(
+    '编辑重提',
+    api.update({
+      id: created.id,
+      form: {
+        type: 'hiking',
+        title: '自动化测试 · 西湖晨间徒步（已补充说明）',
+        location: '浙江省杭州市 西湖断桥',
+        startTime: created.startTime,
+        endTime: created.endTime,
+        difficulty: 3,
+        distance: 10,
+        elevationGain: 200,
+        feeMode: 'aa',
+        fee: 0,
+        maxPeople: 8,
+        tags: [],
+        groupQrCode: 'wxfile://tmp_qr.png',
+        desc: '补充：全程 10 公里，需要运动鞋与 1L 饮水。',
+      },
+    })
+  )
+  log(edited.auditStatus === 'pending' && edited.auditRemark === '', '编辑重提：回到待审核并清空上一条驳回意见')
+  log(edited.id === created.id && edited.joinedCount === 0, '编辑重提：沿用原活动，报名数据不受影响')
+
+  const approved = await step('审核通过', api.adminApprove(created.id))
+  log(approved.auditStatus === 'approved', '审核台：通过写入审核状态')
+  const afterApprove = await step('审核后广场', api.list({ pageIndex: 0, pageSize: 100, sort: 'latest' }))
+  log(afterApprove.list.some((item) => item.id === created.id), '审核通过：活动出现在广场列表')
 
   // 报名（自己发布的活动）
   const joined = await step('报名', api.join(created.id))
@@ -493,7 +595,648 @@ const flow = (async () => {
 })
 
 flow.then(() => {
+/* ---------- 5. 云模式发布上传：本机临时图片必须先转存云存储 ---------- */
+/**
+ * chooseMedia 选出来的图片在本机是 http://tmp/xxx、wxfile://tmp_xxx 这类临时路径，
+ * 直接落库的话别人（以及换会话后的自己）看到的都是空白封面，所以云模式必须先 uploadFile。
+ */
+function checkPublishUpload() {
+  const uploaded = []
+  const pageOptions = []
+  global.Page = (options) => pageOptions.push(options)
+  global.wx.cloud = {
+    uploadFile({ cloudPath, filePath, success }) {
+      uploaded.push({ cloudPath, filePath })
+      success({ fileID: `cloud://test-env.${cloudPath}` })
+    },
+  }
+  config.useMock = false
+  require(path.join(ROOT, 'pages/activity/publish/index.js'))
+  const page = pageOptions[0]
+  log(!!(page && typeof page.uploadFiles === 'function'), '发布上传：能取到发布页的 uploadFiles')
+  if (!page || typeof page.uploadFiles !== 'function') return Promise.resolve(null)
+
+  const ctx = { data: {} }
+  return page
+    .uploadFiles
+    .call(ctx, { cover: 'http://tmp/tmp_cover.jpg', groupQrCode: 'wxfile://tmp_qr.png' })
+    .then((res) => {
+      log(String(res.cover).indexOf('cloud://') === 0, '发布上传：本机临时封面转存云存储后才落库')
+      log(String(res.groupQrCode).indexOf('cloud://') === 0, '发布上传：本机临时二维码转存云存储后才落库')
+      log(uploaded.length === 2, `发布上传：两张本机图片都上传（实际 ${uploaded.length} 次）`)
+      return page.uploadFiles.call(ctx, {
+        cover: 'cloud://test-env/activity/cover/a.png',
+        groupQrCode: 'https://cdn.example.com/qr.png',
+      })
+    })
+    .then((res) => {
+      log(
+        res.cover === 'cloud://test-env/activity/cover/a.png' && res.groupQrCode === 'https://cdn.example.com/qr.png',
+        '发布上传：已是云文件或 https 图片时不重复上传'
+      )
+      log(uploaded.length === 2, '发布上传：跳过的图片不再触发上传')
+      return page.uploadFiles.call(ctx, { cover: '', groupQrCode: '' })
+    })
+    .then((res) => {
+      log(res.cover === '' && res.groupQrCode === '', '发布上传：未选图时保持空串，走默认海报')
+      config.useMock = true
+      return null
+    })
+    .catch((e) => {
+      config.useMock = true
+      log(false, `发布上传：执行异常 → ${e && e.message}`)
+    })
+}
+
+return checkPublishUpload()
+})
+.then(() => {
+/* ---------- 6. 审核台封面展示：桌面端审核人读不到发起人的云存储文件时要给出正确结论 ---------- */
+/**
+ * 审核人和发起人往往不是同一个微信号，客户端直接渲染 cloud:// 会被云存储权限拦下，
+ * 所以审核台优先用 admin 云函数换好的临时链接。这里只验证页面的展示决策，
+ * 云函数侧的临时链接解析在 scripts/cloud-validate.js 里覆盖。
+ */
+function checkAuditCoverDecisions() {
+  const pageOptions = []
+  global.Page = (options) => pageOptions.push(options)
+  require(path.join(ROOT, 'pages/admin/audit/index.js'))
+  const page = pageOptions[0]
+
+  const raw = {
+    id: 'act_1',
+    title: '爬树吗',
+    type: 'camping',
+    typeName: '露营',
+    emoji: '⛺',
+    groupQrCode: 'cloud://env.bucket/qr.png',
+    maxPeople: 10,
+    joinedCount: 0,
+    startTime: Date.now(),
+    auditStatus: 'pending',
+  }
+  const decorate = (cover, media) => page.decorateItem.call(page, Object.assign({}, raw, { cover }), media || {})
+
+  const withUrl = decorate('cloud://env.bucket/cover.png', {
+    'cloud://env.bucket/cover.png': { url: 'https://cdn.test/cover.jpg', ok: true, reason: '' },
+  })
+  log(withUrl.coverSrc === 'https://cdn.test/cover.jpg', '审核台封面：服务端换到临时链接时用 https 地址渲染')
+  log(withUrl.coverUnreachable === false && !!withUrl.coverSrc, '审核台封面：换到链接时不显示失败提示')
+
+  const unreachable = decorate('cloud://env.bucket/cover.png', {
+    'cloud://env.bucket/cover.png': { url: '', ok: false, reason: 'file not exist' },
+  })
+  log(unreachable.coverUnreachable === true, '审核台封面：服务端也取不到时标记为读不到')
+  log(/读不到/.test(unreachable.coverFailText), '审核台封面：读不到时提示让发起人重新上传，而不是空白灰块')
+  log(unreachable.coverFileID === 'cloud://env.bucket/cover.png', '审核台封面：读不到时保留 fileID 便于排查')
+
+  const localPath = decorate('wxfile://tmp_1234.jpg', {})
+  log(localPath.coverSrc === '' && localPath.coverBroken === true, '审核台封面：发起人本机临时路径按地址失效处理')
+  log(/本机图片/.test(localPath.coverFailText), '审核台封面：本机临时路径的提示指向「没同步到云端」')
+
+  log(decorate('', {}).coverFailText === '未上传封面', '审核台封面：未上传封面时文案为未上传')
+  log(decorate('https://cdn.test/raw.png', {}).coverSrc === 'https://cdn.test/raw.png', '审核台封面：https 封面直接渲染')
+}
+
+checkAuditCoverDecisions()
+})
+.then(() => {
+/* ---------- 7. 前台封面：服务端换好的临时链接优先渲染 ---------- */
+/**
+ * 首页 / 广场 / 我的活动共用活动卡片，详情页自己渲染顶部封面。
+ * 客户端直连 cloud:// 可能被云存储读取权限拦下，所以两处都要优先用 coverUrl。
+ */
+function checkCoverUrlPreference() {
+  const api = require(path.join(ROOT, 'services/api'))
+
+  const components = []
+  global.Component = (options) => components.push(options)
+  require(path.join(ROOT, 'components/activity-card/index.js'))
+  const card = components[0]
+  log(!!(card && card.observers && typeof card.observers.act === 'function'), '活动卡片：能取到封面处理逻辑')
+
+  const cardCtx = {
+    data: { act: null, coverSrc: '' },
+    setData(patch) {
+      Object.assign(this.data, patch)
+    },
+  }
+  card.observers.act.call(cardCtx, { cover: 'cloud://env.box/cover.png', coverUrl: 'https://cdn.test/cover.jpg' })
+  log(cardCtx.data.coverSrc === 'https://cdn.test/cover.jpg', '活动卡片：优先渲染云函数换好的临时链接')
+  card.observers.act.call(cardCtx, { cover: 'cloud://env.box/cover.png' })
+  log(cardCtx.data.coverSrc === 'cloud://env.box/cover.png', '活动卡片：没有临时链接时退回原始 cover')
+  card.observers.act.call(cardCtx, { cover: '' })
+  log(cardCtx.data.coverSrc === '', '活动卡片：未上传封面时走默认海报')
+
+  // 临时链接默认 2 小时过期，页面停留过久后要能按 fileID 重取
+  const originalMedia = api.media
+  api.media = () =>
+    Promise.resolve({ 'cloud://env.box/cover.png': { url: 'https://cdn.test/cover-renewed.jpg', ok: true } })
+  cardCtx.data.act = { cover: 'cloud://env.box/cover.png' }
+  return card.methods
+    .onCoverError.call(cardCtx)
+    .then(() => {
+      log(
+        cardCtx.data.coverSrc === 'https://cdn.test/cover-renewed.jpg',
+        '活动卡片：临时链接失效时按 fileID 重取一次'
+      )
+      api.media = originalMedia
+      return null
+    })
+    .catch((e) => {
+      api.media = originalMedia
+      log(false, `活动卡片：封面重取异常 → ${e && e.message}`)
+    })
+}
+
+function checkDetailCoverUrl() {
+  const pageOptions = []
+  global.Page = (options) => pageOptions.push(options)
+  require(path.join(ROOT, 'pages/activity/detail/index.js'))
+  const page = pageOptions[0]
+  const ctx = {
+    data: { user: null },
+    setData(patch) {
+      Object.assign(this.data, patch)
+    },
+  }
+  page.applyActivity.call(ctx, {
+    id: 'act_cover',
+    type: 'hiking',
+    typeName: '徒步',
+    emoji: '🥾',
+    title: '带封面的活动',
+    cover: 'cloud://env.box/cover.png',
+    coverUrl: 'https://cdn.test/detail-cover.jpg',
+    groupQrCode: 'cloud://env.box/qr.png',
+    qrUrl: 'https://cdn.test/detail-qr.jpg',
+    location: '浙江省杭州市 九溪',
+    city: '杭州',
+    startTime: Date.now() + 86400000,
+    endTime: Date.now() + 2 * 86400000,
+    joinedPeople: [],
+    joinedCount: 0,
+    maxPeople: 10,
+    tags: [],
+    auditStatus: 'approved',
+  })
+  const activity = ctx.data.activity
+  log(!!activity && activity.coverSrc === 'https://cdn.test/detail-cover.jpg', '活动详情：封面优先用临时链接渲染')
+  log(!!activity && activity.qrSrc === 'https://cdn.test/detail-qr.jpg', '活动详情：群二维码优先用临时链接渲染')
+}
+
+return checkCoverUrlPreference().then(() => {
+  checkDetailCoverUrl()
+  return null
+})
+})
+.then(() => {
+/* ---------- 8. 地图选点：显示的地点 = 选点地址的「省 + 市」+ 用户点中的地点名 ---------- */
+/**
+ * chooseLocation 的 name 是用户点中的地点名（列表里加粗那行），address 是它所在的地址。
+ * 展示用的 location = 「省 + 市 + 地点名」（如「四川省成都市 华府大道地铁站」）：
+ * 用户一眼看得出在哪个城市，只有地址文本的老活动点「导航」也能凭这串省市提高解析命中率；
+ * 地点名本身已经带出省市（「广州市人民政府」）或退回完整地址时不再重复加。
+ * 完整地址单独存进 locationAddress（不上展示位），城市匹配与地址检索不丢。
+ */
+function checkPickedPlaceText() {
+  const { parsePickedPlace, placeNameOf } = require(path.join(ROOT, 'utils/location'))
+  const { matchCity } = require(path.join(ROOT, 'utils/cities'))
+
+  const picked = parsePickedPlace({
+    name: '华府大道地铁站',
+    address: '四川省成都市双流区天府大道南段附近',
+  })
+  log(picked.location === '四川省成都市 华府大道地铁站', '地图选点：地点文本前面补上选点地址的省 + 市')
+  log(picked.address === '四川省成都市双流区天府大道南段附近', '地图选点：完整地址单独存放，未落进展示文本')
+  log(matchCity(picked.address) === '成都', '地图选点：地址仍能匹配出城市，活动城市归属不受影响')
+
+  // 地址里只写简称（「广东广州」）也要拼成完整省市；换成另一个城市时前缀跟着变
+  const shortForm = parsePickedPlace({ name: '天河体育中心', address: '广东广州天河区天河路299号' })
+  log(shortForm.location === '广东省广州市 天河体育中心', '地图选点：地址写简称时也能拼出完整的省 + 市')
+  const otherCity = parsePickedPlace({ name: '西湖断桥', address: '浙江省杭州市西湖区北山街' })
+  log(otherCity.location === '浙江省杭州市 西湖断桥', '地图选点：前缀跟着选中的地址走，不会串城市')
+
+  // 地点名本身已经带省市（选中的 poi 就叫「广州市人民政府」）时不重复加前缀
+  const named = parsePickedPlace({ name: '广州市人民政府', address: '广东省广州市越秀区府前路1号' })
+  log(named.location === '广州市人民政府', '地图选点：地点名已带省市时不重复加前缀')
+  log(named.address === '广东省广州市越秀区府前路1号', '地图选点：重复判断不影响地址落库')
+
+  // 用户拖动地图选点时没有地点名，只有地址，退回地址当展示文本
+  const barePoint = parsePickedPlace({ name: '', address: '四川省成都市双流区天府大道南段' })
+  log(barePoint.location === '四川省成都市双流区天府大道南段' && barePoint.address === barePoint.location, '地图选点：无地点名时退回地址文本')
+  log(parsePickedPlace({ name: '', address: '' }).location === '', '地图选点：两个字段都为空时返回空串')
+  log(parsePickedPlace({ name: '某某广场', address: '' }).location === '某某广场', '地图选点：地址为空时只显示地点名')
+  log(placeNameOf('四川省成都市 华府大道地铁站') === '华府大道地铁站', '地图选点：能还原出地点名，供编辑时判断是否还是同一个地点')
+
+  const longName = parsePickedPlace({
+    name: '一个特别特别长以至于会顶到上限的地点名称示例文字',
+    address: '四川省成都市双流区天府大道南段',
+  })
+  log(longName.location.length <= 50, `地图选点：显示文本不超过 50 字（实际 ${longName.location.length} 字）`)
+  log(longName.address.length <= 100, `地图选点：地址字段不超过 100 字（实际 ${longName.address.length} 字）`)
+
+  // 页面接线：点完地图后表单显示「省 + 市 + 地点名」，完整地址进 locationAddress，而不是混在一起显示
+  const pageOptions = []
+  global.Page = (options) => pageOptions.push(options)
+  global.wx.chooseLocation = ({ success }) =>
+    success({ name: '华府大道地铁站', address: '四川省成都市双流区天府大道南段附近', latitude: 30.5, longitude: 104.1 })
+  delete require.cache[path.join(ROOT, 'pages/activity/publish/index.js')]
+  require(path.join(ROOT, 'pages/activity/publish/index.js'))
+  const page = pageOptions[0]
+  const ctx = {
+    data: { form: { location: '' }, errors: {}, cityTip: '' },
+    setData(patch) {
+      if (patch['form.location'] !== undefined) this.data.form.location = patch['form.location']
+      if (patch['form.locationAddress'] !== undefined) this.data.form.locationAddress = patch['form.locationAddress']
+      if (patch['form.locationLat'] !== undefined) this.data.form.locationLat = patch['form.locationLat']
+      if (patch['form.locationLng'] !== undefined) this.data.form.locationLng = patch['form.locationLng']
+      if (patch.cityTip !== undefined) this.data.cityTip = patch.cityTip
+    },
+    clearError() {},
+  }
+  ctx.updateCityTip = () => page.updateCityTip.call(ctx)
+  globalData.city = '成都'
+  page.chooseLocation.call(ctx)
+  log(ctx.data.form.location === '四川省成都市 华府大道地铁站', '发布页：地图选点后表单显示「省 + 市 + 地点名」')
+  log(ctx.data.form.locationAddress === '四川省成都市双流区天府大道南段附近', '发布页：地址写进 locationAddress，不进展示位')
+  log(
+    ctx.data.form.locationLat === 30.5 && ctx.data.form.locationLng === 104.1,
+    '发布页：地图选点的坐标一起存下来，点地址时用它直接开地图'
+  )
+  log(ctx.data.cityTip === '', '发布页：地址里带城市时不提示城市归属')
+
+  // 手输到和选点结果无关（整句换掉）时丢掉旧地址，避免城市还按旧地址算
+  page.onLocationInput.call(ctx, { detail: { value: '上海人民广场' } })
+  log(ctx.data.form.locationAddress === '', '发布页：整句改写成别的地方后清掉旧地址，城市不会停在原地址上')
+  log(
+    ctx.data.form.locationLat === 0 && ctx.data.form.locationLng === 0,
+    '发布页：整句改写后旧坐标一起清掉，导航不会跳到上一个点'
+  )
+
+  // 选点后只是微调名称时保留地址，城市归属不会因为补两个字就丢掉
+  page.chooseLocation.call(ctx)
+  page.onLocationInput.call(ctx, { detail: { value: '华府大道地铁站A口' } })
+  log(ctx.data.form.locationAddress === '四川省成都市双流区天府大道南段附近', '发布页：在选点名称上补充说明时保留地址，城市匹配不受影响')
+
+  // 把自动补上的省市前缀删掉继续编辑：还是同一个地点，地址与坐标不该跟着丢
+  page.chooseLocation.call(ctx)
+  page.onLocationInput.call(ctx, { detail: { value: '华府大道地铁站' } })
+  log(
+    ctx.data.form.locationAddress === '四川省成都市双流区天府大道南段附近' &&
+      ctx.data.form.locationLat === 30.5,
+    '发布页：删掉自动补的省市前缀后地址与坐标仍在，导航不会跳到别处'
+  )
+
+  // 手输缺省市的短地址：提前告诉用户会按当前城市归属，避免发布后「按城市筛选找不到」
+  page.onLocationInput.call(ctx, { detail: { value: '双流区润和路附近' } })
+  log(
+    ctx.data.cityTip.indexOf('成都') > -1,
+    '发布页：集合地点缺省市时提示会按当前城市「成都」归属'
+  )
+  globalData.city = ''
+  page.onLocationInput.call(ctx, { detail: { value: '双流区润和路附近' } })
+  log(
+    ctx.data.cityTip.indexOf('省市') > -1,
+    '发布页：连当前城市都没有时提示补全地址，别让活动掉到城市筛选之外'
+  )
+  globalData.city = '成都'
+
+  // 服务端：只收到地点名也能靠 locationAddress 归属城市，并且地址可被检索到
+  const api = require(path.join(ROOT, 'services/api'))
+  return api
+    .create({
+      form: {
+        type: 'hiking',
+        title: '地图选点城市归属测试',
+        location: '华府大道地铁站',
+        locationAddress: '四川省成都市双流区天府大道南段附近',
+        startTime: Date.now() + 86400000,
+        endTime: Date.now() + 2 * 86400000,
+        groupQrCode: 'mock://qr',
+      },
+    })
+    .then((created) => {
+      log(created.location === '华府大道地铁站', '发布：库里存的集合地点就是点中的地点名')
+      log(created.city === '成都', '发布：城市按不展示的地址匹配出「成都」')
+      log(created.locationAddress === '四川省成都市双流区天府大道南段附近', '发布：地址落库备查')
+      return api.adminList({ status: 'pending', keyword: '双流' }).then((pending) => {
+        log(
+          pending.list.some((item) => item.id === created.id),
+          '审核台：审核人按地址关键词也能搜到活动，地址没有被丢'
+        )
+        return api.adminApprove(created.id)
+      })
+    })
+    .then((res) => {
+      log(!!res && res.auditStatus === 'approved', '审核台：测试活动已通过，用于验证广场检索')
+      return api.list({ pageIndex: 0, pageSize: 100, keyword: '双流' })
+    })
+    .then((found) => {
+      log(
+        found.list.some((item) => item.title === '地图选点城市归属测试'),
+        '广场：上架后按地址关键词「双流」也能搜到，集合地点只显示地名'
+      )
+      // 缺省市的短地址：地址里认不出城市时按发布者当前城市兜底归属
+      return api.create({
+        form: {
+          type: 'hiking',
+          title: '缺省市地址归属测试',
+          location: '双流区润和路附近',
+          startTime: Date.now() + 86400000,
+          endTime: Date.now() + 2 * 86400000,
+          groupQrCode: 'mock://qr',
+          // 发布页按当前定位城市上送，只用于地址认不出城市时兜底
+          cityHint: '成都',
+        },
+      })
+    })
+    .then((created) => {
+      log(
+        created.city === '成都',
+        '发布：手输「双流区润和路附近」也能按发布者当前城市归属到「成都」'
+      )
+      return api.adminApprove(created.id).then(() => ({ id: created.id, title: created.title }))
+    })
+    .then((created) => {
+      return api.list({ pageIndex: 0, pageSize: 100, city: '成都' }).then((chengdu) => {
+        log(
+          chengdu.list.some((item) => item.id === created.id),
+          '广场：定位成都后能筛出这条缺省市地址的活动，不再「一条都筛不到」'
+        )
+        // 省份 / 全国这种落不到单个城市的提示不能当归属用
+        return api.create({
+          form: {
+            type: 'hiking',
+            title: '无效城市提示测试',
+            location: '某某路附近',
+            startTime: Date.now() + 86400000,
+            endTime: Date.now() + 2 * 86400000,
+            groupQrCode: 'mock://qr',
+            cityHint: '四川省',
+          },
+        })
+      })
+    })
+    .then((created) => {
+      log(created.city === '', '发布：省份 / 全国这类提示不算城市归属，不会把活动错挂到某个城市')
+      return null
+    })
+}
+
+/* ---------- 9. 点击地址调起导航 ---------- */
+/**
+ * 详情页地点行与广场卡片地点行都接上了 openNavigation：
+ * - 地图选点发布的活动有坐标，直接用坐标打开微信内置地图（用户在地图页选地图软件，
+ *   坐标与地址一起带过去开始导航）；
+ * - 历史活动只有地址文本，先按地址解析（缺省市的短地址会带上城市再查一次）；
+ * - 解析不出来（没配 mapKey / 地址太短）时给两条路：在地图上点选位置后直接导航，或复制地址。
+ *   点一下不该只弹一个「无法自动定位」的死胡同，要能走到地图上。
+ */
+function checkLocationNavigation() {
+  const location = require(path.join(ROOT, 'utils/location'))
+  const calls = []
+  const requests = []
+  let geocodeReply = null
+  let actionIndex = 1
+  let pickedPlace = null
+  global.wx.showLoading = () => {}
+  global.wx.hideLoading = () => {}
+  global.wx.showModal = (options) => options.success({ confirm: true })
+  global.wx.openLocation = (options) => {
+    calls.push(['openLocation', options])
+    options.success()
+  }
+  global.wx.setClipboardData = (options) => {
+    calls.push(['setClipboardData', options.data])
+    options.success()
+  }
+  // 解析不出坐标时的兜底入口：0 = 在地图上点选位置，1 = 仅复制地址
+  global.wx.showActionSheet = (options) => {
+    calls.push(['showActionSheet', options])
+    options.success({ tapIndex: actionIndex })
+  }
+  global.wx.chooseLocation = (options) => {
+    calls.push(['chooseLocation', options])
+    if (pickedPlace) options.success(pickedPlace)
+    else options.fail({ errMsg: 'chooseLocation:fail cancel' })
+  }
+  global.wx.request = (options) => {
+    requests.push(options.data)
+    options.success({
+      data: geocodeReply
+        ? { status: 0, result: { location: { lat: geocodeReply.lat, lng: geocodeReply.lng } } }
+        : { status: 1, message: '解析失败' },
+    })
+  }
+  const firstCall = (name) => calls.filter((item) => item[0] === name)[0] || null
+
+  log(location.usableCoord(30.5, 104.1) !== null, '导航：正常经纬度可用')
+  log(location.usableCoord(0, 0) === null, '导航：0,0 视为没有坐标，走地址解析兜底')
+  log(location.usableCoord(120, 200) === null, '导航：范围外的经纬度视为没有坐标')
+
+  // 解析用的城市上下文：活动城市 > 地址里认出的城市 > 当前定位城市
+  globalData.city = '成都'
+  log(location.regionOf({ city: '杭州', address: '西湖断桥' }) === '杭州', '导航：优先用活动自己的城市做解析参考')
+  log(location.regionOf({ address: '四川省成都市双流区润和路' }) === '成都', '导航：活动没有城市时从地址文本里认城市')
+  log(
+    location.regionOf({ address: '双流区润和路附近' }) === '成都',
+    '导航：地址缺省市时退回当前定位城市做解析参考'
+  )
+
+  return (async () => {
+    // 1) 地图选点发布的活动：直接用落库坐标打开内置地图，不再请求解析接口
+    const opened = await location.openNavigation({
+      name: '华府大道地铁站',
+      address: '四川省成都市双流区天府大道南段附近',
+      city: '成都',
+      latitude: 30.5,
+      longitude: 104.1,
+    })
+    const openedCall = firstCall('openLocation')
+    log(opened === 'opened' && !!openedCall, '导航：有坐标的活动直接调起内置地图')
+    log(
+      !!openedCall && openedCall[1].latitude === 30.5 && openedCall[1].longitude === 104.1,
+      '导航：地图打开的坐标就是活动落库的坐标'
+    )
+    log(requests.length === 0, '导航：有坐标时不走地址解析，省掉一次网络请求')
+
+    // 2) 未配置 mapKey + 只有地址文本：点击导航先给出「地图选点 / 复制地址」两条路
+    config.mapKey = ''
+    calls.length = 0
+    requests.length = 0
+    actionIndex = 1
+    let result = await location.openNavigation({
+      name: '西湖断桥',
+      address: '浙江省杭州市西湖区',
+      city: '杭州',
+    })
+    const sheet = firstCall('showActionSheet')
+    const copied = firstCall('setClipboardData')
+    log(!!sheet && sheet[1].itemList.length === 2, '导航：解析不出坐标时给出「地图点选 / 复制地址」两条路')
+    log(result === 'copied' && !!copied, '导航：选「复制地址」后复制完整地址，点了不会没反应')
+    log(!!copied && copied[1] === '浙江省杭州市西湖区', '导航：复制的是完整地址，粘到地图软件里能直接搜')
+
+    // 3) 选「在地图上点选位置后导航」：地图页预填地址，选中后直接调起导航
+    calls.length = 0
+    actionIndex = 0
+    pickedPlace = {
+      name: '润和路',
+      address: '四川省成都市双流区润和路',
+      latitude: 30.5742,
+      longitude: 103.9231,
+    }
+    result = await location.openNavigation({ name: '双流区润和路附近', address: '双流区润和路附近' })
+    const picker = firstCall('chooseLocation')
+    const pickedOpen = firstCall('openLocation')
+    log(
+      !!picker && picker[1].keyword === '双流区润和路附近' && picker[1].latitude === 30.6595,
+      '导航：地图点选页预填地址，并从所属城市（成都）中心打开'
+    )
+    log(result === 'opened' && !!pickedOpen, '导航：地图上点选的位置能直接调起导航，不是只能复制地址')
+    log(
+      !!pickedOpen && pickedOpen[1].latitude === 30.5742 && pickedOpen[1].longitude === 103.9231,
+      '导航：导航用的就是用户在地图上点中的坐标'
+    )
+
+    // 用户在地图点选页取消：按取消处理，不报错也不重复弹窗
+    calls.length = 0
+    pickedPlace = null
+    result = await location.openNavigation({ name: '双流区润和路附近', address: '双流区润和路附近' })
+    log(result === 'cancelled' && !firstCall('setClipboardData'), '导航：地图点选被取消时按取消处理，不反复打扰用户')
+
+    // 4) 配置了 mapKey：按地址文本解析出坐标再打开地图（手输的一整条长地址同样能导航）
+    config.mapKey = 'TEST_KEY'
+    geocodeReply = { lat: 30.4273, lng: 104.0805 }
+    calls.length = 0
+    requests.length = 0
+    result = await location.openNavigation({
+      name: '四川省成都市双流区天府新区天府大道南二段与科学城北路东段交汇处',
+      address: '',
+      city: '成都',
+    })
+    const geocoded = firstCall('openLocation')
+    log(result === 'opened' && requests.length === 1, '导航：只有地址文本时先解析坐标再打开地图')
+    log(
+      !!geocoded && geocoded[1].latitude === 30.4273 && geocoded[1].longitude === 104.0805,
+      '导航：地图打开的坐标来自地址解析结果'
+    )
+    log(
+      !!geocoded && geocoded[1].address === '四川省成都市双流区天府新区天府大道南二段与科学城北路东段交汇处',
+      '导航：完整地址一起交给地图软件，导航里不用再手输'
+    )
+
+    // 5) 缺省市的短地址：第一次带 region 解析失败后，补上城市再解析一次
+    config.mapKey = 'TEST_KEY'
+    geocodeReply = null
+    calls.length = 0
+    requests.length = 0
+    actionIndex = 1
+    result = await location.openNavigation({ name: '双流区润和路附近', address: '双流区润和路附近', city: '成都' })
+    log(requests.length === 2, '导航：缺省市地址先按城市区域查，失败后补上城市名再查一次')
+    log(
+      requests[0] && requests[0].address === '双流区润和路附近' && requests[0].region === '成都',
+      '导航：第一次解析把活动城市当作区域参考'
+    )
+    log(requests[1] && requests[1].address === '成都双流区润和路附近', '导航：第二次解析把城市补进地址，命中率更高')
+
+    // 补全后解析成功：直接打开地图，不再弹兜底选项
+    geocodeReply = { lat: 30.5742, lng: 103.9231 }
+    calls.length = 0
+    requests.length = 0
+    result = await location.openNavigation({ name: '双流区润和路附近', address: '双流区润和路附近', city: '成都' })
+    log(
+      result === 'opened' && !firstCall('showActionSheet'),
+      '导航：补全城市后解析成功，直接调起内置地图，不再走兜底弹窗'
+    )
+
+    config.mapKey = ''
+    globalData.city = ''
+    return null
+  })()
+}
+
+return checkPickedPlaceText().then(() => checkLocationNavigation())
+})
+.then(() => {
+/* ---------- 8. 城市选择器：省 + 全部按全省筛选 ---------- */
+/**
+ * 选择器把「省 + 全部」翻译成省名提交（如广东省），城市列有具体城市时提交城市名。
+ * 首页 / 广场据此按全省或单城过滤，省与市都选「全部」时提交空串表示全国。
+ */
+function checkCityPickerProvince() {
+  const { PROVINCES } = require(path.join(ROOT, 'utils/cities'))
+  const components = []
+  const originComponent = global.Component
+  global.Component = (options) => components.push(options)
+  try {
+    require(path.join(ROOT, 'components/city-picker/index.js'))
+  } finally {
+    global.Component = originComponent
+  }
+  const component = components[components.length - 1]
+  log(!!(component && component.methods && typeof component.methods.confirm === 'function'), '城市选择器：能取到组件配置')
+  if (!component) return
+
+  const events = []
+  const methods = component.methods
+  const ctx = {
+    data: Object.assign({}, component.data),
+    setData(patch) {
+      Object.assign(this.data, patch)
+    },
+    triggerEvent(name, detail) {
+      events.push({ name, detail })
+    },
+  }
+  // 组件方法之间会互相调用（open -> applyProvince），统一挂到同一个上下文上
+  Object.keys(methods).forEach((name) => {
+    ctx[name] = methods[name].bind(ctx)
+  })
+  const gdIndex = PROVINCES.findIndex((item) => item.name === '广东省') + 1
+  log(gdIndex > 0, '城市选择器：字典里能定位到广东省')
+
+  // 省 + 全部 -> 全省筛选
+  methods.applyProvince.call(ctx, gdIndex, 0)
+  methods.confirm.call(ctx)
+  log(events[0] && events[0].detail.city === '广东省', '城市选择器：省 + 全部提交省名做全省筛选')
+  log(events[0] && events[0].detail.label === '广东省', '城市选择器：省 + 全部在定位栏展示省名')
+
+  // 省 + 市 -> 单城筛选
+  methods.applyProvince.call(ctx, gdIndex, 2)
+  methods.confirm.call(ctx)
+  log(events[1] && events[1].detail.city === '深圳', '城市选择器：选到具体城市时提交城市名')
+
+  // 全部 + 全部 -> 全国
+  methods.applyProvince.call(ctx, 0, 0)
+  methods.confirm.call(ctx)
+  log(
+    events[2] && events[2].detail.city === '' && events[2].detail.label === '全部',
+    '城市选择器：全部 + 全部提交空值做全国展示'
+  )
+
+  // 重开选择器要回到当前选区，省级筛选不能被显示成「全部」
+  methods.open.call(ctx, '广东省')
+  log(
+    ctx.data.provinceIndex === gdIndex && ctx.data.cityIndex === 0 && ctx.data.visible === true,
+    '城市选择器：重开时回填「广东省 + 全部」'
+  )
+  methods.open.call(ctx, '深圳')
+  log(
+    ctx.data.provinceIndex === gdIndex && ctx.data.cityLabels[ctx.data.cityIndex] === '深圳市',
+    '城市选择器：重开时回填具体城市'
+  )
+}
+
+checkCityPickerProvince()
+})
+.then(() => {
   console.log(`\n通过 ${passed.length} 项，失败 ${errors.length} 项\n`)
+  // 默认只列失败项；加 VALIDATE_VERBOSE=1 可以把逐条结论也打出来
+  if (process.env.VALIDATE_VERBOSE) {
+    console.log('通过项：')
+    passed.forEach((item) => console.log(`  ✓ ${item}`))
+  }
   if (errors.length) {
     console.log('失败项：')
     errors.forEach((item) => console.log(`  ✗ ${item}`))
