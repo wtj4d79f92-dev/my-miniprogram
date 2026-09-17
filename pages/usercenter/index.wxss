@@ -139,6 +139,11 @@
   color: var(--text-light);
 }
 
+/* 注销账号：破坏性操作，文案用警示色与常规入口区分 */
+.entry-danger .entry-title {
+  color: #e5484d;
+}
+
 .version {
   padding: 50rpx 0 20rpx;
   text-align: center;

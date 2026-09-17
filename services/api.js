@@ -1,6 +1,6 @@
 // 统一服务层：Mock 与云开发模式接口签名完全一致，通过 config.useMock 切换
 const config = require('./config')
-const { KEYS, getStorage, setStorage } = require('../utils/storage')
+const { KEYS, getStorage, setStorage, removeStorage } = require('../utils/storage')
 const { getType, supportsTags, supportsMetrics, tagName } = require('../utils/dict')
 const { matchCity, normalizeCity, singleCityKey } = require('../utils/cities')
 const { delay, deepClone, formatCardDate, WEEKDAY_TEXT } = require('../utils/util')
@@ -545,6 +545,48 @@ const mockApi = {
     return withDelay({})
   },
 
+  /**
+   * 注销账号（Mock）：本地数据就是全部数据，一次性清空。
+   * 与云端同一套口径：账号、我发布的、我报名的、我提交的反馈全部删除，
+   * 别人活动报名名单里的自己也要摘掉，否则会留下一个点不进去的成员。
+   */
+  deleteAccount() {
+    const user = getStorage(KEYS.user, null)
+    if (!user || !user.openid) return fail('UNAUTHORIZED', '请先登录')
+
+    const published = getStorage(KEYS.published, []) || []
+    const publishedIds = published.map((item) => item.id)
+
+    removeStorage(KEYS.user)
+    removeStorage(KEYS.published)
+    removeStorage(KEYS.joined)
+    removeStorage(KEYS.feedback)
+    removeStorage(KEYS.lastPhone)
+
+    // 我发布活动的本地状态 / 审核覆盖一起清掉，避免残留数据覆盖到同 id 的活动
+    const statusMap = getStorage(mock.MOCK_STATUS_MAP, {}) || {}
+    const auditMap = getStorage(mock.MOCK_AUDIT_MAP, {}) || {}
+    publishedIds.forEach((id) => {
+      delete statusMap[id]
+      delete auditMap[id]
+    })
+    setStorage(mock.MOCK_STATUS_MAP, statusMap)
+    setStorage(mock.MOCK_AUDIT_MAP, auditMap)
+
+    const joinMap = getStorage(mock.MOCK_JOIN_MAP, {}) || {}
+    let joins = 0
+    Object.keys(joinMap).forEach((id) => {
+      const before = joinMap[id] || []
+      const after = before.filter((member) => member.openid !== user.openid)
+      if (after.length === before.length) return
+      joinMap[id] = after
+      joins += 1
+    })
+    setStorage(mock.MOCK_JOIN_MAP, joinMap)
+
+    return withDelay({ ok: true, activities: published.length, joins })
+  },
+
   /* ------------------------- 本地审核（仅 Mock 模式） ------------------------- */
   // Mock 模式下把当前登录用户当作审核人，方便本地把审核链路完整跑通。
   // 云端权限判断在 cloudfunctions/admin 里，与这里互不影响。
@@ -673,6 +715,10 @@ const cloudApi = {
   },
   feedback(payload) {
     return callCloud('feedback', payload)
+  },
+  /** 注销账号：云端会删除账号、其发布的活动（含云存储文件）、报名记录与反馈 */
+  deleteAccount() {
+    return callCloud('deleteAccount', {})
   },
   /**
    * fileID -> 临时 https 地址。临时链接默认 2 小时过期，

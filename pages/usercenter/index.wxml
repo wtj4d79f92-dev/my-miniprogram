@@ -91,6 +91,18 @@
         </view>
       </view>
 
+      <!-- 注销账号：破坏性操作单独一组，与常规功能入口区分开 -->
+      <view wx:if="{{user}}" class="entry-group card">
+        <view class="entry entry-danger" bindtap="deleteAccount">
+          <text class="entry-icon">🗑️</text>
+          <view class="entry-main">
+            <text class="entry-title">注销账号</text>
+            <text class="entry-desc">删除账号与全部相关数据，不可恢复</text>
+          </view>
+          <text class="entry-arrow">›</text>
+        </view>
+      </view>
+
       <view class="version"><text>{{texts.version}}</text></view>
     </view>
   </scroll-view>

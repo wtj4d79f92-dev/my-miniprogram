@@ -29,6 +29,8 @@ Page({
     phoneInput: '',
     phoneAgreed: false,
     binding: false,
+    // 注销进行中：防重复提交，也用来禁用入口
+    deleting: false,
   },
 
   onShow() {
@@ -283,6 +285,80 @@ Page({
 
   goFeedback() {
     wx.navigateTo({ url: '/pages/feedback/index' })
+  },
+
+  /* ------------------------------ 注销账号 ------------------------------ */
+
+  /**
+   * 注销账号：两次确认后才真正提交。
+   * 删除不可撤销（账号、报名记录、我发布的活动都会消失），所以第一次说明后果，第二次才动手；
+   * 中途取消不留任何痕迹，也不调用接口。
+   */
+  deleteAccount() {
+    if (this.data.deleting) return
+    if (!this.data.user) {
+      this.onLoginTap()
+      return
+    }
+    ui.confirm({
+      title: '注销账号',
+      content:
+        '注销后，你的账号信息、报名记录以及你发布的活动都会被永久删除，且无法恢复。同一微信再次登录会重新注册为新账号。',
+      confirmText: '继续注销',
+      cancelText: '再想想',
+      confirmColor: '#E5484D',
+    })
+      .then((ok) => {
+        if (!ok) return false
+        return ui.confirm({
+          title: '确认注销',
+          content: '最后确认：账号与全部相关数据都会被删除，无法恢复。确定要注销吗？',
+          confirmText: '确认注销',
+          cancelText: '取消',
+          confirmColor: '#E5484D',
+        })
+      })
+      .then((ok) => {
+        if (!ok) return null
+        this.setData({ deleting: true })
+        ui.loading('正在注销')
+        return api.deleteAccount().then(
+          () => {
+            ui.hideLoading()
+            this.setData({ deleting: false })
+            this.afterDeleteAccount()
+            return null
+          },
+          (err) => {
+            ui.hideLoading()
+            this.setData({ deleting: false })
+            ui.toast((err && err.message) || '注销失败，请重试')
+            return null
+          }
+        )
+      })
+  },
+
+  /** 注销成功：本地登录态与页面数据一起复位，回到未登录的「我的」 */
+  afterDeleteAccount() {
+    const app = getApp()
+    if (app && app.applyUser) {
+      app.applyUser(null)
+    } else if (app && app.setUser) {
+      app.setUser(null)
+    }
+    // 审核入口按 openid 判断，换账号后要重新问一次
+    this._adminChecked = false
+    this.setData({
+      user: null,
+      needProfile: false,
+      joinedCount: 0,
+      publishedCount: 0,
+      isAdmin: false,
+      showProfile: false,
+      showPhone: false,
+    })
+    ui.toast('账号已注销', 'success')
   },
 
   showAbout() {

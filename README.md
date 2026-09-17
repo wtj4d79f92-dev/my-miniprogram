@@ -42,7 +42,7 @@ scripts/cloud-validate.js         云函数离线校验（内存数据库跑 act
 `services/config.js` 中 `useMock` 控制数据来源：
 
 - `useMock: true`（默认）：数据由 `services/mock.js` 生成，操作结果写入本地缓存，缓存键与 PRD 5.3 一致（`aa_selected_city`、`square_pending_type`、`my_user`、`my_user_counter`、`my_published`、`my_joined`、`my_feedback`），另加 `mock_join_map`、`mock_status_map`、`mock_audit_map` 三个运行期缓存键，用于记录报名成员、关闭状态与关闭时间、本地审核结果。
-- `useMock: false`：走云开发，客户端调用 `activity` 云函数，action 与 PRD 8.6 一致（`home / list / detail / create / update / join / quit / toggle / mine / user / login / updateUser / qrcode / feedback`），审核相关调用走独立的 `admin` 云函数。
+- `useMock: false`：走云开发，客户端调用 `activity` 云函数，action 与 PRD 8.6 一致（`home / list / detail / create / update / join / quit / toggle / mine / user / login / updateUser / qrcode / feedback / deleteAccount`），审核相关调用走独立的 `admin` 云函数。
 
 > Mock 模式下把当前登录用户视为审核人，本地也能把「发布 → 待审 → 驳回 → 修改重提 → 通过」整条链路跑通；云端真人权限见下方「活动审核」。
 
@@ -56,6 +56,17 @@ scripts/cloud-validate.js         云函数离线校验（内存数据库跑 act
 6. 在 `project.config.json` 中补充 `"cloudfunctionRoot": "cloudfunctions/"` 后部署云函数。
 
 前端页面逻辑不依赖具体数据来源，切换开关即可，无需改动页面代码。
+
+## 注销账号
+
+「我的」底部提供自助注销入口，两次确认后才真正执行（第一次说明后果，第二次是最终确认），注销不可撤销。注销时按「先内容、再报名、最后账号」的顺序清理，中途失败账号仍在，用户可以重新发起：
+
+1. **我发布的活动**：连同 `cover` / `groupQrCode` / `miniQrCode` 三个云存储文件一起删除（Mock 模式清本地 `my_published` 与对应的状态、审核覆盖）；
+2. **我在别人活动里的报名**：从 `joinedPeople` 里移除并同步 `joinedCount`；
+3. **我提交的反馈**：`feedback` 集合里该 openid 的记录删除；
+4. **账号本身**：`users` 里的记录删除。
+
+`activity_audits` 里的审核日志保留：那是平台内容审核的留存记录，只含活动 id、标题与审核人信息，不含注销用户的昵称 / 头像 / 手机号。注销后同一个微信再次登录会重新注册为新账号（用户编号递增），历史数据不会回来。
 
 ## 活动关闭
 
@@ -186,7 +197,7 @@ node scripts/validate.js
 node scripts/cloud-validate.js
 ```
 
-会检查：页面与组件的文件完整性、`usingComponents` 引用是否可解析、JSON 是否合法、JS 是否可通过语法解析，并跑一遍 Mock 业务链路（首页 → 广场筛选 → 详情 → 发布 → 报名 → 我的活动 → 关闭活动 → 退出 → 反馈 → 机审自动放行）。
+会检查：页面与组件的文件完整性、`usingComponents` 引用是否可解析、JSON 是否合法、JS 是否可通过语法解析，并跑一遍 Mock 业务链路（首页 → 广场筛选 → 详情 → 发布 → 报名 → 我的活动 → 关闭活动 → 退出 → 反馈 → 机审自动放行 → 注销账号）。
 
 `scripts/cloud-validate.js` 用内存数据库替代 `wx-server-sdk`，直接调用三个云函数的入口，覆盖：审核前后在首页 / 广场 / 详情的可见性、发布与编辑重提、报名与关闭的审核守卫、已关闭活动的当天可见与沉底排序（含跨页、城市筛选叠加、次日消失、重新打开归零）、审核人权限（含越权调用被拒）、待审列表与统计、驳回原因校验、审核日志、历史数据迁移，以及机审（文本违规拦截不写库、疑似标记复核、图片异步回调写回、图片违规自动驳回与下架、机审全过自动放行、二维码没识别出微信群码时直接驳回且不进待审队列、被驳回后图片全通过也不放行、部分图片没结论 / 文本质疑 / 识别接口异常转人工、人工驳回后不被机审放行、接口异常降级）。机审接口在测试里是桩，通过行为开关切换文本与图片的 pass / review / risky / 调用失败、响应里不带结论、仅首张图送检失败，以及二维码的识别到群链接 / 没识别到码 / 不是群链接 / 只有一维码 / 调用失败；「没结论」这条线单独覆盖：文本降级 → 图片结论回来后补检文本 → 补到结论自动放行（日志写明补检）、补检仍失败继续转人工（记 `text-recheck`）、图片推送没结论时不写 `pass` 也不放行（记 `image-failed`）、旧版推送只带 `isrisky` 仍按结论处理。它是纯本地运行，不依赖云环境，也不改动云端数据。
 

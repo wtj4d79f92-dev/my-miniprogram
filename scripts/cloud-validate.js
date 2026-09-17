@@ -158,6 +158,13 @@ class DocRef {
     Object.assign(doc, deepCopy(data))
     return { stats: { updated: 1 } }
   }
+
+  async remove() {
+    const index = store[this.name].findIndex((item) => item._id === this.id)
+    if (index === -1) return { stats: { removed: 0 } }
+    store[this.name].splice(index, 1)
+    return { stats: { removed: 1 } }
+  }
 }
 
 class Query {
@@ -269,6 +276,14 @@ class Query {
     store[this.name].push(doc)
     return { _id: doc._id }
   }
+
+  /** 与云端一致：条件删除只影响命中的文档，返回删除条数 */
+  async remove() {
+    const rows = this.matched()
+    const ids = rows.map((item) => item._id)
+    store[this.name] = store[this.name].filter((item) => ids.indexOf(item._id) === -1)
+    return { stats: { removed: rows.length } }
+  }
 }
 
 class Transaction {
@@ -313,6 +328,11 @@ const fakeCloud = {
         return { fileID, tempFileURL: `https://tmp.test/${encodeURIComponent(fileID)}`, status: 0, errMsg: 'ok' }
       }),
     }
+  },
+  async deleteFile({ fileList }) {
+    const list = fileList || []
+    deletedFiles.push.apply(deletedFiles, list)
+    return { fileList: list.map((fileID) => ({ fileID, status: 0, errMsg: 'ok' })) }
   },
   openapi: {
     phonenumber: { getPhoneNumber: async () => ({ phoneInfo: {} }) },
@@ -398,6 +418,8 @@ const securityBehavior = {
 const securityCalls = []
 const qrCalls = []
 const mediaTraceIds = []
+/** 注销时云存储被删掉的文件，按调用顺序记录 */
+const deletedFiles = []
 let mediaSeq = 0
 let imageCallSeq = 0
 let tempUrlEnabled = true
@@ -443,6 +465,7 @@ function resetStore() {
   })
   autoId = 0
   missingFileIDs.clear()
+  deletedFiles.length = 0
 }
 
 /** 预期内的降级路径会打 console.error，跑测试时静音掉，保持输出可读 */
@@ -1483,6 +1506,64 @@ async function run() {
       openedSquare.list[openedSquare.list.length - 1].id === 'act_closed_today' &&
       openedSquare.total === 4,
     '重新打开：活动立即回到广场的未关闭序列'
+  )
+
+  /* ---------- 注销账号：账号、发布、报名、反馈与云存储文件一次清干净 ---------- */
+  resetStore()
+  seedUser(ORGANIZER, '发起人')
+  seedUser(OTHER, '路人')
+  const ownActivity = seedActivity({
+    organizer: { openid: OTHER, nickName: '路人', avatarColor: '#FF8E72', avatarUrl: '', avatarText: '路' },
+    cover: 'cloud://env/cover.png',
+    groupQrCode: 'cloud://env/qr.png',
+    miniQrCode: 'cloud://env/mini.png',
+  })
+  const sharedActivity = seedActivity({
+    _id: 'act_shared',
+    joinedPeople: [{ openid: OTHER, nickName: '路人', avatarColor: '#FF8E72', avatarUrl: '', avatarText: '路' }],
+    joinedCount: 1,
+  })
+  store.feedback.push({ _id: 'fb_mine', openid: OTHER, content: '注销前的反馈', createTime: Date.now(), status: 'pending' })
+  store.feedback.push({ _id: 'fb_other', openid: ORGANIZER, content: '别人的反馈', createTime: Date.now(), status: 'pending' })
+
+  const deleted = await callActivity('deleteAccount', {}, OTHER)
+  log(!!deleted && deleted.ok === true, '注销：云函数返回成功')
+  log(
+    !store.users.some((item) => item.openid === OTHER),
+    '注销：users 里的账号记录被删除'
+  )
+  log(
+    !store.activities.some((item) => item._id === ownActivity._id),
+    '注销：他发布的活动被删除'
+  )
+  const sharedAfter = store.activities.filter((item) => item._id === sharedActivity._id)[0]
+  log(
+    !!sharedAfter &&
+      sharedAfter.joinedPeople.every((member) => member.openid !== OTHER) &&
+      sharedAfter.joinedCount === 0,
+    '注销：别人活动报名名单里的自己一并移除且人数同步'
+  )
+  log(
+    store.feedback.every((item) => item.openid !== OTHER) &&
+      store.feedback.some((item) => item.openid === ORGANIZER),
+    '注销：只删自己的反馈，别人的反馈保持不动'
+  )
+  log(
+    deletedFiles.indexOf('cloud://env/cover.png') > -1 &&
+      deletedFiles.indexOf('cloud://env/qr.png') > -1 &&
+      deletedFiles.indexOf('cloud://env/mini.png') > -1,
+    '注销：封面、群二维码与小程序码文件一并从云存储删除'
+  )
+
+  const deleteAgain = await callActivity('deleteAccount', {}, OTHER)
+  log(!!deleteAgain && deleteAgain.code === 'UNAUTHORIZED', '注销：账号已不存在时拒绝重复注销')
+  const deleteAnonymous = await callActivity('deleteAccount', {})
+  log(!!deleteAnonymous && deleteAnonymous.code === 'UNAUTHORIZED', '注销：未登录不接受注销请求')
+
+  const reRegister = await callActivity('login', {}, OTHER)
+  log(
+    !!reRegister && reRegister.openid === OTHER && reRegister.nickName === '微信用户' && reRegister.userId > 1,
+    '注销：同一微信再次登录按新账号注册，注销前的数据不会回来'
   )
 }
 

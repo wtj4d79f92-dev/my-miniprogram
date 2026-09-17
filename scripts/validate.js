@@ -1611,6 +1611,118 @@ function checkSquareFilters() {
 checkSquareFilters()
 })
 .then(() => {
+/* ---------- 13. 注销账号：本地账号、发布、报名与反馈一起清干净 ---------- */
+/**
+ * 注销不可撤销：本地缓存的账号信息、我发布的活动、我报名的活动、提交过的反馈都要清空，
+ * 别人活动报名名单里的自己也要移除，否则会留下一个点不进去的「已注销用户」。
+ * 入口放在个人中心，且要两次确认才真的执行。
+ */
+function checkDeleteAccount() {
+  const { KEYS, getStorage } = require(path.join(ROOT, 'utils/storage'))
+  const mockModel = require(path.join(ROOT, 'services/mock'))
+  const api = require(path.join(ROOT, 'services/api'))
+
+  let account = null
+  let own = null
+  let target = null
+
+  return api
+    .login({ phone: '13800003333' })
+    .then((user) => {
+      account = user
+      globalData.user = user
+      return api.create({
+        form: {
+          type: 'hiking',
+          title: '注销账号测试活动',
+          location: '浙江省杭州市 断桥残雪',
+          startTime: Date.now() + 86400000,
+          endTime: Date.now() + 2 * 86400000,
+          groupQrCode: 'mock://qr',
+        },
+      })
+    })
+    .then((created) => {
+      own = created
+      // 报名一条别人的活动，注销时要连报名名单里的自己一起清掉
+      const others = mockModel
+        .visibleActivities()
+        .filter((item) => item.organizer.openid !== account.openid && item.status === 'recruiting')
+      target = others[0]
+      return target ? api.join(target.id) : null
+    })
+    .then(() => api.feedback({ content: '注销前的反馈内容' }))
+    .then(() => {
+      const joinMap = getStorage(mockModel.MOCK_JOIN_MAP, {}) || {}
+      log(
+        !!getStorage(KEYS.user, null) &&
+          (getStorage(KEYS.published, []) || []).some((item) => item.id === own.id) &&
+          (joinMap[target.id] || []).some((member) => member.openid === account.openid) &&
+          (getStorage(KEYS.feedback, []) || []).length > 0,
+        '注销：注销前账号、发布、报名与反馈四类数据都在'
+      )
+      return api.deleteAccount()
+    })
+    .then(() => {
+      log(getStorage(KEYS.user, null) === null, '注销：本地账号缓存被清空，回到未登录')
+      log((getStorage(KEYS.published, []) || []).length === 0, '注销：我发布的活动一并删除')
+      log((getStorage(KEYS.joined, []) || []).length === 0, '注销：我报名的活动记录一并清空')
+      log((getStorage(KEYS.feedback, []) || []).length === 0, '注销：我提交的反馈一并删除')
+      log(getStorage(KEYS.lastPhone, '') === '', '注销：本地缓存的手机号也清掉')
+      const joinMap = getStorage(mockModel.MOCK_JOIN_MAP, {}) || {}
+      log(
+        (joinMap[target.id] || []).every((member) => member.openid !== account.openid),
+        '注销：别人活动的报名名单里不再有自己'
+      )
+      log(
+        !mockModel.visibleActivities().some((item) => item.organizer.openid === account.openid),
+        '注销：广场上不再展示他发布的活动'
+      )
+      return api.user()
+    })
+    .then((user) => {
+      log(!user || !user.openid, '注销：注销后接口层按未登录处理')
+      return api
+        .deleteAccount()
+        .then(() => false)
+        .catch((err) => (err && err.code) === 'UNAUTHORIZED')
+    })
+    .then((guarded) => {
+      log(guarded === true, '注销：未登录时拒绝注销请求')
+      const wxml = fs.readFileSync(path.join(ROOT, 'pages/usercenter/index.wxml'), 'utf8')
+      const js = fs.readFileSync(path.join(ROOT, 'pages/usercenter/index.js'), 'utf8')
+      log(
+        wxml.indexOf('bindtap="deleteAccount"') > -1 && wxml.indexOf('注销账号') > -1,
+        '注销：个人中心提供「注销账号」入口'
+      )
+      const start = js.indexOf('  deleteAccount() {')
+      const body = start === -1 ? '' : js.slice(start, js.indexOf('\n  },', start))
+      log((body.match(/ui\.confirm\(/g) || []).length === 2, '注销：入口要两次确认后才真正执行')
+      log(
+        body.indexOf('api.deleteAccount') > -1 && body.indexOf('deleting') > -1,
+        '注销：确认后调用注销接口并做重复点击保护'
+      )
+    })
+    .then(() => {
+      // 站内《隐私政策》要与后台指引、实际收集行为三方一致：
+      // 图片上传、相册（仅写入）、设备信息、剪切板（仅写入）四项之前漏写，注销途径也要指向自助入口
+      const { PRIVACY_AGREEMENT } = require(path.join(ROOT, 'utils/agreements'))
+      const policy = PRIVACY_AGREEMENT.paragraphs.join('\n')
+      log(policy.indexOf('封面图与活动群二维码') > -1, '隐私政策：写明发布时选择的图片用途')
+      log(policy.indexOf('相册（仅写入）权限') > -1, '隐私政策：写明相册仅写入权限')
+      log(policy.indexOf('设备信息') > -1, '隐私政策：写明设备信息用途')
+      log(policy.indexOf('剪切板（仅写入）') > -1, '隐私政策：写明剪切板仅写入且不读取')
+      log(
+        policy.indexOf('注销账号') > -1 && policy.indexOf('个人中心底部') > -1,
+        '隐私政策：注销途径指向个人中心的自助入口'
+      )
+      log(policy.indexOf('不会读取') > -1, '隐私政策：明确不会读取相册与剪切板内容')
+    })
+}
+
+return checkDeleteAccount()
+})
+.then(() => {
   console.log(`\n通过 ${passed.length} 项，失败 ${errors.length} 项\n`)
   // 默认只列失败项；加 VALIDATE_VERBOSE=1 可以把逐条结论也打出来
   if (process.env.VALIDATE_VERBOSE) {

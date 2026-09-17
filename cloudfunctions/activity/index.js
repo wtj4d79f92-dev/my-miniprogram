@@ -852,6 +852,117 @@ async function feedback(event, openid) {
   return { id: res._id, createTime: doc.createTime }
 }
 
+/* ------------------------------ 注销账号 ------------------------------ */
+
+/** 单批处理条数：与云数据库单次查询上限一致，避免一次把全表拉进内存 */
+const DELETE_BATCH = 100
+/** cloud.deleteFile 单次最多 50 个文件 */
+const FILE_BATCH = 50
+/** 活动文档里需要跟随活动一起清理的云存储文件 */
+const ACTIVITY_FILES = ['cover', 'groupQrCode', 'miniQrCode']
+
+/**
+ * 删除该用户发布的所有活动，并把它们的云存储文件（封面、群二维码、小程序码）收集出来。
+ * 活动删掉后这些文件不再有入口引用，留着只会占空间，也违背「删除个人信息」的承诺。
+ */
+async function removeOwnActivities(openid) {
+  const fileIDs = []
+  let removed = 0
+  for (;;) {
+    const res = await activities.where({ 'organizer.openid': openid }).limit(DELETE_BATCH).get()
+    const rows = res.data || []
+    if (!rows.length) break
+    for (let i = 0; i < rows.length; i += 1) {
+      const doc = rows[i]
+      ACTIVITY_FILES.forEach((key) => {
+        const fileID = String(doc[key] || '')
+        if (fileID.indexOf('cloud://') === 0 && fileIDs.indexOf(fileID) === -1) fileIDs.push(fileID)
+      })
+      await activities.doc(doc._id).remove()
+      removed += 1
+    }
+    if (rows.length < DELETE_BATCH) break
+  }
+  return { removed, fileIDs }
+}
+
+/**
+ * 删除云存储文件。
+ * 删不掉不阻塞注销：活动已经删除，残留文件不会再被任何入口引用，日志留痕即可。
+ * @returns {Promise<number>} 实际删除的文件数
+ */
+async function removeCloudFiles(fileIDs) {
+  let removed = 0
+  for (let i = 0; i < fileIDs.length; i += FILE_BATCH) {
+    const batch = fileIDs.slice(i, i + FILE_BATCH)
+    try {
+      const res = await cloud.deleteFile({ fileList: batch })
+      const list = (res && res.fileList) || []
+      removed += list.length ? list.filter((item) => item && Number(item.status) === 0).length : batch.length
+    } catch (e) {
+      console.error('[activity] 注销时删除云存储文件失败，文件已无入口引用', e)
+    }
+  }
+  return removed
+}
+
+/**
+ * 移除该用户在别人活动里的报名记录。
+ * 数组内元素无法定位删除，读出成员数组过滤后写回，joinedCount 跟着一起修正。
+ * @returns {Promise<number>} 受影响的活动数
+ */
+async function removeJoinRecords(openid) {
+  let removed = 0
+  for (;;) {
+    const res = await activities.where({ 'joinedPeople.openid': openid }).limit(DELETE_BATCH).get()
+    const rows = res.data || []
+    if (!rows.length) break
+    let changed = 0
+    for (let i = 0; i < rows.length; i += 1) {
+      const doc = rows[i]
+      const before = doc.joinedPeople || []
+      const next = before.filter((member) => member.openid !== openid)
+      // 条件命中了却没改动属于异常数据，跳过即可，不能让循环永远转下去
+      if (next.length === before.length) continue
+      await activities.doc(doc._id).update({ data: { joinedPeople: next, joinedCount: next.length } })
+      changed += 1
+    }
+    removed += changed
+    if (!changed || rows.length < DELETE_BATCH) break
+  }
+  return removed
+}
+
+/**
+ * 注销账号：删除账号本身，以及由它产生的内容与痕迹。
+ *
+ * 顺序是先删活动（内容）、再删报名、最后删账号：中途失败时账号还在，用户可以重新发起注销；
+ * 反过来先删账号，就会留下再也关联不到人的孤儿数据。
+ *
+ * activity_audits 里的审核日志不删：那是平台内容审核的留存记录，只含活动 id、标题与审核人信息，
+ * 不含注销用户的昵称 / 头像 / 手机号，属于合规取证材料，不随账号注销消失。
+ */
+async function deleteAccount(event, openid) {
+  if (!openid) return fail('UNAUTHORIZED', '请先登录')
+  const userDoc = await findUser(openid)
+  if (!userDoc) return fail('UNAUTHORIZED', '请先登录')
+
+  const published = await removeOwnActivities(openid)
+  const files = await removeCloudFiles(published.fileIDs)
+  const joins = await removeJoinRecords(openid)
+  const fb = await feedbacks.where({ openid }).remove()
+  const feedbacksRemoved = (fb && fb.stats && fb.stats.removed) || 0
+  await users.doc(userDoc._id).remove()
+
+  return {
+    ok: true,
+    activities: published.removed,
+    files,
+    joins,
+    feedbacks: feedbacksRemoved,
+  }
+}
+
 /**
  * 换取云存储临时链接：换来的地址有有效期（默认 2 小时），前台图片加载失败时
  * （列表停留太久、链接过期）用它按 fileID 重取一次，属于只读操作，不限制登录态。
@@ -880,6 +991,7 @@ const ACTIONS = {
   updateUser,
   qrcode,
   feedback,
+  deleteAccount,
 }
 
 exports.main = async (event) => {
