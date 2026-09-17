@@ -17,6 +17,12 @@ function formatMonthDay(ts) {
   return `${pad(d.getMonth() + 1)}月${pad(d.getDate())}日`
 }
 
+/** 时间戳 -> 09-15（广场日期筛选这类窄标签用） */
+function formatMonthDayShort(ts) {
+  const d = new Date(ts)
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 /** 时间戳 -> 周二 */
 function weekdayText(ts) {
   return WEEKDAY_TEXT[new Date(ts).getDay()]
@@ -106,6 +112,7 @@ module.exports = {
   pad,
   formatDate,
   formatMonthDay,
+  formatMonthDayShort,
   weekdayText,
   formatCardDate,
   formatYearMonth,

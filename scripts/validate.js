@@ -192,6 +192,133 @@ jsFiles.forEach((file) => {
 })
 log(jsFiles.length > 0, `检查 JS 文件数量：${jsFiles.length}`)
 
+/* -------------- 3.6 云调用权限声明检查 --------------
+ * 云调用必须在小程序云函数 config.json 的 permissions.openapi 里声明接口名，漏了线上直接调用失败。
+ * 这里把「代码里真正用到的 cloud.openapi.* 接口」和声明对一遍，避免加了新接口忘了改配置。
+ */
+fs.readdirSync(path.join(ROOT, 'cloudfunctions'))
+  .filter((name) => fs.existsSync(path.join(ROOT, 'cloudfunctions', name, 'index.js')))
+  .forEach((name) => {
+    const dir = path.join(ROOT, 'cloudfunctions', name)
+    const used = new Set()
+    const walk = (target) => {
+      fs.readdirSync(target, { withFileTypes: true }).forEach((entry) => {
+        const full = path.join(target, entry.name)
+        if (entry.isDirectory()) {
+          walk(full)
+          return
+        }
+        if (entry.name.slice(-3) !== '.js') return
+        const source = fs.readFileSync(full, 'utf8')
+        const pattern = /cloud\.openapi\.([A-Za-z]+)\.([A-Za-z]+)/g
+        let matched = pattern.exec(source)
+        while (matched) {
+          used.add(`${matched[1]}.${matched[2]}`)
+          matched = pattern.exec(source)
+        }
+      })
+    }
+    walk(dir)
+    const config = readJSON(path.join(dir, 'config.json')) || {}
+    const declared = ((config.permissions || {}).openapi || []).slice()
+    const missing = Array.from(used).filter((api) => declared.indexOf(api) === -1)
+    log(
+      missing.length === 0,
+      `云调用权限：${name} 声明的接口覆盖代码用到的${missing.length ? `（缺 ${missing.join('、')}）` : ''}`
+    )
+  })
+
+/* -------------- 3.7 前后端镜像文件一致性检查 --------------
+ * 云函数打包时只上传自己的目录，require 不到小程序根目录的文件，所以城市字典、机审放行判定
+ * 这几处都在云函数里留了一份镜像副本。副本漂移最坏的结果是「前端显示一套、线上判定另一套」
+ * （例如 Mock 里自动放行、云端却转人工），而两份文件分处不同目录，评审时很容易漏看。
+ * 能直接比文本的就比文本，前端多带能力的城市字典改写一组输入比行为。
+ */
+
+/** 去掉整行注释与空行后比较：允许两份副本的注释各说各的，逻辑必须一字不差 */
+function logicLines(relative) {
+  return fs
+    .readFileSync(path.join(ROOT, relative), 'utf8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && line.slice(0, 2) !== '//' && line.slice(0, 2) !== '/*' && line[0] !== '*')
+    .join('\n')
+}
+
+;[
+  ['机审放行判定', 'cloudfunctions/activity/lib/autoAudit.js', 'cloudfunctions/contentCheck/lib/autoAudit.js'],
+  // 文本检测：发布当刻由 activity 送检，图片结论回来时由 contentCheck 补检，两份必须同口径
+  ['文本检测', 'cloudfunctions/activity/lib/textCheck.js', 'cloudfunctions/contentCheck/lib/textCheck.js'],
+].forEach((pair) => {
+  const [name, left, right] = pair
+  const bothExist = exists(left) && exists(right)
+  log(bothExist && logicLines(left) === logicLines(right), `镜像副本一致：${name}（${left} ↔ ${right}）`)
+})
+
+// 机审「没有结论」不能显示成「机器通过」：否则审核台看着全绿、活动却停在待审队列，
+// 运营既不知道原因也没法判断该不该放行（这就是「机审全通过却进了人工审核」的现场）
+const auditPageJs = fs.readFileSync(path.join(ROOT, 'pages/admin/audit/index.js'), 'utf8')
+const auditPageWxml = fs.readFileSync(path.join(ROOT, 'pages/admin/audit/index.wxml'), 'utf8')
+log(/failed:\s*'未出结论（转人工）'/.test(auditPageJs), '审核台：机审没结论时有区别于「机器通过」的文案')
+log(
+  /machineTextFailed/.test(auditPageJs) && /machineTextFailed/.test(auditPageWxml),
+  '审核台：待审卡片与详情都标出文本检测失败'
+)
+
+// 城市字典：前端比云端多一份经纬度表与就近匹配（定位兜底属于前端），其余函数必须同口径
+const citiesFront = require(path.join(ROOT, 'utils/cities'))
+const citiesCloud = require(path.join(ROOT, 'cloudfunctions/activity/lib/cities'))
+const sharedCityFuncs = [
+  'normalizeCity',
+  'cityByName',
+  'aliasByName',
+  'provinceShortName',
+  'provinceByName',
+  'regionCityKeys',
+  'filterCityKeys',
+  'singleCityKey',
+  'matchCity',
+]
+const cityInputs = Array.from(
+  new Set(
+    ['']
+      .concat(citiesFront.PROVINCES.map((item) => item.name))
+      .concat(citiesFront.PROVINCES.map((item) => citiesFront.provinceShortName(item.name)))
+      .concat(citiesFront.ALL_CITIES)
+      .concat([
+        '吉林',
+        '阳朔县',
+        '双流区',
+        '上海市浦东新区',
+        '浙江省杭州市西湖区断桥',
+        '辽宁省朝阳市人民公园',
+        '香港',
+        '台湾',
+        '不存在的城市',
+      ])
+  )
+)
+const cityDiffs = []
+sharedCityFuncs.forEach((fn) => {
+  const frontFn = citiesFront[fn]
+  const cloudFn = citiesCloud[fn]
+  if (typeof frontFn !== 'function' || typeof cloudFn !== 'function') {
+    cityDiffs.push(`${fn} 只在一侧导出`)
+    return
+  }
+  cityInputs.forEach((input) => {
+    const a = JSON.stringify(frontFn(input))
+    const b = JSON.stringify(cloudFn(input))
+    if (a !== b) cityDiffs.push(`${fn}(${JSON.stringify(input)}) 前端 ${a} / 云端 ${b}`)
+  })
+})
+log(
+  cityDiffs.length === 0,
+  `镜像副本行为一致：城市字典（${sharedCityFuncs.length} 个函数 × ${cityInputs.length} 组输入）${
+    cityDiffs.length ? `，差异：${cityDiffs.slice(0, 3).join('；')}` : ''
+  }`
+)
+
 /* -------------- 3.5 Page / Component 配置重复成员名检查 -------------- */
 /**
  * 同一对象字面量里重复定义同名成员时，后面的会静默覆盖前面的：
@@ -374,20 +501,30 @@ const flow = (async () => {
   const orderedByHot = home.hotList.every((item, i) => i === 0 || home.hotList[i - 1].joinedCount >= item.joinedCount)
   log(orderedByHot, '首页：热门按报名人数倒序')
 
-  // 广场：分页 / 筛选 / 排序
-  const page1 = await step('广场-第1页', api.list({ pageIndex: 0, pageSize: 10, sort: 'time' }))
+  // 广场：分页 / 筛选 / 排序（页面默认排序为「最新发布」）
+  const page1 = await step('广场-第1页', api.list({ pageIndex: 0, pageSize: 10, sort: 'latest' }))
   log(page1.list.length === 10 && page1.hasMore === true, '广场：每页 10 条且可继续加载')
-  const sortedByTime = page1.list.every((item, i) => i === 0 || page1.list[i - 1].startTime <= item.startTime)
-  log(sortedByTime, '广场：即将开始按开始时间升序')
+  const sortedByCreate = page1.list.every((item, i) => i === 0 || page1.list[i - 1].createTime >= item.createTime)
+  log(sortedByCreate, '广场：默认按最新发布（发布时间倒序）排列')
 
-  const hiking = await step('广场-类型筛选', api.list({ pageIndex: 0, pageSize: 20, type: 'hiking', sort: 'time' }))
+  const hiking = await step('广场-类型筛选', api.list({ pageIndex: 0, pageSize: 20, type: 'hiking', sort: 'latest' }))
   log(hiking.list.length > 0 && hiking.list.every((item) => item.type === 'hiking'), '广场：类型筛选生效')
 
   const keyword = await step('广场-关键词', api.list({ pageIndex: 0, pageSize: 20, keyword: '徒步', sort: 'latest' }))
   log(keyword.list.length > 0, '广场：关键词匹配标题或地点')
 
-  const weekday = await step('广场-星期筛选', api.list({ pageIndex: 0, pageSize: 20, weekday: 6, sort: 'time' }))
+  const weekday = await step('广场-星期筛选', api.list({ pageIndex: 0, pageSize: 20, weekday: 6, sort: 'latest' }))
   log(weekday.list.every((item) => item.startWeekday === 6), '广场：按星期筛选生效')
+
+  // 具体日期筛选：date 传当天 00:00 的时间戳（与广场日期选择器同一口径）
+  const tomorrow = new Date()
+  tomorrow.setHours(0, 0, 0, 0)
+  const dateStart = tomorrow.getTime() + 86400000
+  const dateList = await step('广场-日期筛选', api.list({ pageIndex: 0, pageSize: 20, date: dateStart, sort: 'latest' }))
+  log(
+    dateList.list.length > 0 && dateList.list.every((item) => item.startTime >= dateStart && item.startTime < dateStart + 86400000),
+    '广场：按具体日期筛选生效'
+  )
 
   const cityList = await step('广场-城市筛选', api.list({ pageIndex: 0, pageSize: 20, city: '杭州', sort: 'hot' }))
   log(cityList.list.length > 0 && cityList.list.every((item) => item.city === '杭州'), '广场：城市筛选生效')
@@ -432,7 +569,8 @@ const flow = (async () => {
         maxPeople: 8,
         tags: [],
         groupQrCode: 'wxfile://tmp_qr.png',
-        desc: '由校验脚本创建的活动',
+        // 命中 Mock 的「疑似」关键词：机审判定为需复核，走人工审核链路（自动放行的用例在末尾）
+        desc: '由校验脚本创建的活动，疑似需要人工确认集合时间',
       },
     })
   )
@@ -440,7 +578,7 @@ const flow = (async () => {
   log(created.status === 'recruiting' && created.joinedCount === 0, '发布：服务端补全状态与成员列表')
   log(created.organizer.openid === user.openid, '发布：写入发起人快照')
   log(created.auditStatus === 'pending', '发布：新活动进入待审核队列')
-  log(created.machineCheck.text.suggest === 'pass', '内容安全：正常内容记录机器初审结论')
+  log(created.machineCheck.text.suggest === 'review', '内容安全：疑似内容记录机器复核结论并留在人工队列')
 
   // 内容安全（Mock 用关键词模拟云端 msgSecCheck）
   let riskyError = ''
@@ -513,7 +651,8 @@ const flow = (async () => {
         maxPeople: 8,
         tags: [],
         groupQrCode: 'wxfile://tmp_qr.png',
-        desc: '补充：全程 10 公里，需要运动鞋与 1L 饮水。',
+        // 编辑重提同样要过机审：疑似内容仍然留给人工，不会因为改动而被自动放行
+        desc: '补充：全程 10 公里，需要运动鞋与 1L 饮水。疑似需人工确认难度。',
       },
     })
   )
@@ -541,7 +680,7 @@ const flow = (async () => {
 
   // 关闭 / 打开
   const closed = await step('关闭活动', api.toggle(created.id))
-  log(closed.status === 'closed', '关闭活动：状态变为 closed')
+  log(closed.status === 'closed' && closed.closeTime > 0, '关闭活动：状态变为 closed 并记录关闭时间')
   let closedError = ''
   try {
     await api.join(created.id)
@@ -549,8 +688,49 @@ const flow = (async () => {
     closedError = e.code
   }
   log(closedError === 'ACTIVITY_CLOSED', '关闭活动：报名被拒绝并返回 ACTIVITY_CLOSED')
+
+  // 关闭当天：仍留在广场但沉底，首页推荐位不再展示
+  const closedSquare = await step('关闭后广场', api.list({ pageIndex: 0, pageSize: 100, sort: 'latest' }))
+  const closedIndex = closedSquare.list.findIndex((item) => item.id === created.id)
+  log(closedIndex > -1, '关闭活动：关闭当天仍留在广场')
+  log(
+    closedIndex > -1 && closedSquare.list.slice(0, closedIndex).every((item) => item.status !== 'closed'),
+    '关闭活动：已关闭的活动沉底，排在未关闭活动之后'
+  )
+  const closedHotSquare = await step('关闭后广场-最热门', api.list({ pageIndex: 0, pageSize: 100, sort: 'hot' }))
+  log(
+    closedHotSquare.list.findIndex((item) => item.status === 'closed') >=
+      closedHotSquare.list.filter((item) => item.status !== 'closed').length,
+    '关闭活动：按最热门排序时同样沉底'
+  )
+  const closedHome = await step('关闭后首页', api.home({ city: '' }))
+  log(
+    closedHome.hotList.concat(closedHome.newestList).every((item) => item.status !== 'closed'),
+    '关闭活动：首页热门 / 最新不展示已关闭的活动'
+  )
+
+  // 第二天：把关闭时间改到昨天，广场不再展示，但详情与我的活动照旧
+  const mockModel = require(path.join(ROOT, 'services/mock'))
+  const statusMap = Object.assign({}, global.wx.storage[mockModel.MOCK_STATUS_MAP])
+  statusMap[created.id] = { status: 'closed', closeTime: new Date().setHours(0, 0, 0, 0) - 86400000 }
+  global.wx.storage[mockModel.MOCK_STATUS_MAP] = statusMap
+  const nextDaySquare = await step('次日广场', api.list({ pageIndex: 0, pageSize: 100, sort: 'latest' }))
+  log(!nextDaySquare.list.some((item) => item.id === created.id), '关闭活动：第二天起不再在广场展示')
+  const nextDayDetail = await step('次日详情', api.detail(created.id))
+  log(!!nextDayDetail && nextDayDetail.status === 'closed', '关闭活动：详情仍可访问，分享链接不失效')
+  const nextDayMine = await step('次日我的发布', api.mine('published'))
+  log(
+    nextDayMine.some((item) => item.id === created.id && item.status === 'closed'),
+    '关闭活动：我的发布里仍能看到已关闭的活动'
+  )
+
   const reopened = await step('重新打开', api.toggle(created.id))
-  log(reopened.status === 'recruiting', '重新打开：状态恢复 recruiting')
+  log(
+    reopened.status === 'recruiting' && reopened.closeTime === 0,
+    '重新打开：状态恢复 recruiting 且清空关闭时间'
+  )
+  const reopenedSquare = await step('重新打开后广场', api.list({ pageIndex: 0, pageSize: 100, sort: 'latest' }))
+  log(reopenedSquare.list.some((item) => item.id === created.id), '重新打开：活动立即回到广场')
 
   // 退出
   const quit = await step('退出活动', api.quit(created.id))
@@ -581,15 +761,123 @@ const flow = (async () => {
   log(!!feedback.id, '意见反馈：写入成功')
 
   // 城市匹配
-  const { matchCity, nearestCity } = require(path.join(ROOT, 'utils/cities'))
+  const { matchCity, nearestCity, PROVINCES } = require(path.join(ROOT, 'utils/cities'))
   log(matchCity('浙江省杭州市西湖区断桥') === '杭州', '城市匹配：命中「杭州」')
   log(matchCity('辽宁省朝阳市人民公园') === '朝阳', '城市匹配：省份优先，命中「朝阳」')
   log(!!nearestCity(116.4, 39.9), '定位兜底：经纬度就近匹配城市可用')
+
+  // 城市字典：省级行政区齐全，省级以下列到完整的地级行政区
+  log(PROVINCES.length === 34, '城市字典：覆盖 34 个省级行政区')
+  log(PROVINCES.every((item) => item.cities.length > 0), '城市字典：每个省份都有下级行政区')
+  const hebeiCities = (PROVINCES.find((item) => item.name === '河北省') || {}).cities || []
+  log(
+    hebeiCities.indexOf('邢台市') > -1 && hebeiCities.indexOf('衡水市') > -1 && hebeiCities.length === 13,
+    '城市字典：河北省补齐 11 个地级市 + 2 个省直辖县级市'
+  )
+  const xizangCities = (PROVINCES.find((item) => item.name === '西藏自治区') || {}).cities || []
+  log(xizangCities.length === 7, '城市字典：西藏补齐 6 个地级市 + 阿里地区')
+  const xinjiangCities = (PROVINCES.find((item) => item.name === '新疆维吾尔自治区') || {}).cities || []
+  log(
+    xinjiangCities.indexOf('石河子市') > -1 && xinjiangCities.indexOf('和田地区') > -1,
+    '城市字典：新疆补齐自治州 / 地区与自治区直辖县级市'
+  )
+  const seenCityKeys = {}
+  let duplicatedCityKey = ''
+  PROVINCES.forEach((province) => {
+    province.cities.forEach((city) => {
+      const key = city.replace(/市$/, '')
+      if (seenCityKeys[key]) duplicatedCityKey = key
+      seenCityKeys[key] = true
+    })
+  })
+  log(!duplicatedCityKey, '城市字典：不存在跨省重名城市（cityByName 反查唯一）')
+  log(matchCity('河北省邢台市桥西区') === '邢台', '城市匹配：补齐的地级市能匹配')
+  log(matchCity('青海省海南藏族自治州共和县') === '海南藏族自治州', '城市匹配：同名省简称不会吃掉省内自治州')
+  log(matchCity('广西壮族自治区阳朔县') === '桂林', '城市匹配：县级热门地名归到所属地级市')
+  log(matchCity('云南省香格里拉市') === '迪庆藏族自治州', '城市匹配：县级市归到所属自治州')
+
+  // 县级值统一归到地级行政区，同时兼容老数据里存过的县级 city 值
+  const { regionCityKeys, filterCityKeys, singleCityKey } = require(path.join(ROOT, 'utils/cities'))
+  log(JSON.stringify(regionCityKeys('阳朔县')) === '["桂林"]', '地区归一：阳朔县按桂林存值')
+  log(singleCityKey('桂林') === '桂林', '地区归一：桂林仍能唯一确定城市')
+  log(singleCityKey('阳朔县') === '桂林', '地区归一：阳朔县能唯一确定城市')
+  log(filterCityKeys('桂林').indexOf('阳朔县') > -1, '城市筛选：按桂林能筛到老数据里的阳朔县')
+  log(
+    filterCityKeys('广西壮族自治区').indexOf('阳朔县') > -1 &&
+      regionCityKeys('广西壮族自治区').indexOf('阳朔县') === -1,
+    '城市筛选：按省份能筛到老数据，但省份展开本身不带县级值'
+  )
 
   // 协议解析
   const { parseBold } = require(path.join(ROOT, 'utils/util'))
   const segments = parseBold('普通**加粗**结尾')
   log(segments.length === 3 && segments[1].strong === true, '协议：加粗标记解析正确')
+
+  /* ---------- 机审自动放行：Mock 与云端同一套规则 ---------- */
+  const autoApproved = await step(
+    '机审自动放行',
+    api.create({
+      form: {
+        type: 'hiking',
+        title: '自动化测试 · 机审自动放行',
+        location: '浙江省杭州市 九溪',
+        startTime: Date.now() + 86400000,
+        endTime: Date.now() + 2 * 86400000,
+        difficulty: 2,
+        distance: 8,
+        elevationGain: 150,
+        feeMode: 'aa',
+        fee: 0,
+        maxPeople: 6,
+        tags: [],
+        groupQrCode: 'wxfile://tmp_qr2.png',
+        desc: '内容正常，机器审核通过后直接放行',
+      },
+    })
+  )
+  log(autoApproved.auditStatus === 'approved', '机审放行：内容正常的活动发布后自动通过')
+  log(autoApproved.auditBy === '内容安全检测' && autoApproved.auditTime > 0, '机审放行：记录放行来源与时间')
+  log(autoApproved.auditRemark === '', '机审放行：自动通过的活动没有驳回原因')
+  const autoApprovedList = await step('机审放行后广场', api.list({ pageIndex: 0, pageSize: 100, sort: 'latest' }))
+  log(autoApprovedList.list.some((item) => item.id === autoApproved.id), '机审放行：活动不经人工就能出现在广场')
+
+  // 群二维码没识别出微信群邀请链接：内容再干净也直接驳回
+  const qrForm = (groupQrCode) => ({
+    type: 'hiking',
+    title: '自动化测试 · 群二维码校验',
+    location: '浙江省杭州市 九溪',
+    startTime: Date.now() + 86400000,
+    endTime: Date.now() + 2 * 86400000,
+    feeMode: 'aa',
+    maxPeople: 6,
+    groupQrCode,
+    desc: '内容正常，仅二维码有问题',
+  })
+  const notGroupQr = await step('二维码非群链接', api.create({ form: qrForm('wxfile://notgroup_qr.png') }))
+  log(notGroupQr.auditStatus === 'rejected', '二维码识别：不是微信群邀请链接时直接驳回')
+  log(notGroupQr.auditRemark === '活动二维码上传有误，请重新上传微信群二维码', '二维码识别：驳回原因写明重新上传微信群二维码')
+  log(notGroupQr.machineCheck.qrcode.status === 'not-group', '二维码识别：记录「不是群邀请链接」的识别结论')
+
+  const noQrCode = await step('二维码识别不出', api.create({ form: qrForm('wxfile://noqrcode_poster.png') }))
+  log(noQrCode.auditStatus === 'rejected', '二维码识别：图里没识别到二维码时直接驳回')
+  log(noQrCode.machineCheck.qrcode.status === 'not-qrcode', '二维码识别：记录「没识别到二维码」的识别结论')
+  // 发起人在详情页看到的是「审核未通过 + 原因」，不是「审核中 + 二维码识别提示」
+  const qrRejectedCard = api.decorate(await step('二维码驳回详情', api.detail(notGroupQr.id)))
+  log(qrRejectedCard.auditRejected && !qrRejectedCard.auditPending, '二维码识别：发起人看到的是「未通过」而不是「审核中」')
+  log(
+    qrRejectedCard.auditReason === '活动二维码上传有误，请重新上传微信群二维码',
+    '二维码识别：详情页「未通过原因」用的是二维码驳回文案'
+  )
+  // 驳回的活动不出现在广场，只有发起人自己能预览
+  const qrRejectedList = await step('二维码驳回后广场', api.list({ pageIndex: 0, pageSize: 100, sort: 'latest' }))
+  log(
+    !qrRejectedList.list.some((item) => item.id === notGroupQr.id || item.id === noQrCode.id),
+    '二维码识别：被驳回的活动不出现在广场'
+  )
+  // 换一张对的二维码重新提交：驳回结论被覆盖，重新走一遍检测
+  const fixedQr = await step('改好二维码重提', api.update({ id: notGroupQr.id, form: qrForm('wxfile://tmp_qr.png') }))
+  log(fixedQr.auditStatus === 'approved', '二维码识别：重新上传微信群二维码后重新送审（机审通过即放行）')
+  log(String(fixedQr.groupQrCode).indexOf('tmp_qr') > -1, '二维码识别：重提后二维码换成新的那张')
 })().catch((e) => {
   log(false, `Mock 业务链路执行异常：${e && e.message}`)
 })
@@ -920,16 +1208,17 @@ function checkPickedPlaceText() {
       log(created.location === '华府大道地铁站', '发布：库里存的集合地点就是点中的地点名')
       log(created.city === '成都', '发布：城市按不展示的地址匹配出「成都」')
       log(created.locationAddress === '四川省成都市双流区天府大道南段附近', '发布：地址落库备查')
-      return api.adminList({ status: 'pending', keyword: '双流' }).then((pending) => {
+      // 机审通过的活动已经自动上架，不再进待审队列，所以这里在「全部」页签里验证地址可检索
+      return api.adminList({ status: 'all', keyword: '双流' }).then((pending) => {
         log(
           pending.list.some((item) => item.id === created.id),
           '审核台：审核人按地址关键词也能搜到活动，地址没有被丢'
         )
-        return api.adminApprove(created.id)
+        return created
       })
     })
     .then((res) => {
-      log(!!res && res.auditStatus === 'approved', '审核台：测试活动已通过，用于验证广场检索')
+      log(!!res && res.auditStatus === 'approved', '机审放行：地图选点发布的活动机审通过后直接上架')
       return api.list({ pageIndex: 0, pageSize: 100, keyword: '双流' })
     })
     .then((found) => {
@@ -1195,6 +1484,9 @@ function checkCityPickerProvince() {
   })
   const gdIndex = PROVINCES.findIndex((item) => item.name === '广东省') + 1
   log(gdIndex > 0, '城市选择器：字典里能定位到广东省')
+  // 城市列按行政区划代码顺序排列，用名称反查下标，避免新增城市后写死的下标失效
+  const szIndex = (PROVINCES[gdIndex - 1].cities.findIndex((item) => item === '深圳市')) + 1
+  log(szIndex > 0, '城市选择器：字典里能定位到深圳市')
 
   // 省 + 全部 -> 全省筛选
   methods.applyProvince.call(ctx, gdIndex, 0)
@@ -1203,7 +1495,7 @@ function checkCityPickerProvince() {
   log(events[0] && events[0].detail.label === '广东省', '城市选择器：省 + 全部在定位栏展示省名')
 
   // 省 + 市 -> 单城筛选
-  methods.applyProvince.call(ctx, gdIndex, 2)
+  methods.applyProvince.call(ctx, gdIndex, szIndex)
   methods.confirm.call(ctx)
   log(events[1] && events[1].detail.city === '深圳', '城市选择器：选到具体城市时提交城市名')
 
@@ -1213,6 +1505,21 @@ function checkCityPickerProvince() {
   log(
     events[2] && events[2].detail.city === '' && events[2].detail.label === '全部',
     '城市选择器：全部 + 全部提交空值做全国展示'
+  )
+
+  // 城市列的候选就是字典里的完整地级行政区
+  const hebeiIndex = PROVINCES.findIndex((item) => item.name === '河北省') + 1
+  methods.applyProvince.call(ctx, hebeiIndex, 0)
+  const hebeiLabels = ctx.data.cityLabels
+  log(
+    hebeiLabels.length === 14 && hebeiLabels.indexOf('邢台市') > -1 && hebeiLabels.indexOf('衡水市') > -1,
+    '城市选择器：河北省城市列含 11 个地级市 + 2 个省直辖县级市（另有「全部」）'
+  )
+  const xinjiangIndex = PROVINCES.findIndex((item) => item.name === '新疆维吾尔自治区') + 1
+  methods.applyProvince.call(ctx, xinjiangIndex, 0)
+  log(
+    ctx.data.cityLabels.indexOf('和田地区') > -1 && ctx.data.cityLabels.indexOf('石河子市') > -1,
+    '城市选择器：新疆城市列含地区与自治区直辖县级市'
   )
 
   // 重开选择器要回到当前选区，省级筛选不能被显示成「全部」
@@ -1229,6 +1536,79 @@ function checkCityPickerProvince() {
 }
 
 checkCityPickerProvince()
+})
+.then(() => {
+/* ---------- 9. 广场：活动类型筛选胶囊 + 默认排序 ----------
+ * 类型从「吸顶横向 Tab」改成与日期 / 星期并列的筛选胶囊，
+ * 排序栏去掉「即将开始」，列表默认按最新发布排列。
+ */
+function checkSquareFilters() {
+  const { SORT_OPTIONS } = require(path.join(ROOT, 'utils/dict'))
+  const { KEYS } = require(path.join(ROOT, 'utils/storage'))
+  log(
+    SORT_OPTIONS.every((item) => item.value !== 'time'),
+    '广场排序：不再提供「即将开始」，只留最新发布 / 最热门'
+  )
+  log(SORT_OPTIONS[0].value === 'latest', '广场排序：默认第一项是「最新发布」')
+
+  const pageOptions = []
+  global.Page = (options) => pageOptions.push(options)
+  delete require.cache[path.join(ROOT, 'pages/square/index.js')]
+  require(path.join(ROOT, 'pages/square/index.js'))
+  const page = pageOptions[0]
+  log(page.data.sort === 'latest', '广场：默认排序取「最新发布」')
+  log(page.data.typeLabel === '全部类型', '广场：活动类型筛选未选中时显示「全部类型」')
+
+  const ctx = {
+    data: Object.assign({}, page.data),
+    setData(patch) {
+      Object.assign(this.data, patch)
+    },
+    // 面板开关 / 选类型只为断言 UI 状态，这里不真的请求列表
+    loadList() {},
+  }
+  ;['applyPendingType', 'toggleType', 'toggleWeekday', 'onTypeSelect'].forEach((name) => {
+    ctx[name] = page[name].bind(ctx)
+  })
+
+  // 首页「发现户外玩法」点徒步进来：胶囊要预选徒步，且待选值读完即清
+  global.wx.storage[KEYS.pendingType] = 'hiking'
+  ctx.applyPendingType()
+  log(
+    ctx.data.type === 'hiking' && ctx.data.typeLabel === '徒步',
+    '广场：首页点「徒步」进来时活动类型筛选预选「徒步」'
+  )
+  log(
+    Object.prototype.hasOwnProperty.call(global.wx.storage, KEYS.pendingType) === false,
+    '广场：带入的类型读一次就清掉，返回广场不会反复套用'
+  )
+
+  // 类型面板与星期面板互斥，避免两块面板同时展开
+  ctx.toggleType()
+  log(ctx.data.typeOpen === true && ctx.data.weekdayOpen === false, '广场：展开活动类型面板')
+  ctx.toggleWeekday()
+  log(ctx.data.weekdayOpen === true && ctx.data.typeOpen === false, '广场：类型面板与星期面板互斥')
+
+  ctx.toggleType()
+  ctx.onTypeSelect({ currentTarget: { dataset: { type: 'swimming' } } })
+  log(
+    ctx.data.type === 'swimming' && ctx.data.typeLabel === '游泳' && ctx.data.typeOpen === false,
+    '广场：选中类型后收起面板并展示「游泳」'
+  )
+  ctx.onTypeSelect({ currentTarget: { dataset: { type: 'all' } } })
+  log(ctx.data.type === 'all' && ctx.data.typeLabel === '全部类型', '广场：选回「全部类型」清空类型条件')
+
+  // 静态回归：首页不再有「全部」入口，广场不再渲染类型 Tab 与「即将开始」
+  const homeWxml = fs.readFileSync(path.join(ROOT, 'pages/home/home.wxml'), 'utf8')
+  const squareWxml = fs.readFileSync(path.join(ROOT, 'pages/square/index.wxml'), 'utf8')
+  log(homeWxml.indexOf('全部 ›') === -1, '首页：户外玩法区块不再提供「全部」入口')
+  log(
+    squareWxml.indexOf('即将开始') === -1 && squareWxml.indexOf('type-tabs') === -1,
+    '广场：页面不再渲染「即将开始」与横向类型 Tab'
+  )
+}
+
+checkSquareFilters()
 })
 .then(() => {
   console.log(`\n通过 ${passed.length} 项，失败 ${errors.length} 项\n`)

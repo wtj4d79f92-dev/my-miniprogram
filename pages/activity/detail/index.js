@@ -22,6 +22,9 @@ Page({
     user: null,
     showSharePanel: false,
     showQrModal: false,
+    // 二维码弹窗文案随入口变化：报名成功时是结果提示，已报名用户主动查看时只是查群入口
+    qrFromJoin: false,
+    qrTitle: '报名成功，扫码加入活动群',
     qrPlaceholder: false,
     statusText: '招募中',
     isOrganizer: false,
@@ -195,7 +198,7 @@ Page({
       title: isClosed ? '重新打开活动' : '关闭活动',
       content: isClosed
         ? '确定重新打开该活动，恢复报名吗？'
-        : '关闭后，活动仍会在广场展示，但其他用户将无法报名。确定关闭吗？',
+        : '关闭后，活动仅在广场展示当天，次日起不再展示，其他用户将无法报名。确定关闭吗？',
       confirmText: isClosed ? '重新打开' : '关闭活动',
     }).then((ok) => {
       if (!ok) return
@@ -296,6 +299,8 @@ Page({
         if (updated.groupQrCode) {
           this.setData({
             showQrModal: true,
+            qrFromJoin: true,
+            qrTitle: '报名成功，扫码加入活动群',
             qrPlaceholder: String(updated.groupQrCode).indexOf('mock://') === 0,
           })
         } else {
@@ -331,8 +336,26 @@ Page({
   },
 
   closeQrModal() {
-    this.setData({ showQrModal: false })
-    ui.toast('报名成功', 'success')
+    const fromJoin = this.data.qrFromJoin
+    this.setData({ showQrModal: false, qrFromJoin: false })
+    // 只有报名成功那次收起弹窗才提示报名结果，主动查看二维码时不该再提示
+    if (fromJoin) ui.toast('报名成功', 'success')
+  },
+
+  /** 已报名用户从底部按钮重新查看活动群二维码 */
+  openQrModal() {
+    const activity = this.data.activity
+    if (!activity) return
+    if (!activity.groupQrCode) {
+      ui.toast('发起人还没有上传活动群二维码')
+      return
+    }
+    this.setData({
+      showQrModal: true,
+      qrFromJoin: false,
+      qrTitle: '扫码加入活动群',
+      qrPlaceholder: String(activity.groupQrCode).indexOf('mock://') === 0,
+    })
   },
 
   /* ------------------------------ 分享 ------------------------------ */

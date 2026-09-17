@@ -10,9 +10,27 @@ const db = cloud.database()
 const _ = db.command
 
 const { getType, typeGradient, supportsTags, supportsMetrics, sanitizeTags, DEFAULT_BANNERS } = require('./lib/dict')
-const { matchCity, regionCityKeys, singleCityKey } = require('./lib/cities')
-const { PENDING: AUDIT_PENDING, isApproved, publicAuditWhere } = require('./lib/audit')
-const { RISKY, checkText, dispatchImages, summarize } = require('./lib/contentCheck')
+const { matchCity, filterCityKeys, singleCityKey } = require('./lib/cities')
+const {
+  PENDING: AUDIT_PENDING,
+  APPROVED: AUDIT_APPROVED,
+  REJECTED: AUDIT_REJECTED,
+  auditStatusOf,
+  isApproved,
+  publicAuditWhere,
+} = require('./lib/audit')
+const { AUTO_AUDIT_BY, checkableImageCount, canAutoApprove } = require('./lib/autoAudit')
+// 送检文本的拼法只有一份：发布当刻与图片回调时的文本补检必须送同一段内容
+const { textOf } = require('./lib/textCheck')
+const {
+  RISKY,
+  QR_REJECT_REMARK,
+  checkText,
+  dispatchImages,
+  checkQrCode,
+  isQrRejected,
+  summarize,
+} = require('./lib/contentCheck')
 const { MISSING, inspectFiles, collectFileIDs, resolveMedia } = require('./lib/media')
 const {
   LIMITS,
@@ -38,6 +56,8 @@ const RECRUITING = 'recruiting'
 const CLOSED = 'closed'
 const DEFAULT_PAGE_SIZE = 10
 const MAX_PAGE_SIZE = 100
+/** 一天的毫秒数：广场按「具体日期」筛选时用来把当天 00:00 换算成次日 00:00 */
+const DAY_MS = 86400000
 /** 我的活动一次最多返回的条数（云函数端单次查询上限 100） */
 const MY_LIST_LIMIT = 100
 /** 默认横幅的历史动作：仅当后台仍保持该动作时，才按最新默认值升级 */
@@ -48,6 +68,23 @@ const LEGACY_BANNER_ACTIONS = [{ _id: 'banner_default_3', action: { type: 'publi
  */
 function auditVisibleWhere() {
   return { auditStatus: publicAuditWhere(_) }
+}
+
+/** 未关闭条件：`nin` 同时命中缺 status 字段的历史数据，存量活动不会因此消失 */
+function notClosedWhere() {
+  return { status: _.nin([CLOSED]) }
+}
+
+/** 当天 00:00 的时间戳：广场据此判断已关闭的活动是否还在「关闭当天」 */
+function startOfToday() {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d.getTime()
+}
+
+/** 已关闭且仍在「关闭当天」的条件：广场只保留关闭当天，次日不再展示 */
+function closedTodayWhere() {
+  return { status: CLOSED, closeTime: _.gte(startOfToday()) }
 }
 
 /* ------------------------------ 基础工具 ------------------------------ */
@@ -74,13 +111,13 @@ async function findUser(openid) {
  * 「全部」传空值，返回 null 表示不加城市条件。
  */
 function cityCondition(city) {
-  const keys = regionCityKeys(city)
+  const keys = filterCityKeys(city)
   if (!keys.length) return null
   return keys.length === 1 ? { city: keys[0] } : { city: _.in(keys) }
 }
 
-/** 组装列表查询条件：等值条件走索引，关键字走正则 */
-function buildWhere(query) {
+/** 组装列表查询条件数组：等值条件走索引，关键字走正则 */
+function buildConditions(query) {
   // 审核条件恒为第一个：非公开状态的活动不能出现在列表里
   const conditions = [auditVisibleWhere()]
   const city = cityCondition(query.city)
@@ -88,18 +125,29 @@ function buildWhere(query) {
   if (query.type && query.type !== 'all') conditions.push({ type: String(query.type) })
   const weekday = num(query.weekday, -1)
   if (weekday >= 0 && weekday <= 6) conditions.push({ startWeekday: weekday })
+  // 广场的「具体日期」筛选：date 是客户端算好的当天 00:00 时间戳，这里换算成 [当天, 次日) 区间
+  const dayStart = num(query.date, 0)
+  if (dayStart > 0) {
+    // 同一个字段上前闭后开两条条件，交给外层 _.and 组合（与 city / type 等条件写法一致）
+    conditions.push({ startTime: _.gte(dayStart) })
+    conditions.push({ startTime: _.lt(dayStart + DAY_MS) })
+  }
   const keyword = text(query.keyword)
   if (keyword) {
     const reg = db.RegExp({ regexp: escapeRegExp(keyword), options: 'i' })
     // locationAddress 不展示，但要能被搜到：用户按「双流」这类地址关键词也能找到活动
     conditions.push(_.or([{ title: reg }, { location: reg }, { locationAddress: reg }]))
   }
-  if (conditions.length === 1) return conditions[0]
-  return _.and(conditions)
+  return conditions
+}
+
+/** 条件数组 -> 查询条件：只有一个条件时直接用，避免多包一层 _.and */
+function whereFrom(conditions) {
+  return conditions.length === 1 ? conditions[0] : _.and(conditions)
 }
 
 function whereToQuery(where) {
-  // buildWhere / cityWhere 始终返回非空条件（含审核可见性），这里不再做空条件兜底
+  // buildConditions / cityWhere 始终返回非空条件（含审核可见性），这里不再做空条件兜底
   return activities.where(where)
 }
 
@@ -110,11 +158,15 @@ function applySort(query, sort) {
   return query.orderBy('startTime', 'asc')
 }
 
-/** 首页 / 广场只按城市过滤，不再叠加其它条件 */
+/**
+ * 首页只按城市过滤，不再叠加其它条件。
+ * 首页是推荐位，已关闭的活动不进热门 / 最新（关闭后只在广场保留关闭当天）。
+ */
 function cityWhere(city) {
-  const visible = auditVisibleWhere()
+  const conditions = [auditVisibleWhere(), notClosedWhere()]
   const target = cityCondition(city)
-  return target ? _.and([visible, target]) : visible
+  if (target) conditions.push(target)
+  return whereFrom(conditions)
 }
 
 /**
@@ -221,22 +273,48 @@ async function home(event) {
   }
 }
 
+/**
+ * 广场列表：未关闭的活动在前、已关闭的在后，两种状态各查一次再拼成一页。
+ * 已关闭的活动只在关闭当天可见（closeTime 落在今天），第二天起从广场消失；
+ * 拆成两条查询而不是加 `orderBy('status')`，既不用为多字段排序建复合索引，
+ * 分页也不会把已关闭的活动混到未关闭的前面。
+ */
 async function list(event) {
   const query = event || {}
-  const where = buildWhere(query)
   const pageIndex = Math.max(0, Math.floor(num(query.pageIndex, 0)))
   const pageSize = limitRange(Math.floor(num(query.pageSize, DEFAULT_PAGE_SIZE)), 1, MAX_PAGE_SIZE)
   const start = pageIndex * pageSize
+  const conditions = buildConditions(query)
 
-  const [listRes, countRes] = await Promise.all([
-    applySort(whereToQuery(where), query.sort).skip(start).limit(pageSize).get(),
-    whereToQuery(where).count(),
+  const openedWhere = whereFrom(conditions.concat([notClosedWhere()]))
+  const closedWhere = whereFrom(conditions.concat([closedTodayWhere()]))
+
+  const [openedCountRes, closedCountRes] = await Promise.all([
+    whereToQuery(openedWhere).count(),
+    whereToQuery(closedWhere).count(),
+  ])
+  const openedCount = openedCountRes.total
+  const closedCount = closedCountRes.total
+  const total = openedCount + closedCount
+
+  // 已关闭的全部排在未关闭之后：先取完这页里未关闭的剩余部分，再用已关闭的补齐
+  const openedStart = Math.min(start, openedCount)
+  const openedLimit = Math.max(0, Math.min(pageSize, openedCount - openedStart))
+  const closedStart = Math.max(0, start - openedCount)
+  const closedLimit = pageSize - openedLimit
+
+  const [openedRes, closedRes] = await Promise.all([
+    openedLimit > 0
+      ? applySort(whereToQuery(openedWhere), query.sort).skip(openedStart).limit(openedLimit).get()
+      : Promise.resolve({ data: [] }),
+    closedLimit > 0
+      ? applySort(whereToQuery(closedWhere), query.sort).skip(closedStart).limit(closedLimit).get()
+      : Promise.resolve({ data: [] }),
   ])
 
-  const rows = listRes.data.map(withId)
+  const rows = openedRes.data.concat(closedRes.data).map(withId)
   await attachCoverUrls(rows)
 
-  const total = countRes.total
   return {
     list: rows,
     hasMore: start + pageSize < total,
@@ -363,14 +441,14 @@ async function writeLog(data) {
 }
 
 /**
- * 机器初审：文本同步检测 + 图片异步发起。
+ * 机器初审：文本同步检测 + 图片异步发起 + 群二维码同步识别。
  * - 文本命中违规：直接拦下，不写库（避免违规内容进库），由发起人改完重发；
  * - 图片只有 traceId，结果由消息推送回调补写，这里先记 pending；
- * - 检测接口本身失败：降级为纯人工审核，不阻塞发布。
+ * - 群二维码识别只认微信群邀请链接，识别不出 / 不是群链接直接驳回（详见 qrRejectPatch 与 lib/contentCheck.js）；
+ * - 检测接口本身失败：降级为纯人工审核（待审队列），既不阻塞发布也不误驳。
  */
 async function runMachineCheck(fields, openid) {
-  const content = [fields.title, fields.location, fields.desc].filter(Boolean).join('\n')
-  const textResult = await checkText(content, openid)
+  const textResult = await checkText(textOf(fields), openid)
   if (textResult.suggest === RISKY) {
     await writeLog({
       activityId: '',
@@ -383,9 +461,77 @@ async function runMachineCheck(fields, openid) {
     return { blocked: true, reason: '内容未通过安全检测，请修改后重新提交' }
   }
 
-  const images = await dispatchImages([fields.cover, fields.groupQrCode], openid)
-  const machineCheck = { text: textResult, images, checkedAt: Date.now() }
+  // 图片送检与二维码识别互不依赖，并行跑省掉一次往返
+  const [images, qrcode] = await Promise.all([
+    dispatchImages([fields.cover, fields.groupQrCode], openid),
+    checkQrCode(fields.groupQrCode),
+  ])
+  const machineCheck = { text: textResult, images, qrcode, checkedAt: Date.now() }
   return Object.assign({ machineCheck }, summarize(textResult, images))
+}
+
+/**
+ * 机审直接放行：文本检测与群二维码识别都是同步的，发布当刻就有结论；
+ * 只有封面 / 群二维码的图片内容安全结论要等 mediaCheckAsync 的回调，
+ * 有可送检图片时不置「已通过」——否则没检完的图片就直接上线了；那一步由 contentCheck 云函数用同一套规则判定。
+ * 机审没通过时返回空对象，沿用 auditPatch() 的待审状态交给人工。
+ */
+function autoAuditPatch(machine, data) {
+  const checkable = checkableImageCount([data.cover, data.groupQrCode])
+  if (!canAutoApprove(machine && machine.machineCheck, checkable)) return {}
+  return {
+    auditStatus: AUDIT_APPROVED,
+    auditRemark: '',
+    auditTime: Date.now(),
+    auditBy: AUTO_AUDIT_BY,
+  }
+}
+
+/**
+ * 群二维码没识别出微信群邀请链接：直接驳回，不进人工队列。
+ * 发起人在详情页与「我的发布」看到「未通过原因：活动二维码上传有误，请重新上传微信群二维码」，
+ * 改好二维码重新提交即可（重提会重新走一遍检测）。
+ *
+ * 识别接口异常 / 超时（failed）属于「没有结论」，返回空对象沿用待审状态，绝不因为检测本身出问题驳回用户。
+ */
+function qrRejectPatch(machine) {
+  if (!isQrRejected(machine && machine.machineCheck && machine.machineCheck.qrcode)) return {}
+  return {
+    auditStatus: AUDIT_REJECTED,
+    auditRemark: QR_REJECT_REMARK,
+    auditTime: Date.now(),
+    auditBy: AUTO_AUDIT_BY,
+  }
+}
+
+/** 机审放行同样要留痕：审核日志里能看出这条活动不是人工放行的 */
+async function writeAutoApproveLog(activityId, title, patch, from) {
+  if (!patch || patch.auditStatus !== AUDIT_APPROVED) return
+  await writeLog({
+    activityId,
+    title: title || '',
+    action: 'auto-approve',
+    from: from || '',
+    to: AUDIT_APPROVED,
+    remark: '机审通过（文本检测与二维码识别均无异常，且没有可送检图片），自动放行',
+    adminOpenid: '',
+    adminName: AUTO_AUDIT_BY,
+  })
+}
+
+/** 二维码驳回同样要留痕：审核日志里能看出这条活动不是人工驳回的 */
+async function writeQrRejectLog(activityId, title, patch, from) {
+  if (!patch || patch.auditStatus !== AUDIT_REJECTED) return
+  await writeLog({
+    activityId,
+    title: title || '',
+    action: 'auto-reject',
+    from: from || '',
+    to: AUDIT_REJECTED,
+    remark: `机审驳回：${QR_REJECT_REMARK}（群二维码未识别出微信群邀请链接）`,
+    adminOpenid: '',
+    adminName: AUTO_AUDIT_BY,
+  })
 }
 
 async function create(event, openid) {
@@ -401,16 +547,23 @@ async function create(event, openid) {
   const machine = await runMachineCheck(normalized.data, openid)
   if (machine.blocked) return fail('CONTENT_RISKY', machine.reason)
 
-  const doc = Object.assign({}, normalized.data, auditPatch(), machine, {
+  const auto = autoAuditPatch(machine, normalized.data)
+  const reject = qrRejectPatch(machine)
+  // reject 写在 auto 之后：二维码有明确结论时覆盖待审状态，不留「审核中」的可能
+  const doc = Object.assign({}, normalized.data, auditPatch(), machine, auto, reject, {
     joinedPeople: [],
     joinedCount: 0,
     organizer: memberOf(user),
     createTime: Date.now(),
     status: RECRUITING,
+    // 关闭时间：未关闭恒为 0，广场据此判断已关闭的活动是否还在关闭当天
+    closeTime: 0,
     miniQrCode: '',
   })
 
   const res = await activities.add({ data: doc })
+  await writeAutoApproveLog(res._id, doc.title, auto, '')
+  await writeQrRejectLog(res._id, doc.title, reject, AUDIT_PENDING)
   return withId(Object.assign({}, doc, { _id: res._id }))
 }
 
@@ -437,8 +590,12 @@ async function update(event, openid) {
   if (machine.blocked) return fail('CONTENT_RISKY', machine.reason)
 
   // 报名成员、发起人快照、创建时间保持不变，只覆盖表单字段
-  const patch = Object.assign({}, normalized.data, auditPatch(), machine)
+  const auto = autoAuditPatch(machine, normalized.data)
+  const reject = qrRejectPatch(machine)
+  const patch = Object.assign({}, normalized.data, auditPatch(), machine, auto, reject)
   await activities.doc(id).update({ data: patch })
+  await writeAutoApproveLog(id, patch.title, auto, auditStatusOf(doc))
+  await writeQrRejectLog(id, patch.title, reject, auditStatusOf(doc))
   return withId(Object.assign({}, doc, patch))
 }
 
@@ -512,9 +669,12 @@ async function toggle(event, openid) {
   }
   if (!isApproved(doc)) return fail('AUDIT_PENDING', '活动审核通过后才能开启或关闭')
 
-  const status = doc.status === CLOSED ? RECRUITING : CLOSED
-  await activities.doc(id).update({ data: { status } })
-  return withId(Object.assign({}, doc, { status }))
+  const closing = doc.status !== CLOSED
+  const status = closing ? CLOSED : RECRUITING
+  // 关闭时记录关闭时间（广场只保留关闭当天），重新打开时归零
+  const closeTime = closing ? Date.now() : 0
+  await activities.doc(id).update({ data: { status, closeTime } })
+  return withId(Object.assign({}, doc, { status, closeTime }))
 }
 
 /* ------------------------------ 我的活动 ------------------------------ */

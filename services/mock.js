@@ -2,12 +2,14 @@
 const { KEYS, getStorage, setStorage } = require('../utils/storage')
 const { getType, DEFAULT_BANNERS, tagName } = require('../utils/dict')
 const { createRandom, pickInt, deepClone, startOfDay } = require('../utils/util')
-const { regionCityKeys } = require('../utils/cities')
+const { filterCityKeys } = require('../utils/cities')
 
 const MOCK_JOIN_MAP = 'mock_join_map'
 const MOCK_STATUS_MAP = 'mock_status_map'
 // 本地审核结果覆盖：{ [活动id]: { auditStatus, auditRemark, auditTime, auditBy } }
 const MOCK_AUDIT_MAP = 'mock_audit_map'
+/** 关闭当天的判定精度：自然日（当天 00:00 之后关闭的活动当天还留在广场） */
+const DAY_MS = 86400000
 
 /** 活动种子数据：覆盖多城市、多类型、多星期、招募中 / 已关闭 */
 const SEEDS = [
@@ -130,6 +132,8 @@ function buildBaseActivities() {
       },
       createTime: today + (index - 6) * 7200000,
       status: 'recruiting',
+      // 关闭时间：未关闭恒为 0，广场据此判断已关闭的活动是否还在关闭当天
+      closeTime: 0,
       // 种子数据视为平台既有内容，审核状态直接给已通过
       auditStatus: 'approved',
       auditRemark: '',
@@ -160,8 +164,15 @@ function allActivities() {
       })
     }
     activity.joinedCount = activity.joinedPeople.length
-    if (statusMap[activity.id]) {
-      activity.status = statusMap[activity.id]
+    const statusPatch = statusMap[activity.id]
+    if (statusPatch) {
+      // 兼容上线前存成字符串的旧缓存：只记了状态、没有关闭时间，按「早已关闭」处理
+      if (typeof statusPatch === 'string') {
+        activity.status = statusPatch
+      } else {
+        activity.status = statusPatch.status || 'recruiting'
+        activity.closeTime = statusPatch.closeTime || 0
+      }
     }
     if (auditMap[activity.id]) {
       Object.assign(activity, auditMap[activity.id])
@@ -187,9 +198,31 @@ function findActivity(id) {
   return null
 }
 
-function saveStatus(id, status) {
+/**
+ * 广场可见性：已关闭的活动只在关闭当天展示，第二天起不再展示。
+ * 关闭时间缺失（上线前的旧缓存 / 旧数据）视为已过期，避免已关闭活动长期挂在广场。
+ */
+function squareVisible(item, now) {
+  if (!item || item.status !== 'closed') return true
+  const closedAt = Number(item.closeTime) || 0
+  if (!closedAt) return false
+  const today = startOfDay(now === undefined ? Date.now() : now)
+  return closedAt >= today && closedAt < today + DAY_MS
+}
+
+/** 首页推荐位可见：已关闭的活动只在广场保留关闭当天，不进首页热门 / 最新 */
+function homeVisibleActivities() {
+  return visibleActivities().filter((item) => item.status !== 'closed')
+}
+
+/** 本地状态覆盖：记录业务状态与关闭时间，重新打开时关闭时间归零 */
+function saveStatus(id, patch) {
+  const value = patch || {}
   const statusMap = getStorage(MOCK_STATUS_MAP, {}) || {}
-  statusMap[id] = status
+  statusMap[id] = {
+    status: value.status || 'recruiting',
+    closeTime: value.closeTime || 0,
+  }
   setStorage(MOCK_STATUS_MAP, statusMap)
 }
 
@@ -218,7 +251,7 @@ function memberOf(user) {
 
 /** 地区筛选：空值 = 全国；城市 = 单城；省份 = 全省（口径与云函数 cityCondition 一致） */
 function cityFilter(list, city) {
-  const keys = regionCityKeys(city)
+  const keys = filterCityKeys(city)
   if (!keys.length) return list
   return list.filter((item) => keys.indexOf(normalizeCityName(item.city)) > -1)
 }
@@ -239,6 +272,8 @@ module.exports = {
   buildBaseActivities,
   allActivities,
   visibleActivities,
+  homeVisibleActivities,
+  squareVisible,
   findActivity,
   saveStatus,
   saveAudit,

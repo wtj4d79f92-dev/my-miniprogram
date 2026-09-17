@@ -51,7 +51,6 @@
       <!-- 户外玩法 -->
       <view class="section-head">
         <text class="section-title">发现户外玩法</text>
-        <text class="section-more" data-type="" bindtap="goSquare">全部 ›</text>
       </view>
       <view class="type-grid card">
         <view class="type-item" wx:for="{{typeGrid}}" wx:key="key" data-type="{{item.key}}" bindtap="onTypeTap">

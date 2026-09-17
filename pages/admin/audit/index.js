@@ -23,7 +23,22 @@ const MACHINE_LABEL = {
   review: '机器需复核',
   risky: '机器判定违规',
   pending: '图片检测中',
+  // 检测接口异常 / 没返回结论：既不是通过也不是违规，一律转人工。
+  // 文案必须和「机器通过」区分开，否则运营看到「全绿」却进人工队列会莫名其妙。
+  failed: '未出结论（转人工）',
   unknown: '未检测',
+}
+
+/**
+ * 群二维码识别结论：只有识别出微信群邀请链接才算通过，
+ * 识别不出、识别到的不是群链接、接口异常都会转人工，所以审核台要把原因摆出来。
+ */
+const QR_VERDICT = {
+  ok: { label: '微信群邀请码', className: 'pass' },
+  'not-qrcode': { label: '未识别到二维码', className: 'review' },
+  'not-group': { label: '不是微信群邀请码', className: 'review' },
+  failed: { label: '二维码识别失败', className: 'review' },
+  unknown: { label: '未识别', className: 'pending' },
 }
 
 /**
@@ -174,11 +189,18 @@ Page({
           ? `二维码在云存储里读不到（${qr.reason || '文件不存在或无权读取'}），建议驳回让其重新上传`
           : '二维码加载失败，建议让发起人重新上传'
 
-    // 机器初审：文本同步出结论，图片要等消息推送回调，可能还是 pending
+    // 机器初审：文本同步出结论，图片要等消息推送回调，可能还是 pending。
+    // text.failed = 检测接口没跑通、这次送检没有结论，机审不会放行（转人工），
+    // 这里不能显示成「机器通过」——否则机审看着全绿、活动却在待审队列，运营无从下手。
     const machine = raw.machineCheck || null
-    const textSuggest = (machine && machine.text && machine.text.suggest) || 'unknown'
-    item.machineTextStatus = textSuggest
-    item.machineTextLabel = MACHINE_LABEL[textSuggest] || MACHINE_LABEL.unknown
+    const textCheck = (machine && machine.text) || null
+    const textFailed = !!(textCheck && textCheck.failed)
+    const textSuggest = (textCheck && textCheck.suggest) || 'unknown'
+    item.machineTextStatus = textFailed ? 'failed' : textSuggest
+    item.machineTextLabel = textFailed
+      ? '文本检测失败（转人工）'
+      : MACHINE_LABEL[textSuggest] || MACHINE_LABEL.unknown
+    item.machineTextFailed = textFailed
     item.machineImages = ((machine && machine.images) || []).map((image) => {
       const suggest = image.suggest || 'pending'
       const entry = mediaOf(media, image.fileID)
@@ -188,10 +210,28 @@ Page({
         src: (entry && entry.url) || image.fileID,
         className: suggest,
         labelText: MACHINE_LABEL[suggest] || MACHINE_LABEL.unknown,
+        message: image.message || '',
       }
     })
+    // 图片检测没出结论（不是 pass / review / risky）同样要摆到台面上：这条也是转人工的原因
+    item.machineImageFailed = item.machineImages.some((image) => image.className === 'failed')
+    // 该送检的云存储图片没送出去（发起送检时接口异常）：结论不完整，机审同样不会放行
+    const checkableImages = [raw.cover, raw.groupQrCode].filter(
+      (source) => String(source || '').indexOf('cloud://') === 0
+    ).length
+    item.machineImagesMissing = checkableImages > item.machineImages.length
     item.machineReview = !!raw.machineReview
     item.machinePending = !!raw.machinePending
+
+    // 群二维码识别：识别出的群邀请链接一并带出来，审核人不用长按二维码也能核对
+    const qrcode = (machine && machine.qrcode) || null
+    const verdict = QR_VERDICT[(qrcode && qrcode.status) || 'unknown'] || QR_VERDICT.unknown
+    item.machineQrcodeOk = !!(qrcode && qrcode.ok)
+    item.machineQrcodeFailed = !!(qrcode && qrcode.ok === false)
+    item.machineQrcodeLabel = verdict.label
+    item.machineQrcodeClass = verdict.className
+    item.machineQrcodeContent = (qrcode && qrcode.content) || ''
+    item.machineQrcodeMessage = (qrcode && qrcode.message) || ''
     return item
   },
 

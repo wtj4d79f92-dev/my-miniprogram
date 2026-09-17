@@ -270,6 +270,23 @@
   color: var(--brand);
 }
 
+/* 已报名用户的「查看二维码」入口：与退出活动同尺寸同字体，主色实底反白字并排展示 */
+.qr-entry {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx;
+  margin-right: 16rpx;
+  border-radius: 999rpx;
+  background: var(--brand);
+  /* 描边的退出活动按钮自带 2rpx 边框，这里补一条同色边框，两个按钮外框尺寸完全对齐 */
+  border: 2rpx solid var(--brand);
+  color: #ffffff;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
 .main-btn {
   flex: 1;
   display: flex;

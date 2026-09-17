@@ -33,7 +33,7 @@ const DIFFICULTY_OPTIONS = Array.from({ length: 10 }, (_, i) => {
 
 /** 集合时间（星期）筛选 */
 const WEEKDAY_OPTIONS = [
-  { value: -1, label: '不限日期' },
+  { value: -1, label: '不限周几' },
   { value: 1, label: '周一' },
   { value: 2, label: '周二' },
   { value: 3, label: '周三' },
@@ -43,9 +43,8 @@ const WEEKDAY_OPTIONS = [
   { value: 0, label: '周日' },
 ]
 
-/** 广场排序 */
+/** 广场排序（默认「最新发布」；活动类型 / 集合时间交给筛选胶囊，不再按开始时间排序） */
 const SORT_OPTIONS = [
-  { value: 'time', label: '即将开始' },
   { value: 'latest', label: '最新发布' },
   { value: 'hot', label: '最热门' },
 ]

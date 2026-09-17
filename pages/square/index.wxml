@@ -26,23 +26,7 @@
       <view class="search-submit" bindtap="onKeywordConfirm"><text>搜索</text></view>
     </view>
 
-    <!-- 类型 Tab -->
-    <scroll-view class="type-tabs" scroll-x scroll-into-view="{{tabScrollId}}" scroll-with-animation>
-      <view class="type-tabs-inner">
-        <view
-          class="type-tab {{type === item.key ? 'active' : ''}}"
-          wx:for="{{typeTabs}}"
-          wx:key="key"
-          id="tab-{{item.key}}"
-          data-type="{{item.key}}"
-          bindtap="onTypeTap"
-        >
-          <text>{{item.emoji ? item.emoji + ' ' : ''}}{{item.name}}</text>
-        </view>
-      </view>
-    </scroll-view>
-
-    <!-- 排序栏 -->
+    <!-- 排序栏 + 筛选（活动类型 / 具体日期 / 星期几） -->
     <view class="sort-bar">
       <view class="sort-options">
         <text
@@ -53,10 +37,30 @@
           bindtap="onSortTap"
         >{{item.label}}</text>
       </view>
-      <view class="weekday-filter" bindtap="toggleWeekday">
-        <text class="weekday-text">{{weekdayLabel}}</text>
-        <text class="weekday-arrow">{{weekdayOpen ? '▲' : '▼'}}</text>
+      <view class="sort-filters">
+        <view class="type-filter {{type !== 'all' ? 'active' : ''}}" bindtap="toggleType">
+          <text class="type-text">{{typeLabel}}</text>
+          <text class="type-arrow">{{typeOpen ? '▲' : '▼'}}</text>
+        </view>
+        <view class="date-filter {{date ? 'active' : ''}}" bindtap="openDatePicker">
+          <text class="date-text">{{dateLabel}}</text>
+          <text wx:if="{{date}}" class="date-clear" catchtap="onDateClear">✕</text>
+        </view>
+        <view class="weekday-filter" bindtap="toggleWeekday">
+          <text class="weekday-text">{{weekdayLabel}}</text>
+          <text class="weekday-arrow">{{weekdayOpen ? '▲' : '▼'}}</text>
+        </view>
       </view>
+    </view>
+
+    <view wx:if="{{typeOpen}}" class="type-panel">
+      <view
+        class="type-panel-item {{type === item.key ? 'active' : ''}}"
+        wx:for="{{typeOptions}}"
+        wx:key="key"
+        data-type="{{item.key}}"
+        bindtap="onTypeSelect"
+      >{{item.emoji ? item.emoji + ' ' : ''}}{{item.name}}</view>
     </view>
 
     <view wx:if="{{weekdayOpen}}" class="weekday-panel">
@@ -113,5 +117,6 @@
   </view>
 
   <city-picker id="city-picker" city="{{city}}" bindchange="onCityChange"></city-picker>
+  <calendar-picker id="calendar-picker" bindconfirm="onDateConfirm"></calendar-picker>
   <login-modal id="login-modal" bindlogin="onLogin"></login-modal>
 </view>

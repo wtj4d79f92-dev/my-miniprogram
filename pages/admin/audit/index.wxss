@@ -236,6 +236,11 @@
   color: #d98600;
 }
 
+/* 没拿到检测结论（转人工）：和「机器需复核」同一档警示色，绝不能是「机器通过」的绿色 */
+.machine-value.failed {
+  color: #d98600;
+}
+
 .machine-value.risky {
   color: #e34d59;
 }
@@ -264,6 +269,13 @@
   margin-bottom: 8rpx;
   border-radius: 12rpx;
   background: var(--line);
+}
+
+.machine-image-desc {
+  max-width: 200rpx;
+  font-size: 20rpx;
+  line-height: 1.4;
+  color: var(--text-light);
 }
 
 .audit-card-foot {

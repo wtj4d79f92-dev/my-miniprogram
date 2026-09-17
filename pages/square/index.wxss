@@ -73,36 +73,13 @@
   font-size: 26rpx;
 }
 
-.type-tabs {
-  margin-top: 20rpx;
-  white-space: nowrap;
-}
-
-.type-tabs-inner {
-  display: flex;
-  align-items: center;
-}
-
-.type-tab {
-  flex: none;
-  margin-right: 16rpx;
-  padding: 12rpx 26rpx;
-  border-radius: 999rpx;
-  background: #f4f7f6;
-  color: var(--text-sub);
-  font-size: 26rpx;
-}
-
-.type-tab.active {
-  background: var(--brand);
-  color: #ffffff;
-  font-weight: 600;
-}
-
 .sort-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* 排序 + 三个筛选胶囊：窄机型放不下时换行，别把胶囊挤出屏幕 */
+  flex-wrap: wrap;
+  row-gap: 12rpx;
   margin-top: 20rpx;
 }
 
@@ -112,9 +89,13 @@
 }
 
 .sort-option {
-  margin-right: 32rpx;
+  margin-right: 24rpx;
   font-size: 26rpx;
   color: var(--text-sub);
+}
+
+.sort-option:last-child {
+  margin-right: 0;
 }
 
 .sort-option.active {
@@ -122,10 +103,76 @@
   font-weight: 600;
 }
 
+.sort-filters {
+  display: flex;
+  align-items: center;
+}
+
+.type-filter {
+  display: flex;
+  align-items: center;
+  margin-right: 10rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  background: #f4f7f6;
+}
+
+.type-filter.active {
+  background: var(--brand-soft);
+}
+
+.type-text {
+  font-size: 24rpx;
+  color: var(--text-sub);
+}
+
+.type-filter.active .type-text {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.type-arrow {
+  margin-left: 6rpx;
+  font-size: 18rpx;
+  color: var(--text-light);
+}
+
+.date-filter {
+  display: flex;
+  align-items: center;
+  margin-right: 10rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  background: #f4f7f6;
+}
+
+.date-filter.active {
+  background: var(--brand-soft);
+}
+
+.date-text {
+  font-size: 24rpx;
+  color: var(--text-sub);
+}
+
+.date-filter.active .date-text {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.date-clear {
+  /* 点 ✕ 清空日期：加点内边距把热区撑到看得见的范围，同时不把胶囊撑高 */
+  margin-left: 6rpx;
+  padding: 0 8rpx;
+  line-height: 34rpx;
+  font-size: 22rpx;
+  color: var(--brand);
+}
+
 .weekday-filter {
   display: flex;
   align-items: center;
-  padding: 8rpx 20rpx;
+  padding: 8rpx 16rpx;
   border-radius: 999rpx;
   background: #f4f7f6;
 }
@@ -139,6 +186,30 @@
   margin-left: 8rpx;
   font-size: 18rpx;
   color: var(--text-light);
+}
+
+.type-panel {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 16rpx;
+  padding: 16rpx 8rpx 8rpx;
+  border-radius: 16rpx;
+  background: #f7fafa;
+}
+
+.type-panel-item {
+  /* 预留 1px，避免部分机型取整后每行只排得下 3 个 */
+  flex: 0 0 calc(25% - 1px);
+  min-width: 0;
+  padding: 14rpx 0;
+  text-align: center;
+  font-size: 26rpx;
+  color: var(--text-sub);
+}
+
+.type-panel-item.active {
+  color: var(--brand);
+  font-weight: 600;
 }
 
 .weekday-panel {

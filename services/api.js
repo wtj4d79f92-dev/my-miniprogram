@@ -68,6 +68,40 @@ function mockFormFields(form) {
  */
 const MOCK_RISKY_WORDS = ['违规', '赌博', '代刷', '外挂']
 const MOCK_REVIEW_WORDS = ['疑似', '兼职']
+/** Mock 里用文件名模拟二维码识别的两种不通过情况（云端用 img.scanQRCode 真实识别） */
+const MOCK_QR_NO_CODE = 'noqrcode'
+const MOCK_QR_NOT_GROUP = 'notgroup'
+
+/**
+ * 群二维码识别：与云端 lib/contentCheck.js 的 checkQrCode 同一套结论。
+ * Mock 不做真实识别，默认视为「识别到微信群邀请链接」，只有文件名带关键词时才模拟不通过。
+ */
+function mockQrCodeCheck(file) {
+  const value = String(file || '')
+  const base = { typeName: '', content: '', time: Date.now() }
+  if (!value) {
+    return Object.assign(base, { status: 'failed', ok: false, message: '未上传群二维码' })
+  }
+  if (value.indexOf(MOCK_QR_NO_CODE) > -1) {
+    return Object.assign(base, { status: 'not-qrcode', ok: false, message: '这张图里没有识别到二维码' })
+  }
+  if (value.indexOf(MOCK_QR_NOT_GROUP) > -1) {
+    return Object.assign(base, {
+      status: 'not-group',
+      ok: false,
+      typeName: 'QR_CODE',
+      content: 'https://pay.example.com/mock',
+      message: '识别到码，但不是微信群邀请链接',
+    })
+  }
+  return Object.assign(base, {
+    status: 'ok',
+    ok: true,
+    typeName: 'QR_CODE',
+    content: 'https://weixin.qq.com/g/mockgroup',
+    message: '识别到微信群邀请链接',
+  })
+}
 
 function mockMachineCheck(form) {
   const content = [form.title, form.location, form.desc].filter(Boolean).join('\n')
@@ -79,8 +113,34 @@ function mockMachineCheck(form) {
     text: { suggest, label: risky ? 20001 : 0, traceId: '', time: Date.now(), failed: false },
     // Mock 模式没有云存储文件，图片检测恒为空
     images: [],
+    qrcode: mockQrCodeCheck(form.groupQrCode),
     checkedAt: Date.now(),
   }
+}
+
+/**
+ * 机审放行判定：与云端两个云函数里的 lib/autoAudit.js 同一套规则。
+ * Mock 的封面 / 二维码是本机临时路径，没有可送检的图片，所以看文本结论 + 二维码识别结论；
+ * 文本疑似（review）留在待审队列交给人工；二维码识别出「不是微信群码」时直接驳回，见 mockQrReject。
+ */
+function mockAutoAudit(machine) {
+  if (machine.text.suggest !== 'pass' || machine.text.failed || !machine.qrcode.ok) {
+    return { auditStatus: 'pending', auditRemark: '', auditTime: 0, auditBy: '' }
+  }
+  return { auditStatus: 'approved', auditRemark: '', auditTime: Date.now(), auditBy: '内容安全检测' }
+}
+
+/** 群二维码没识别出微信群邀请链接时的驳回原因，与云端 lib/contentCheck.js 的 QR_REJECT_REMARK 一致 */
+const QR_REJECT_REMARK = '活动二维码上传有误，请重新上传微信群二维码'
+
+/**
+ * 群二维码识别结论明确「不是微信群邀请二维码」：直接驳回，不进人工队列。
+ * 接口异常 / 没结论（failed）不驳回，交给人工复核（与云端 qrRejectPatch 同一套规则）。
+ */
+function mockQrReject(machine) {
+  const status = (machine && machine.qrcode && machine.qrcode.status) || ''
+  if (status !== 'not-qrcode' && status !== 'not-group') return {}
+  return { auditStatus: 'rejected', auditRemark: QR_REJECT_REMARK, auditTime: Date.now(), auditBy: '内容安全检测' }
 }
 
 /** 云开发模式：统一 action 路由 */
@@ -138,7 +198,8 @@ function callAdmin(action, payload) {
 const mockApi = {
   home(payload) {
     const city = (payload && payload.city) || ''
-    const list = mock.cityFilter(mock.visibleActivities(), city)
+    // 首页只推荐未关闭的活动：已关闭的活动只在广场保留关闭当天
+    const list = mock.cityFilter(mock.homeVisibleActivities(), city)
     const hotList = list
       .slice()
       .sort((a, b) => b.joinedCount - a.joinedCount)
@@ -162,8 +223,9 @@ const mockApi = {
     const sort = query.sort || 'time'
     const keyword = String(query.keyword || '').trim().toLowerCase()
 
-    // 公开列表：审核中 / 未通过的活动不出现在广场
-    let list = mock.visibleActivities()
+    // 公开列表：审核中 / 未通过的活动不出现在广场；
+    // 已关闭的活动只在关闭当天展示，第二天起从广场消失
+    let list = mock.visibleActivities().filter((item) => mock.squareVisible(item))
     if (query.city) {
       list = mock.cityFilter(list, query.city)
     }
@@ -172,6 +234,12 @@ const mockApi = {
     }
     if (typeof query.weekday === 'number' && query.weekday >= 0) {
       list = list.filter((item) => item.startWeekday === query.weekday)
+    }
+    // date 传的是当天 00:00 的时间戳，云函数用同一口径做了范围查询
+    if (query.date > 0) {
+      const dayStart = Number(query.date)
+      const dayEnd = dayStart + 86400000
+      list = list.filter((item) => item.startTime >= dayStart && item.startTime < dayEnd)
     }
     if (keyword) {
       list = list.filter(
@@ -183,12 +251,14 @@ const mockApi = {
       )
     }
 
+    // 已关闭的活动沉底：无论按哪个维度排序，都排在未关闭活动之后
+    const closedLast = (a, b) => (a.status === 'closed' ? 1 : 0) - (b.status === 'closed' ? 1 : 0)
     if (sort === 'hot') {
-      list.sort((a, b) => b.joinedCount - a.joinedCount)
+      list.sort((a, b) => closedLast(a, b) || b.joinedCount - a.joinedCount)
     } else if (sort === 'latest') {
-      list.sort((a, b) => b.createTime - a.createTime)
+      list.sort((a, b) => closedLast(a, b) || b.createTime - a.createTime)
     } else {
-      list.sort((a, b) => a.startTime - b.startTime)
+      list.sort((a, b) => closedLast(a, b) || a.startTime - b.startTime)
     }
 
     const total = list.length
@@ -221,6 +291,8 @@ const mockApi = {
     const form = (payload && payload.form) || {}
     const machine = mockMachineCheck(form)
     if (machine.blocked) return fail('CONTENT_RISKY', '内容未通过安全检测，请修改后重新提交')
+    const audit = mockAutoAudit(machine)
+    const reject = mockQrReject(machine)
     const id = `mock_act_${Date.now()}`
     const activity = Object.assign(mockFormFields(form), {
       id,
@@ -230,17 +302,14 @@ const mockApi = {
       organizer: mock.memberOf(user),
       createTime: Date.now(),
       status: 'recruiting',
-      // 新发布的活动一律先进审核队列
-      auditStatus: 'pending',
-      auditRemark: '',
-      auditTime: 0,
-      auditBy: '',
+      closeTime: 0,
       submitTime: Date.now(),
-      machineCheck: { text: machine.text, images: machine.images, checkedAt: machine.checkedAt },
+      machineCheck: { text: machine.text, images: machine.images, qrcode: machine.qrcode, checkedAt: machine.checkedAt },
       machineReview: machine.text.suggest === 'review',
       machinePending: false,
       miniQrCode: '',
-    })
+      // 审核结论：二维码不通过直接驳回，其次机审通过直接放行，其余进人工队列（与云端同一套规则）
+    }, audit, reject)
     const published = getStorage(KEYS.published, []) || []
     published.unshift(activity)
     setStorage(KEYS.published, published)
@@ -260,30 +329,22 @@ const mockApi = {
     const machine = mockMachineCheck(params.form || {})
     if (machine.blocked) return fail('CONTENT_RISKY', '内容未通过安全检测，请修改后重新提交')
 
+    const audit = mockAutoAudit(machine)
+    const reject = mockQrReject(machine)
     const patch = Object.assign(mockFormFields(params.form || {}), {
-      auditStatus: 'pending',
-      auditRemark: '',
-      auditTime: 0,
-      auditBy: '',
       submitTime: Date.now(),
-      machineCheck: { text: machine.text, images: machine.images, checkedAt: machine.checkedAt },
+      machineCheck: { text: machine.text, images: machine.images, qrcode: machine.qrcode, checkedAt: machine.checkedAt },
       machineReview: machine.text.suggest === 'review',
       machinePending: false,
-    })
+    }, audit, reject)
     const published = getStorage(KEYS.published, []) || []
     const index = published.findIndex((item) => item.id === id)
     if (index > -1) {
       published[index] = Object.assign({}, published[index], patch)
       setStorage(KEYS.published, published)
     }
-    // 审核结果存在独立的覆盖表里，重提时同步清掉上一次的驳回结论
-    mock.saveAudit(id, {
-      auditStatus: 'pending',
-      auditRemark: '',
-      auditTime: 0,
-      auditBy: '',
-      submitTime: Date.now(),
-    })
+    // 审核结果存在独立的覆盖表里，重提时同步覆盖掉上一次的审核结论（机审通过则直接放行）
+    mock.saveAudit(id, Object.assign({ submitTime: Date.now() }, audit, reject))
     return withDelay(deepClone(mock.findActivity(id)))
   },
 
@@ -347,17 +408,21 @@ const mockApi = {
     if (activity.organizer.openid !== user.openid) return fail('FORBIDDEN', '仅发起人可操作')
     if (!audit.isApproved(activity)) return fail('AUDIT_PENDING', '活动审核通过后才能开启或关闭')
     const nextStatus = activity.status === 'closed' ? 'recruiting' : 'closed'
+    // 关闭时记录关闭时间，广场据此只保留关闭当天；重新打开时归零
+    const nextCloseTime = nextStatus === 'closed' ? Date.now() : 0
 
     const published = getStorage(KEYS.published, []) || []
     const index = published.findIndex((item) => item.id === id)
     if (index > -1) {
       published[index].status = nextStatus
+      published[index].closeTime = nextCloseTime
       setStorage(KEYS.published, published)
     }
-    mock.saveStatus(id, nextStatus)
+    mock.saveStatus(id, { status: nextStatus, closeTime: nextCloseTime })
 
     const updated = mock.findActivity(id)
     updated.status = nextStatus
+    updated.closeTime = nextCloseTime
     return withDelay(deepClone(updated))
   },
 

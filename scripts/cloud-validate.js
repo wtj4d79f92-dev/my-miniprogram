@@ -35,6 +35,15 @@ const command = {
   exists: (value) => ({ [OP]: 'exists', value }),
 }
 
+/** 比较指令：真实 SDK 支持 _.gte(x).and(_.lt(y))，这里按同一语义把 and 串成同一字段上的组合条件 */
+;['gt', 'gte', 'lt', 'lte'].forEach((op) => {
+  command[op] = (value) => {
+    const self = { [OP]: op, value }
+    self.and = (other) => ({ [OP]: 'and', value: [self, other] })
+    return self
+  }
+})
+
 function isCommand(value) {
   return !!value && typeof value === 'object' && value[OP]
 }
@@ -75,6 +84,19 @@ function matchCommand(actual, cmd) {
       return cmd.value.indexOf(actual) > -1
     case 'exists':
       return (actual !== undefined) === !!cmd.value
+    case 'gt':
+      return actual > cmd.value
+    case 'gte':
+      return actual >= cmd.value
+    case 'lt':
+      return actual < cmd.value
+    case 'lte':
+      return actual <= cmd.value
+    // 字段级 and / or：成员都是针对同一个字段值的比较条件
+    case 'and':
+      return cmd.value.every((item) => matchField(actual, item))
+    case 'or':
+      return cmd.value.some((item) => matchField(actual, item))
     default:
       throw new Error(`未实现的条件指令：${cmd[OP]}`)
   }
@@ -307,6 +329,8 @@ const fakeCloud = {
           err.errCode = 48001
           throw err
         }
+        // textEmpty：接口通了但没带回结论（没有 result），同样不能算「通过」
+        if (securityBehavior.textEmpty) return { errcode: 0, errmsg: 'ok' }
         return {
           errcode: 0,
           result: { suggest: securityBehavior.text, label: securityBehavior.label || 0 },
@@ -315,10 +339,12 @@ const fakeCloud = {
       },
       async mediaCheckAsync() {
         securityCalls.push('image')
+        imageCallSeq += 1
         if (securityBehavior.imageDelay) {
           await new Promise((resolve) => setTimeout(resolve, securityBehavior.imageDelay))
         }
-        if (!securityBehavior.image) {
+        // imageFailOnce：只让第一张图送检失败，用来验证「有图片没能送出去时转人工」
+        if (!securityBehavior.image || (securityBehavior.imageFailOnce && imageCallSeq === 1)) {
           const err = new Error('api unauthorized')
           err.errCode = 48001
           throw err
@@ -330,24 +356,65 @@ const fakeCloud = {
         return { errcode: 0, traceId }
       },
     },
+    img: {
+      // 二维码/条码识别：由 securityBehavior.qrcode 决定识别出什么，null 表示接口调用失败
+      async scanQRCode(params) {
+        qrCalls.push({ imgUrl: (params && params.imgUrl) || '' })
+        if (!securityBehavior.qrcode) {
+          const err = new Error('api unauthorized')
+          err.errCode = 48001
+          throw err
+        }
+        if (securityBehavior.qrcode === 'notqr') return { errcode: 0, code_results: [] }
+        if (securityBehavior.qrcode === 'barcode') {
+          return { errcode: 0, code_results: [{ type_name: 'EAN_13', data: '6901234567892' }] }
+        }
+        if (securityBehavior.qrcode === 'notgroup') {
+          return { errcode: 0, code_results: [{ type_name: 'QR_CODE', data: 'https://pay.example.com/abc' }] }
+        }
+        return {
+          errcode: 0,
+          code_results: [{ type_name: 'QR_CODE', data: 'https://weixin.qq.com/g/AaBbCcDd' }],
+        }
+      },
+    },
   },
 }
 
 // 内容安全接口的行为开关：text/image 取值 pass | review | risky | null（null 表示调用失败）
-const securityBehavior = { text: 'pass', image: 'pass', label: 0, textDelay: 0, imageDelay: 0 }
+// imageFailOnce：仅第一次图片送检失败，用于验证「部分图片没结论」的降级路径
+// qrcode：group 识别到微信群邀请链接 | notqr 没识别到码 | notgroup 识别到的不是群链接 |
+//         barcode 只有一维码 | null 接口调用失败
+const securityBehavior = {
+  text: 'pass',
+  image: 'pass',
+  imageFailOnce: false,
+  textEmpty: false,
+  qrcode: 'group',
+  label: 0,
+  textDelay: 0,
+  imageDelay: 0,
+}
 const securityCalls = []
+const qrCalls = []
 const mediaTraceIds = []
 let mediaSeq = 0
+let imageCallSeq = 0
 let tempUrlEnabled = true
 
 function resetSecurity(behavior) {
   securityBehavior.text = 'pass'
   securityBehavior.image = 'pass'
+  securityBehavior.imageFailOnce = false
+  securityBehavior.textEmpty = false
+  securityBehavior.qrcode = 'group'
   securityBehavior.label = 0
   securityBehavior.textDelay = 0
   securityBehavior.imageDelay = 0
   Object.assign(securityBehavior, behavior || {})
   securityCalls.length = 0
+  qrCalls.length = 0
+  imageCallSeq = 0
 }
 
 // 拦截 require('wx-server-sdk')，让云函数在不装依赖的情况下也能跑
@@ -417,6 +484,22 @@ async function pushMediaResult(traceId, suggest, label) {
     version: 2,
     errcode: 0,
     result: { suggest, label: label || 0 },
+  })
+}
+
+/** 推送一条「没有结论」的图片检测事件：带错误码、不带 result（接口异常时微信推的就是这种） */
+async function pushMediaNoConclusion(traceId, errcode) {
+  return contentCheckFn.main({
+    ToUserName: 'gh_test',
+    FromUserName: 'o_test',
+    CreateTime: String(Math.floor(Date.now() / 1000)),
+    MsgType: 'event',
+    Event: 'wxa_media_check',
+    appid: 'test-appid',
+    trace_id: traceId,
+    version: 2,
+    errcode: errcode || 40001,
+    errmsg: 'invalid credential',
   })
 }
 
@@ -733,6 +816,41 @@ async function run() {
     '首页：省 + 全部按全省过滤'
   )
 
+  /* ---------- 活动类型筛选：广场胶囊传 type，服务端按类型过滤 ---------- */
+  const climbing = seedActivity({
+    _id: 'act_climbing',
+    type: 'climbing',
+    typeName: '爬山',
+    emoji: '🥾',
+    title: '周末爬山',
+    auditStatus: 'approved',
+  })
+  const typeList = await callActivity('list', { pageIndex: 0, pageSize: 50, type: 'climbing' }, OTHER)
+  log(
+    typeList.list.length === 1 && typeList.list[0].id === climbing._id,
+    '广场：活动类型筛选只返回该类型的活动'
+  )
+  const typedAll = await callActivity('list', { pageIndex: 0, pageSize: 50, type: 'all' }, OTHER)
+  log(typedAll.total > typeList.total, '广场：全部类型不做过滤，其他玩法一起返回')
+  const latestList = await callActivity('list', { pageIndex: 0, pageSize: 50, sort: 'latest' }, OTHER)
+  log(
+    latestList.list.every((item, i) => i === 0 || latestList.list[i - 1].createTime >= item.createTime),
+    '广场：默认排序「最新发布」按发布时间倒序'
+  )
+
+  /* ---------- 日期筛选：date 是客户端算好的当天 00:00 时间戳 ---------- */
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const tomorrowStart = todayStart.getTime() + 86400000
+  const dateList = await callActivity('list', { pageIndex: 0, pageSize: 50, date: tomorrowStart }, OTHER)
+  log(
+    dateList.total > 0 &&
+      dateList.list.every((item) => item.startTime >= tomorrowStart && item.startTime < tomorrowStart + 86400000),
+    '广场：按具体日期筛选只返回当天的活动'
+  )
+  const emptyDay = await callActivity('list', { pageIndex: 0, pageSize: 50, date: tomorrowStart + 30 * 86400000 }, OTHER)
+  log(emptyDay.total === 0, '广场：没有活动的日期返回空，不会退回全量')
+
   const detailRes = await callAdmin('detail', { id: 'act_approved' }, ADMIN)
   log(detailRes.id === 'act_approved' && !!detailRes.desc, '审核台：详情返回完整活动信息')
   const detailMissing = await callAdmin('detail', { id: 'not_exist' }, ADMIN)
@@ -904,21 +1022,146 @@ async function run() {
   tempUrlEnabled = true
 
   /* ---------- 内容安全：图片异步回调 ---------- */
+  // 自动放行要求「所有送检项都有结论且都通过」，所以这一组用带云存储封面的表单（封面 + 二维码两张图）
+  const formWithCover = Object.assign({}, form, { cover: 'cloud://cover.png' })
   resetSecurity()
   const withImage = await callActivity(
     'create',
-    { form: Object.assign({}, form, { title: '含图片的活动' }) },
+    { form: Object.assign({}, formWithCover, { title: '含图片的活动' }) },
     ORGANIZER
   )
-  const imgTrace = withImage.machineCheck.images[0] && withImage.machineCheck.images[0].traceId
-  log(!!imgTrace, '内容安全：图片检测发起后拿到 traceId')
+  const imgTraces = withImage.machineCheck.images.map((item) => item.traceId)
+  log(imgTraces.length === 2 && imgTraces.every(Boolean), '内容安全：封面与二维码各拿到一个 traceId')
 
-  const ackPass = await pushMediaResult(imgTrace, 'pass', 100)
+  const ackPass = await pushMediaResult(imgTraces[0], 'pass', 100)
   log(ackPass.errcode === 0, '内容安全：回调返回 errcode 0，避免微信重推')
   let afterPush = store.activities.filter((item) => item._id === withImage.id)[0]
   log(afterPush.machineCheck.images[0].suggest === 'pass', '内容安全：图片结论写回活动')
+  log(afterPush.machinePending === true, '内容安全：还有图片没结论时依然标记检测中')
+  log(afterPush.auditStatus === 'pending', '内容安全：只回来一张图片的结论时不会提前放行')
+
+  await pushMediaResult(imgTraces[1], 'pass', 100)
+  afterPush = store.activities.filter((item) => item._id === withImage.id)[0]
   log(afterPush.machinePending === false, '内容安全：结论回来后清除检测中标记')
-  log(afterPush.auditStatus === 'pending', '内容安全：图片通过不改变审核状态')
+  log(
+    afterPush.auditStatus === 'approved' && afterPush.auditBy === '内容安全检测',
+    '内容安全：机审全部通过后自动放行'
+  )
+  log(
+    afterPush.auditRemark === '' && afterPush.auditTime > 0,
+    '内容安全：自动放行记录审核时间且不带驳回原因'
+  )
+  log(
+    store.activity_audits.filter((item) => item.action === 'auto-approve').length === 1,
+    '内容安全：自动放行写入审核日志'
+  )
+  const autoApprovedList = await callActivity('list', { pageIndex: 0, pageSize: 100, sort: 'latest' }, OTHER)
+  log(autoApprovedList.list.some((item) => item.id === withImage.id), '内容安全：自动放行的活动随即出现在广场')
+
+  /* ---------- 内容安全：没结论不能当成通过 ---------- */
+  /* 文本检测在发布当刻超时 / 接口异常时只留下 failed 标记，审核台上文字那行仍写着「机器通过」，
+     活动却永远停在待审队列 —— 图片结论回来时补检一次，补到结论就照常自动放行 */
+  resetSecurity({ text: null })
+  const textDegraded = await silenceErrors(() =>
+    callActivity(
+      'create',
+      { form: Object.assign({}, formWithCover, { title: '文本检测降级的活动' }) },
+      ORGANIZER
+    )
+  )
+  log(
+    textDegraded.auditStatus === 'pending' && textDegraded.machineCheck.text.failed === true,
+    '内容安全：文本检测降级时活动先留在待审队列'
+  )
+
+  resetSecurity()
+  const degradedTraces = textDegraded.machineCheck.images.map((item) => item.traceId)
+  securityCalls.length = 0
+  await pushMediaResult(degradedTraces[0], 'pass', 100)
+  let degradedDoc = store.activities.filter((item) => item._id === textDegraded.id)[0]
+  log(degradedDoc.auditStatus === 'pending', '内容安全：还有图片没结论时不补检文本')
+  log(securityCalls.indexOf('text') === -1, '内容安全：文本补检等最后一张图片的结论')
+
+  await pushMediaResult(degradedTraces[1], 'pass', 100)
+  degradedDoc = store.activities.filter((item) => item._id === textDegraded.id)[0]
+  log(securityCalls.indexOf('text') > -1, '内容安全：图片结论回来后补检文本')
+  log(degradedDoc.machineCheck.text.failed === false, '内容安全：补检结论写回活动')
+  log(
+    degradedDoc.auditStatus === 'approved' && degradedDoc.auditBy === '内容安全检测',
+    '内容安全：文本补检通过后机审照样自动放行'
+  )
+  log(
+    store.activity_audits.some(
+      (item) => item.activityId === textDegraded.id && item.action === 'auto-approve' && /补检/.test(item.remark)
+    ),
+    '内容安全：补检放行的审核日志写明是补检通过的'
+  )
+
+  // 补检也拿不到结论：留在待审队列交给人工，绝不放行，并留一条日志备查
+  resetSecurity({ text: null })
+  const recheckFail = await silenceErrors(() =>
+    callActivity(
+      'create',
+      { form: Object.assign({}, formWithCover, { title: '文本始终没有结论的活动' }) },
+      ORGANIZER
+    )
+  )
+  securityCalls.length = 0
+  await silenceErrors(async () => {
+    await pushMediaResult(recheckFail.machineCheck.images[0].traceId, 'pass', 100)
+    await pushMediaResult(recheckFail.machineCheck.images[1].traceId, 'pass', 100)
+  })
+  const recheckFailDoc = store.activities.filter((item) => item._id === recheckFail.id)[0]
+  log(securityCalls.indexOf('text') > -1, '内容安全：补检同样会调用文本检测接口')
+  log(
+    recheckFailDoc.auditStatus === 'pending' && recheckFailDoc.machineCheck.text.failed === true,
+    '内容安全：文本补检仍没结论时继续人工审核'
+  )
+  log(
+    store.activity_audits.some((item) => item.activityId === recheckFail.id && item.action === 'text-recheck'),
+    '内容安全：文本补检失败写入审核日志'
+  )
+
+  // 接口通了却没有 result：这次送检同样没有结论，不能悄悄按「通过」处理
+  resetSecurity({ textEmpty: true })
+  const emptyText = await callActivity(
+    'create',
+    { form: Object.assign({}, form, { title: '文本接口没带结论的活动' }) },
+    ORGANIZER
+  )
+  log(
+    emptyText.auditStatus === 'pending' && emptyText.machineCheck.text.failed === true,
+    '内容安全：文本接口没带结论时按「没结论」转人工'
+  )
+
+  // 图片推送带错误码 / 没有 result：既不是通过也不是违规，留待人工，且不能在审核台显示成通过
+  resetSecurity()
+  const noConclusion = await callActivity('create', { form }, ORGANIZER)
+  await pushMediaNoConclusion(noConclusion.machineCheck.images[0].traceId, 40001)
+  const noConclusionDoc = store.activities.filter((item) => item._id === noConclusion.id)[0]
+  log(noConclusionDoc.machineCheck.images[0].suggest === 'failed', '内容安全：图片推送没结论时不写 pass')
+  log(
+    noConclusionDoc.auditStatus === 'pending' && noConclusionDoc.machinePending === false,
+    '内容安全：图片没结论的活动不放行，也不停在「图片检测中」'
+  )
+  log(
+    store.activity_audits.some((item) => item.activityId === noConclusion.id && item.action === 'image-failed'),
+    '内容安全：图片没结论写入审核日志'
+  )
+
+  // 旧版推送只带 isrisky 字段：带了字段仍然按结论处理，不能一律当成「没结论」
+  resetSecurity()
+  const legacyPush = await callActivity('create', { form }, ORGANIZER)
+  await contentCheckFn.main({
+    Event: 'wxa_media_check',
+    trace_id: legacyPush.machineCheck.images[0].traceId,
+    errcode: 0,
+    isrisky: 0,
+  })
+  log(
+    store.activities.filter((item) => item._id === legacyPush.id)[0].machineCheck.images[0].suggest === 'pass',
+    '内容安全：旧版推送只带 isrisky 时仍按结论处理'
+  )
 
   const ackUnknown = await pushMediaResult('trace_not_exist', 'risky', 0)
   log(ackUnknown.errcode === 0, '内容安全：未知 traceId 只确认不报错')
@@ -948,6 +1191,161 @@ async function run() {
   const reviewDoc = store.activities.filter((item) => item._id === reviewImageActivity.id)[0]
   log(reviewDoc.machineReview === true && reviewDoc.auditStatus === 'pending', '内容安全：图片疑似违规标记为需人工复核')
 
+  /* ---------- 内容安全：机审只要有一项不确定，就留给人工 ---------- */
+  resetSecurity({ text: 'review' })
+  const reviewWithImage = await callActivity(
+    'create',
+    { form: Object.assign({}, formWithCover, { title: '文本疑似需复核的活动' }) },
+    ORGANIZER
+  )
+  await pushMediaResult(reviewWithImage.machineCheck.images[0].traceId, 'pass', 100)
+  await pushMediaResult(reviewWithImage.machineCheck.images[1].traceId, 'pass', 100)
+  const reviewWithImageDoc = store.activities.filter((item) => item._id === reviewWithImage.id)[0]
+  log(reviewWithImageDoc.auditStatus === 'pending', '内容安全：文本疑似时图片全通过也不自动放行')
+
+  resetSecurity({ text: null })
+  const textFailCreate = await silenceErrors(() =>
+    callActivity('create', { form: Object.assign({}, formWithCover, { title: '文本接口异常的活动' }) }, ORGANIZER)
+  )
+  // 图片结论回来时会补检一次文本（这里接口仍然异常，补检同样拿不到结论）
+  await silenceErrors(async () => {
+    await pushMediaResult(textFailCreate.machineCheck.images[0].traceId, 'pass', 100)
+    await pushMediaResult(textFailCreate.machineCheck.images[1].traceId, 'pass', 100)
+  })
+  const textFailDoc = store.activities.filter((item) => item._id === textFailCreate.id)[0]
+  log(textFailDoc.auditStatus === 'pending', '内容安全：文本检测没结论时图片全通过也转人工')
+
+  resetSecurity({ imageFailOnce: true })
+  const partialImage = await silenceErrors(() =>
+    callActivity(
+      'create',
+      { form: Object.assign({}, formWithCover, { title: '有图片没送检成功的活动' }) },
+      ORGANIZER
+    )
+  )
+  log(partialImage.machineCheck.images.length === 1, '内容安全：单张图片送检失败只跳过这一张')
+  await pushMediaResult(partialImage.machineCheck.images[0].traceId, 'pass', 100)
+  const partialImageDoc = store.activities.filter((item) => item._id === partialImage.id)[0]
+  log(partialImageDoc.auditStatus === 'pending', '内容安全：有图片没能送检时转人工审核')
+
+  resetSecurity()
+  const rejectedByAdmin = await callActivity(
+    'create',
+    { form: Object.assign({}, formWithCover, { title: '人工驳回后回调通过的活动' }) },
+    ORGANIZER
+  )
+  await callAdmin('reject', { id: rejectedByAdmin.id, remark: '信息不完整' }, ADMIN)
+  await pushMediaResult(rejectedByAdmin.machineCheck.images[0].traceId, 'pass', 100)
+  await pushMediaResult(rejectedByAdmin.machineCheck.images[1].traceId, 'pass', 100)
+  const rejectedByAdminDoc = store.activities.filter((item) => item._id === rejectedByAdmin.id)[0]
+  log(rejectedByAdminDoc.auditStatus === 'rejected', '内容安全：人工驳回后机审通过不会把活动放上线')
+
+  /* ---------- 内容安全：没有可送检图片时发布当刻判定 ---------- */
+  resetSecurity()
+  // 封面 / 二维码都不是云存储文件（https 远程图、本机历史路径）时没有可送检的图片，只看文本结论
+  const noCheckableForm = Object.assign({}, form, { groupQrCode: 'https://cdn.test/qr.png' })
+  const noCheckable = await callActivity('create', { form: noCheckableForm }, ORGANIZER)
+  log(
+    noCheckable.auditStatus === 'approved' && noCheckable.auditBy === '内容安全检测',
+    '内容安全：没有可送检图片时文本与二维码都通过即直接放行'
+  )
+  const noCheckableEdit = await callActivity(
+    'update',
+    { id: noCheckable.id, form: Object.assign({}, noCheckableForm, { title: '没有可送检图片的编辑' }) },
+    ORGANIZER
+  )
+  log(noCheckableEdit.auditStatus === 'approved', '内容安全：编辑重提没有可送检图片时同样直接放行')
+
+  resetSecurity({ text: 'review' })
+  const noCheckableReview = await callActivity('create', { form: noCheckableForm }, ORGANIZER)
+  log(noCheckableReview.auditStatus === 'pending', '内容安全：没有可送检图片但文本疑似时仍留给人工')
+
+  /* ---------- 机审：群二维码识别（只认微信群邀请链接） ---------- */
+  resetSecurity()
+  const groupQr = await callActivity(
+    'create',
+    { form: Object.assign({}, form, { title: '群二维码正常的活动' }) },
+    ORGANIZER
+  )
+  log(
+    qrCalls.length >= 1 && /^https:\/\//.test(qrCalls[0].imgUrl),
+    '二维码识别：发布时把群二维码换成 https 临时链接送识别'
+  )
+  log(
+    groupQr.machineCheck.qrcode.ok === true && groupQr.machineCheck.qrcode.status === 'ok',
+    '二维码识别：识别到微信群邀请链接算通过'
+  )
+  log(
+    groupQr.machineCheck.qrcode.content === 'https://weixin.qq.com/g/AaBbCcDd',
+    '二维码识别：留存解出的群邀请链接，审核台与发起人都能看到'
+  )
+
+  resetSecurity({ qrcode: 'notqr' })
+  const noQrCode = await callActivity(
+    'create',
+    { form: Object.assign({}, form, { title: '上传的不是二维码的活动' }) },
+    ORGANIZER
+  )
+  log(!!noQrCode.id && noQrCode.auditStatus === 'rejected', '二维码识别：没识别到码时直接驳回')
+  log(
+    noQrCode.auditRemark === '活动二维码上传有误，请重新上传微信群二维码',
+    '二维码识别：驳回原因写明重新上传微信群二维码'
+  )
+  log(noQrCode.auditBy === '内容安全检测', '二维码识别：驳回来源记为内容安全检测')
+  log(
+    noQrCode.machineCheck.qrcode.status === 'not-qrcode' && noQrCode.machineCheck.qrcode.ok === false,
+    '二维码识别：记录「没识别到二维码」的结论'
+  )
+
+  resetSecurity({ qrcode: 'notgroup' })
+  const notGroupQr = await callActivity(
+    'create',
+    { form: Object.assign({}, form, { title: '上传了收款码的活动' }) },
+    ORGANIZER
+  )
+  log(
+    notGroupQr.auditStatus === 'rejected' &&
+      notGroupQr.auditRemark === '活动二维码上传有误，请重新上传微信群二维码' &&
+      notGroupQr.machineCheck.qrcode.status === 'not-group',
+    '二维码识别：识别到的不是微信群邀请链接时直接驳回，原因写明重新上传微信群二维码'
+  )
+  // 驳回的活动不进人工待审队列，也不出现在发起人以外的任何列表里
+  const pendingAfterQrReject = await callAdmin('list', { status: 'pending' }, ADMIN)
+  log(
+    !(pendingAfterQrReject.list || []).some((item) => item.id === notGroupQr.id || item.id === noQrCode.id),
+    '二维码识别：被驳回的活动不进人工待审队列'
+  )
+  const qrRejectPublicList = await callActivity('list', { pageIndex: 0, pageSize: 50, sort: 'latest' }, OTHER)
+  log(
+    !(qrRejectPublicList.list || []).some((item) => item.id === notGroupQr.id || item.id === noQrCode.id),
+    '二维码识别：被驳回的活动不出现在广场'
+  )
+
+  resetSecurity({ qrcode: null })
+  const qrFail = await silenceErrors(() =>
+    callActivity('create', { form: Object.assign({}, form, { title: '二维码识别接口异常的活动' }) }, ORGANIZER)
+  )
+  log(!!qrFail.id && qrFail.auditStatus === 'pending', '二维码识别：接口异常不阻塞发布')
+  log(
+    qrFail.machineCheck.qrcode.status === 'failed' && qrFail.machineCheck.qrcode.ok === false,
+    '二维码识别：接口异常按「没有结论」处理'
+  )
+
+  // 二维码识别不通过被驳回后，图片结论全回来且全是 pass 也不能自动放行（不能覆盖驳回结论）
+  resetSecurity({ qrcode: 'notgroup' })
+  const notGroupWithImages = await callActivity(
+    'create',
+    { form: Object.assign({}, formWithCover, { title: '二维码不是群码的图片活动' }) },
+    ORGANIZER
+  )
+  await pushMediaResult(notGroupWithImages.machineCheck.images[0].traceId, 'pass', 100)
+  await pushMediaResult(notGroupWithImages.machineCheck.images[1].traceId, 'pass', 100)
+  const notGroupDoc = store.activities.filter((item) => item._id === notGroupWithImages.id)[0]
+  log(
+    notGroupDoc.auditStatus === 'rejected' && notGroupDoc.auditRemark === '活动二维码上传有误，请重新上传微信群二维码',
+    '二维码识别：被驳回后图片全通过也不会被机审放行'
+  )
+
   resetSecurity({ text: 'risky' })
   const blockedEdit = await callActivity('update', { id: withImage.id, form }, ORGANIZER)
   log(blockedEdit.code === 'CONTENT_RISKY', '内容安全：编辑重提同样做文本检测')
@@ -968,6 +1366,124 @@ async function run() {
   const adminView = await callAdmin('list', { status: 'all', keyword: '需人工复核的活动' }, ADMIN)
   log(adminView.list.length === 1 && adminView.list[0].machineReview === true, '审核台：列表返回机器复核标记')
   log(!!adminView.list[0].machineCheck, '审核台：列表返回机器检测详情')
+
+  /* ---------- 广场：已关闭活动的可见性与沉底排序 ---------- */
+  resetStore()
+  resetSecurity()
+  seedUser(ORGANIZER, '发起人')
+  const nowTs = Date.now()
+  const closedDayStart = new Date().setHours(0, 0, 0, 0)
+  const openIds = ['act_open_1', 'act_open_2', 'act_open_3']
+  openIds.forEach((id, index) => {
+    seedActivity({
+      _id: id,
+      title: `未关闭活动 ${index + 1}`,
+      auditStatus: 'approved',
+      createTime: nowTs + index,
+    })
+  })
+  seedActivity({
+    _id: 'act_closed_today',
+    title: '今天关闭的活动',
+    auditStatus: 'approved',
+    status: 'closed',
+    // 发布时间最新：不加沉底规则时它会排在广场第一位
+    createTime: nowTs + 100,
+    closeTime: nowTs,
+  })
+  seedActivity({
+    _id: 'act_closed_yesterday',
+    title: '昨天关闭的活动',
+    auditStatus: 'approved',
+    status: 'closed',
+    closeTime: closedDayStart - 86400000,
+  })
+  seedActivity({
+    _id: 'act_closed_legacy',
+    title: '上线前关闭的活动（没有关闭时间）',
+    auditStatus: 'approved',
+    status: 'closed',
+  })
+
+  const closedList = await callActivity('list', { pageIndex: 0, pageSize: 50, sort: 'latest' }, OTHER)
+  const closedIds = closedList.list.map((item) => item.id)
+  log(closedIds.indexOf('act_closed_today') > -1, '关闭活动：关闭当天的活动仍留在广场')
+  log(
+    closedIds.indexOf('act_closed_yesterday') === -1 && closedIds.indexOf('act_closed_legacy') === -1,
+    '关闭活动：昨天关闭 / 没有关闭时间的活动不再展示'
+  )
+  log(closedList.total === 4, `关闭活动：总数只算未关闭 + 关闭当天的活动（实际 ${closedList.total}）`)
+  log(
+    closedList.list[0].id === 'act_open_3' && closedList.list[3].id === 'act_closed_today',
+    '关闭活动：已关闭的活动沉底，最新发布也排在未关闭活动之后'
+  )
+
+  const openedFirstPage = await callActivity('list', { pageIndex: 0, pageSize: 2, sort: 'latest' }, OTHER)
+  log(
+    openedFirstPage.list.every((item) => item.status !== 'closed') && openedFirstPage.hasMore === true,
+    '关闭活动：第一页先排满未关闭的活动'
+  )
+  const closedSecondPage = await callActivity('list', { pageIndex: 1, pageSize: 2, sort: 'latest' }, OTHER)
+  log(
+    closedSecondPage.list.length === 2 &&
+      closedSecondPage.list[1].id === 'act_closed_today' &&
+      closedSecondPage.hasMore === false,
+    '关闭活动：跨页时已关闭的活动仍然沉底，不会插到未关闭活动前面'
+  )
+
+  const closedHotList = await callActivity('list', { pageIndex: 0, pageSize: 50, sort: 'hot' }, OTHER)
+  log(
+    closedHotList.list[closedHotList.list.length - 1].id === 'act_closed_today',
+    '关闭活动：按最热门排序时同样沉底'
+  )
+
+  const closedFilteredList = await callActivity('list', { pageIndex: 0, pageSize: 50, city: '北京' }, OTHER)
+  log(
+    closedFilteredList.total === 0 && closedFilteredList.list.length === 0,
+    '关闭活动：城市筛选与已关闭活动的可见性条件可叠加'
+  )
+
+  const closedHome = await callActivity('home', { city: '' }, OTHER)
+  log(
+    closedHome.hotList.concat(closedHome.newestList).every((item) => item.status !== 'closed'),
+    '关闭活动：首页热门 / 最新不展示已关闭的活动'
+  )
+
+  const closedDetail = await callActivity('detail', { id: 'act_closed_yesterday' }, OTHER)
+  log(
+    !!closedDetail && closedDetail.status === 'closed',
+    '关闭活动：不在广场展示后，详情与分享链接依然可访问'
+  )
+  const closedMine = await callActivity('mine', { kind: 'published' }, ORGANIZER)
+  log(
+    closedMine.some((item) => item.id === 'act_closed_yesterday'),
+    '关闭活动：我的发布里仍能看到已关闭的活动'
+  )
+
+  const toggleClosed = await callActivity('toggle', { id: 'act_open_1' }, ORGANIZER)
+  log(
+    toggleClosed.status === 'closed' && toggleClosed.closeTime > 0,
+    '关闭活动：关闭时写入关闭时间'
+  )
+  const closedAfterToggle = await callActivity('list', { pageIndex: 0, pageSize: 50, sort: 'latest' }, OTHER)
+  log(
+    closedAfterToggle.list[closedAfterToggle.list.length - 1].id === 'act_open_1' &&
+      closedAfterToggle.total === 4,
+    '关闭活动：刚关闭的活动留在广场并沉底'
+  )
+
+  const toggleOpened = await callActivity('toggle', { id: 'act_open_1' }, ORGANIZER)
+  log(
+    toggleOpened.status === 'recruiting' && toggleOpened.closeTime === 0,
+    '重新打开：状态恢复 recruiting 且清空关闭时间'
+  )
+  const openedSquare = await callActivity('list', { pageIndex: 0, pageSize: 50, sort: 'latest' }, OTHER)
+  log(
+    openedSquare.list.some((item) => item.id === 'act_open_1') &&
+      openedSquare.list[openedSquare.list.length - 1].id === 'act_closed_today' &&
+      openedSquare.total === 4,
+    '重新打开：活动立即回到广场的未关闭序列'
+  )
 }
 
 run()

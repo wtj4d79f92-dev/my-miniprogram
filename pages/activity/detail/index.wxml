@@ -30,10 +30,12 @@
         <!-- 审核状态：只有发起人自己能看到未过审的活动，所以这条提示只对发起人出现 -->
         <view wx:if="{{!activity.auditApproved}}" class="audit-banner {{activity.auditStatus}}">
           <text class="audit-banner-title">{{activity.auditPending ? '活动审核中' : '审核未通过'}}</text>
+          <!-- 只说「审核中」：机审还是人工复核属于平台内部流程，不对发起人区分 -->
           <text class="audit-banner-desc" wx:if="{{activity.auditPending}}">
-            已提交平台审核，通过后才会出现在广场，期间仅你自己可见。
+            已提交审核，通过后将展示在广场，审核期间仅你自己可见。
           </text>
-          <text class="audit-banner-desc" wx:else>
+          <!-- 驳回原因写成平级判断：用 wx:else 会跟上面那条审核中提示配对，审核中时反而多出一行空原因 -->
+          <text class="audit-banner-desc" wx:if="{{!activity.auditPending}}">
             未通过原因：{{activity.auditReason}}
           </text>
         </view>
@@ -136,6 +138,12 @@
           <text class="share-icon">↗</text>
           <text>分享</text>
         </view>
+        <!-- 报名后才出现：重新查看活动群二维码，无需先退出活动 -->
+        <view
+          wx:if="{{!isOrganizer && activity.joined && activity.groupQrCode}}"
+          class="qr-entry"
+          bindtap="openQrModal"
+        >查看二维码</view>
         <view
           class="main-btn {{mainBtn.disabled ? 'disabled' : ''}} {{mainBtn.style}}"
           bindtap="onMainTap"
@@ -176,7 +184,7 @@
   <view wx:if="{{showQrModal}}">
     <view class="mask" bindtap="closeQrModal"></view>
     <view class="dialog qr-dialog">
-      <text class="qr-title">报名成功，扫码加入活动群</text>
+      <text class="qr-title">{{qrTitle}}</text>
       <view class="qr-box">
         <image
           wx:if="{{activity.qrSrc && !qrPlaceholder}}"

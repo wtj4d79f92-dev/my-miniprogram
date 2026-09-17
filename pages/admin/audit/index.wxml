@@ -82,11 +82,15 @@
               <text class="audit-meta">地点：{{item.location}}</text>
               <text class="audit-meta">集合：{{item.startLabel}}</text>
               <text class="audit-meta">发起人：{{item.organizerName}}</text>
-              <view wx:if="{{item.machineReview || item.machinePending || item.coverBroken || item.qrBroken || item.coverUnreachable}}" class="machine-flags">
+              <view wx:if="{{item.machineReview || item.machinePending || item.machineTextFailed || item.machineImageFailed || item.machineImagesMissing || item.machineQrcodeFailed || item.coverBroken || item.qrBroken || item.coverUnreachable}}" class="machine-flags">
                 <text wx:if="{{item.coverBroken}}" class="machine-flag review">封面失效</text>
                 <text wx:if="{{item.coverUnreachable}}" class="machine-flag review">封面读不到</text>
                 <text wx:if="{{item.qrBroken}}" class="machine-flag review">二维码失效</text>
+                <text wx:if="{{item.machineQrcodeFailed}}" class="machine-flag review">{{item.machineQrcodeLabel}}</text>
                 <text wx:if="{{item.machineReview}}" class="machine-flag review">机器需复核</text>
+                <text wx:if="{{item.machineTextFailed}}" class="machine-flag review">文本检测失败</text>
+                <text wx:if="{{item.machineImageFailed}}" class="machine-flag review">图片检测未出结论</text>
+                <text wx:if="{{item.machineImagesMissing}}" class="machine-flag review">图片未送检</text>
                 <text wx:if="{{item.machinePending}}" class="machine-flag pending">图片检测中</text>
               </view>
             </view>
@@ -176,13 +180,22 @@
               <text class="machine-label">文本内容</text>
               <text class="machine-value {{detail.machineTextStatus}}">{{detail.machineTextLabel}}</text>
             </view>
+            <text wx:if="{{detail.machineTextFailed}}" class="sheet-desc">文本检测接口异常或超时，这次送检没有结论，机审不会放行，请人工核对文本内容</text>
             <view wx:if="{{detail.machineImages.length}}" class="machine-images">
               <view wx:for="{{detail.machineImages}}" wx:key="fileID" class="machine-image">
                 <image class="machine-thumb" src="{{item.src}}" mode="aspectFill"></image>
                 <text class="machine-value {{item.className}}">{{item.labelText}}</text>
+                <text wx:if="{{item.message}}" class="machine-image-desc">{{item.message}}</text>
               </view>
             </view>
             <text wx:else class="sheet-desc">未发起图片内容安全检测</text>
+            <text wx:if="{{detail.machineImagesMissing}}" class="sheet-desc">有云存储图片没能送检，机审结论不完整，机审不会放行，请人工核对封面与二维码</text>
+            <view class="machine-row">
+              <text class="machine-label">群二维码</text>
+              <text class="machine-value {{detail.machineQrcodeClass}}">{{detail.machineQrcodeLabel}}</text>
+            </view>
+            <text wx:if="{{detail.machineQrcodeContent}}" class="sheet-desc">识别到：{{detail.machineQrcodeContent}}</text>
+            <text wx:if="{{detail.machineQrcodeFailed && detail.machineQrcodeMessage}}" class="sheet-desc">{{detail.machineQrcodeMessage}}</text>
           </view>
 
           <view class="sheet-section">

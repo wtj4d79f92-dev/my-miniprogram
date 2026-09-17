@@ -152,7 +152,7 @@
 
       <!-- 活动群二维码 -->
       <view class="card">
-        <view class="form-head"><text class="form-title">活动群二维码 <text class="required">*</text></text><text class="form-sub">仅从相册选择</text></view>
+        <view class="form-head"><text class="form-title">活动群二维码 <text class="required">*</text></text><text class="form-sub">仅相册，需为微信群邀请二维码</text></view>
         <view class="qr-upload">
           <view wx:if="{{form.groupQrCode}}" class="qr-preview">
             <image class="qr-img" src="{{form.groupQrCode}}" mode="aspectFit"></image>
@@ -192,9 +192,9 @@
       </view>
       <text wx:if="{{errors.agreement}}" class="form-error agree-error">{{errors.agreement}}</text>
 
-      <!-- 审核说明：提交后不会立刻出现在广场 -->
+      <!-- 审核说明：只告知用户会进入审核，不区分机审 / 人工 -->
       <view class="audit-tip">
-        <text>提交后由平台审核，通过后才会展示在广场；审核中仅你自己可见。</text>
+        <text>提交后进入审核，通过后将展示在广场，审核期间仅你自己可见。</text>
       </view>
     </view>
   </scroll-view>

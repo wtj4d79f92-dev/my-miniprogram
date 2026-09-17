@@ -508,7 +508,10 @@ Page({
         wx.hideLoading()
         // 保持按钮锁定，直到自动跳转到新活动详情页
         this.setData({ published: true })
-        ui.toast('已提交审核', 'success')
+        // 群二维码没识别出微信群邀请链接：活动已被驳回，详情页会写明「未通过原因」与重新提交入口，
+        // 这里只提前说一句，用户不用等跳到详情页才发现
+        const rejected = String(activity && activity.auditStatus) === 'rejected'
+        ui.toast(rejected ? '二维码未识别，活动未通过审核' : '已提交审核', rejected ? 'none' : 'success')
         setTimeout(() => {
           const url = `/pages/activity/detail/index?id=${activity.id}`
           wx.redirectTo({

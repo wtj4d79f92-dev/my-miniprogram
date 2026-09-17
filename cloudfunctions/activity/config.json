@@ -4,7 +4,8 @@
       "phonenumber.getPhoneNumber",
       "wxacode.getUnlimited",
       "security.msgSecCheck",
-      "security.mediaCheckAsync"
+      "security.mediaCheckAsync",
+      "img.scanQRCode"
     ]
   }
 }
