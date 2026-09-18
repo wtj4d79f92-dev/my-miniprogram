@@ -147,6 +147,14 @@
   color: var(--text);
 }
 
+/* 费用口径：平台不参与资金流转，详情页要一直能看到这句 */
+.info-note {
+  margin-top: 4rpx;
+  font-size: 20rpx;
+  color: var(--text-light);
+  line-height: 1.4;
+}
+
 .status {
   margin-top: 6rpx;
   font-size: 28rpx;

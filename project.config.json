@@ -21,6 +21,9 @@
       { "type": "suffix", "value": ".md" },
       { "type": "suffix", "value": ".docx" },
       { "type": "folder", "value": "scripts" },
+      { "type": "folder", "value": ".git" },
+      { "type": "file", "value": ".DS_Store" },
+      { "type": "file", "value": ".gitignore" },
       { "type": "file", "value": "project.private.config.json" },
       { "type": "file", "value": ".eslintrc.js" }
     ],

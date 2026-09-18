@@ -129,16 +129,17 @@
       <!-- 费用与人数 -->
       <view class="card">
         <view class="form-row">
-          <text class="form-label">费用模式 <text class="required">*</text></text>
+          <text class="form-label">费用方式 <text class="required">*</text></text>
           <view class="fee-switch">
             <view class="fee-option {{form.feeMode === 'aa' ? 'active' : ''}}" data-mode="aa" bindtap="setFeeMode"><text>AA制</text></view>
-            <view class="fee-option {{form.feeMode === 'fixed' ? 'active' : ''}}" data-mode="fixed" bindtap="setFeeMode"><text>非AA制</text></view>
+            <view class="fee-option {{form.feeMode === 'nonAA' ? 'active' : ''}}" data-mode="nonAA" bindtap="setFeeMode"><text>非AA制</text></view>
           </view>
         </view>
-        <view class="form-row" wx:if="{{form.feeMode === 'fixed'}}">
-          <text class="form-label">人均费用 <text class="required">*</text></text>
-          <input class="form-input" type="digit" value="{{form.fee}}" placeholder="单位 元" bindinput="onFeeInput" />
+        <view class="form-row" wx:if="{{form.feeMode === 'nonAA'}}">
+          <text class="form-label">费用说明 <text class="required">*</text></text>
+          <input class="form-input" value="{{form.feeNote}}" maxlength="60" placeholder="如：门票自理 / 人均约 80 元现场分摊" bindinput="onFeeNoteInput" />
         </view>
+        <text class="form-sub fee-tip">平台不收取任何资金。费用说明仅供参与者参考，具体费用由发起人与参与者自行协商。</text>
         <text wx:if="{{errors.fee}}" class="form-error">{{errors.fee}}</text>
         <view class="form-row">
           <text class="form-label">人数上限 <text class="required">*</text></text>
@@ -195,6 +196,7 @@
       <!-- 审核说明：只告知用户会进入审核，不区分机审 / 人工 -->
       <view class="audit-tip">
         <text>提交后进入审核，通过后将展示在广场，审核期间仅你自己可见。</text>
+        <text>活动发布后在广场展示 7 天，到期自动关闭；需要继续组队请重新发布。</text>
       </view>
     </view>
   </scroll-view>

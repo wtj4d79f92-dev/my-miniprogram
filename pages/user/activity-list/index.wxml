@@ -26,7 +26,8 @@
         bindtapcard="onCardTap"
         bindtoggle="onToggle"
       >
-        <view slot="footer" wx:if="{{item.auditRejected}}" class="audit-box">
+        <!-- 已到期的活动不能再重提（服务端 update 同样会拒绝），不再展示「修改后重新提交」 -->
+        <view slot="footer" wx:if="{{item.auditRejected && !item.expired}}" class="audit-box">
           <view class="audit-reason">
             <text class="audit-label">未通过原因</text>
             <text class="audit-text">{{item.auditReason}}</text>
@@ -35,8 +36,11 @@
             <text>修改后重新提交</text>
           </view>
         </view>
-        <view slot="footer" wx:elif="{{item.auditPending && tab === 'published'}}" class="audit-box">
+        <view slot="footer" wx:elif="{{item.auditPending && !item.expired && tab === 'published'}}" class="audit-box">
           <text class="audit-pending-text">已提交审核，通过后将展示在广场</text>
+        </view>
+        <view slot="footer" wx:elif="{{item.expired && tab === 'published'}}" class="audit-box">
+          <text class="audit-pending-text">活动发布已超过 7 天，已自动关闭；需要继续组队请重新发布</text>
         </view>
       </activity-card>
 

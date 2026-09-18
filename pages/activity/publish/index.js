@@ -58,8 +58,10 @@ Page({
       difficulty: 3,
       distance: '',
       elevationGain: '',
-      feeMode: 'aa',
-      fee: '',
+      // 费用方式必须由发起人主动选择：'aa' / 'nonAA'（空串 = 尚未选择）
+      feeMode: '',
+      // 非 AA 制只填一段文字说明，平台不收取任何资金，因此不收集金额
+      feeNote: '',
       maxPeople: 10,
       groupQrCode: '',
       desc: '',
@@ -97,8 +99,21 @@ Page({
           wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/home/home' }) })
           return
         }
-        if (!user || !raw.organizer || raw.organizer.openid !== user.openid) {
+        // 发起人身份只认服务端算好的 isOrganizer：云函数下发的成员 / 发起人快照按隐私要求
+        // 抹掉了 openid，用 raw.organizer.openid 比对会让任何用户都进不来（编辑、驳回重提全废）。
+        // Mock 模式返回的是带 openid 的本地数据，保留本地兜底判断。
+        const isOrganizer =
+          typeof raw.isOrganizer === 'boolean'
+            ? raw.isOrganizer
+            : !!user && !!raw.organizer && raw.organizer.openid === user.openid
+        if (!isOrganizer) {
           ui.toast('仅发起人可修改活动')
+          wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/home/home' }) })
+          return
+        }
+        // 展示期届满的活动已自动关闭，服务端 update 同样会拒绝，这里提前拦住，别让用户白填一遍表单
+        if (raw.expired) {
+          ui.toast('活动发布已超过 7 天，已自动关闭，无法修改')
           wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/home/home' }) })
           return
         }
@@ -124,8 +139,10 @@ Page({
             difficulty,
             distance: raw.distance ? String(raw.distance) : '',
             elevationGain: raw.elevationGain ? String(raw.elevationGain) : '',
-            feeMode: raw.feeMode === 'fixed' ? 'fixed' : 'aa',
-            fee: raw.fee ? String(raw.fee) : '',
+            // 历史数据：feeMode 'fixed' + 数字 fee 视为非 AA 制，数字折成一句费用说明
+            feeMode: raw.feeMode === 'nonAA' || raw.feeMode === 'fixed' ? 'nonAA' : 'aa',
+            feeNote:
+              raw.feeNote || (raw.fee ? `人均约 ${raw.fee} 元，现场自行分摊` : ''),
             maxPeople: raw.maxPeople || 10,
             groupQrCode: raw.groupQrCode || '',
             desc,
@@ -363,10 +380,11 @@ Page({
     const mode = e.currentTarget.dataset.mode
     this.setData({ 'form.feeMode': mode })
     if (mode === 'aa') this.clearError('fee')
+    else if (this.data.form.feeNote) this.clearError('fee')
   },
 
-  onFeeInput(e) {
-    this.setData({ 'form.fee': e.detail.value })
+  onFeeNoteInput(e) {
+    this.setData({ 'form.feeNote': e.detail.value })
     this.clearError('fee')
   },
 
@@ -443,7 +461,11 @@ Page({
         errors.elevationGain = '累计爬升请填写大于 0 的数字（m），或留空'
       }
     }
-    if (form.feeMode === 'fixed' && !(Number(form.fee) > 0)) errors.fee = '非 AA 制需填写大于 0 的人均费用'
+    // 费用方式必选；非 AA 制只要求一段文字说明，平台不收取也不代收任何资金
+    if (!form.feeMode) errors.fee = '请选择费用方式（AA 制 / 非 AA 制）'
+    else if (form.feeMode === 'nonAA' && !String(form.feeNote || '').trim()) {
+      errors.fee = '非 AA 制请填写费用说明，例如「门票自理」「人均约 80 元现场分摊」'
+    }
     if (!form.groupQrCode) errors.groupQrCode = '请上传活动群二维码'
     // 与表单从上到下的顺序保持一致，提示第一条
     const order = [
@@ -495,7 +517,7 @@ Page({
     const payload = Object.assign({}, form, {
       distance: Number(form.distance) || 0,
       elevationGain: Number(form.elevationGain) || 0,
-      fee: form.feeMode === 'fixed' ? Number(form.fee) || 0 : 0,
+      feeNote: form.feeMode === 'nonAA' ? String(form.feeNote || '').trim() : '',
       // 发布者当前城市：地址里认不出城市时服务端用它兜底归属（省份 / 全国不生效）
       cityHint: getApp().globalData.city || '',
     })

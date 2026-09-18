@@ -76,6 +76,14 @@
           <text class="entry-title">意见反馈</text>
           <text class="entry-arrow">›</text>
         </view>
+        <!-- 客服入口：open-type="contact" 直达微信客服会话，审核要求小程序内可联系到运营 -->
+        <view class="entry">
+          <button class="contact-btn" open-type="contact" hover-class="none">
+            <text class="entry-icon">🎧</text>
+            <text class="entry-title">联系客服</text>
+            <text class="entry-arrow">›</text>
+          </button>
+        </view>
         <view wx:if="{{isAdmin}}" class="entry" bindtap="goAdminAudit">
           <text class="entry-icon">🛡️</text>
           <view class="entry-main">

@@ -12,8 +12,10 @@
       <text class="poster-sub">{{poster.sub}}</text>
     </view>
     <view class="act-type"><text>{{act.typeName}}</text></view>
-    <!-- 审核状态比业务状态更该被发起人看到，优先展示 -->
-    <view wx:if="{{!act.auditApproved}}" class="act-closed act-audit-{{act.auditStatus}}"><text>{{act.auditText}}</text></view>
+    <!-- 审核状态比业务状态更该被发起人看到，优先展示；但过了展示期的活动已自动关闭，按已到期展示 -->
+    <view wx:if="{{!act.auditApproved && !act.expired}}" class="act-closed act-audit-{{act.auditStatus}}"><text>{{act.auditText}}</text></view>
+    <!-- 展示期届满（发布满 7 天）自动关闭，与发起人主动关闭区分开 -->
+    <view wx:elif="{{act.expired}}" class="act-closed"><text>已到期</text></view>
     <view wx:elif="{{act.isClosed}}" class="act-closed"><text>已关闭</text></view>
   </view>
 
@@ -61,9 +63,10 @@
     </view>
 
     <view wx:if="{{showToolbar}}" class="act-toolbar">
-      <text wx:if="{{act.auditApproved}}" class="act-status {{act.isClosed ? 'closed' : 'recruiting'}}">{{act.isClosed ? '已关闭' : '招募中'}}</text>
+      <text wx:if="{{act.auditApproved}}" class="act-status {{act.isClosed ? 'closed' : 'recruiting'}}">{{act.expired ? '已到期' : (act.isClosed ? '已关闭' : '招募中')}}</text>
       <text wx:else class="act-status {{act.auditStatus}}">{{act.auditText}}</text>
-      <view wx:if="{{act.auditApproved}}" class="act-toggle" catchtap="onToggle">
+      <!-- 已到期的活动不能重新打开：展示期按发布时间算，重开也不会再出现在广场 -->
+      <view wx:if="{{act.auditApproved && !act.expired}}" class="act-toggle" catchtap="onToggle">
         <text>{{act.isClosed ? '打开' : '关闭'}}</text>
       </view>
     </view>

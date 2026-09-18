@@ -111,6 +111,38 @@
   border-bottom: none;
 }
 
+/*
+ * 「联系客服」必须用 button 才能拿到 open-type="contact" 的客服会话能力，
+ * 但 button 自带内容宽度（实测 184px）与居中定位，width:100% 压不住，会跟其它入口错位。
+ * 因此把 button 放进一条普通 entry 行里，用 flex:1 让它铺满整行——与其它入口天然对齐。
+ */
+.contact-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  font-size: 28rpx;
+  line-height: 1.4;
+  text-align: left;
+  color: var(--text);
+}
+
+.contact-btn::after {
+  border: none;
+}
+
+/* button 默认居中的文字对齐不要外溢到行内文案 */
+.contact-btn .entry-icon,
+.contact-btn .entry-title,
+.contact-btn .entry-arrow {
+  text-align: left;
+}
+
 .entry-icon {
   width: 52rpx;
   font-size: 30rpx;

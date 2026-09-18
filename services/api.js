@@ -6,6 +6,8 @@ const { matchCity, normalizeCity, singleCityKey } = require('../utils/cities')
 const { delay, deepClone, formatCardDate, WEEKDAY_TEXT } = require('../utils/util')
 const { LOCATION_MAX, ADDRESS_MAX } = require('../utils/location')
 const audit = require('../utils/audit')
+// 展示期：发布满 7 天的活动对外按「已关闭」处理（与云函数 lib/expire.js 同一口径）
+const expire = require('../utils/expire')
 const mock = require('./mock')
 
 const AVATAR_COLORS = ['#4ECDC4', '#45B7D1', '#FF8E72', '#F6D365', '#00CDAC', '#FA709A', '#44A08D', '#A8DADC', '#FF7D00']
@@ -55,8 +57,9 @@ function mockFormFields(form) {
     difficulty: supportsMetrics(type.key) ? form.difficulty || 0 : 0,
     distance: supportsMetrics(type.key) ? form.distance || 0 : 0,
     elevationGain: supportsMetrics(type.key) ? form.elevationGain || 0 : 0,
-    fee: form.feeMode === 'fixed' ? form.fee || 0 : 0,
-    feeMode: form.feeMode || 'aa',
+    // 费用只做信息说明：AA 制 / 非 AA 制由发起人选择，非 AA 制附一段文字说明，平台不参与任何资金流转
+    feeMode: form.feeMode === 'nonAA' || form.feeMode === 'fixed' ? 'nonAA' : 'aa',
+    feeNote: form.feeMode === 'nonAA' || form.feeMode === 'fixed' ? form.feeNote || '' : '',
     maxPeople: form.maxPeople || 10,
     tags: supportsTags(type.key) ? form.tags || [] : [],
   }
@@ -80,6 +83,15 @@ function mockTextRisky(content) {
   const value = String(content || '')
   if (!value) return false
   return MOCK_RISKY_WORDS.some((word) => value.indexOf(word) > -1)
+}
+
+/**
+ * Mock 版默认昵称，与云端 activity 云函数的 defaultNickName 保持一致：
+ * 昵称对外可见，不能用手机号（哪怕是掩码），统一「微信用户 + 用户编号」。
+ */
+function mockDefaultNickName(userId) {
+  const id = Math.floor(Number(userId) || 0)
+  return id > 0 ? `微信用户${id}` : '微信用户'
 }
 
 /**
@@ -289,6 +301,8 @@ const mockApi = {
     // 审核中 / 未通过的活动只有发起人自己能预览，其他人按「不存在」处理
     if (!audit.isApproved(activity) && !isOrganizer) return withDelay(null)
     const result = deepClone(activity)
+    // 展示期届满的活动对外按「已关闭」下发（与云函数 publicActivity 同口径）
+    expire.applyExpiry(result)
     result.joined = !!user && result.joinedPeople.some((item) => item.openid === user.openid)
     result.isOrganizer = isOrganizer
     result.full = result.joinedCount >= result.maxPeople
@@ -335,6 +349,9 @@ const mockApi = {
     const activity = mock.findActivity(id)
     if (!activity) return fail('NOT_FOUND', '活动不存在或已下架')
     if (activity.organizer.openid !== user.openid) return fail('FORBIDDEN', '仅发起人可修改')
+    if (expire.isExpired(activity)) {
+      return fail('ACTIVITY_EXPIRED', '活动发布已超过 7 天，已自动关闭，无法修改，请重新发布')
+    }
 
     const machine = mockMachineCheck(params.form || {})
     if (machine.blocked) return fail('CONTENT_RISKY', '内容未通过安全检测，请修改后重新提交')
@@ -364,6 +381,9 @@ const mockApi = {
     const activity = mock.findActivity(id)
     if (!activity) return fail('NOT_FOUND', '活动不存在或已下架')
     if (!audit.isApproved(activity)) return fail('AUDIT_PENDING', '活动审核通过后才能报名')
+    if (expire.isExpired(activity)) {
+      return fail('ACTIVITY_EXPIRED', '活动发布已超过 7 天，已自动关闭，无法报名')
+    }
     if (activity.status === 'closed') return fail('ACTIVITY_CLOSED', '活动已关闭，无法报名')
     const already = activity.joinedPeople.some((item) => item.openid === user.openid)
     if (already) return withDelay(deepClone(activity))
@@ -417,6 +437,9 @@ const mockApi = {
     if (!activity) return fail('NOT_FOUND', '活动不存在或已下架')
     if (activity.organizer.openid !== user.openid) return fail('FORBIDDEN', '仅发起人可操作')
     if (!audit.isApproved(activity)) return fail('AUDIT_PENDING', '活动审核通过后才能开启或关闭')
+    if (expire.isExpired(activity)) {
+      return fail('ACTIVITY_EXPIRED', '活动发布已超过 7 天，已自动关闭，无法重新打开')
+    }
     const nextStatus = activity.status === 'closed' ? 'recruiting' : 'closed'
     // 关闭时记录关闭时间，广场据此只保留关闭当天；重新打开时归零
     const nextCloseTime = nextStatus === 'closed' ? Date.now() : 0
@@ -444,14 +467,14 @@ const mockApi = {
         .allActivities()
         .filter((item) => item.organizer.openid === user.openid)
         .sort((a, b) => b.createTime - a.createTime)
-      return withDelay(list)
+      return withDelay(list.map((item) => expire.applyExpiry(item)))
     }
     const joinedIds = getStorage(KEYS.joined, []) || []
     const list = mock
       .allActivities()
       .filter((item) => joinedIds.indexOf(item.id) > -1)
       .sort((a, b) => a.startTime - b.startTime)
-    return withDelay(list)
+    return withDelay(list.map((item) => expire.applyExpiry(item)))
   },
 
   user() {
@@ -462,9 +485,15 @@ const mockApi = {
     const params = payload || {}
     const existed = getStorage(KEYS.user, null)
     if (existed && existed.openid) {
+      // 历史版本用手机号掩码当默认昵称，等于把手机号前后各 4 位公开给其他用户，这里就地纠正
+      const legacyNick = !existed.nickName || /^\d{3}\*{4}\d{4}$/.test(existed.nickName)
       const merged = Object.assign({}, existed, {
         phone: params.phone || existed.phone || '',
       })
+      if (legacyNick) {
+        merged.nickName = mockDefaultNickName(merged.userId)
+        merged.avatarText = merged.nickName.slice(0, 1)
+      }
       setStorage(KEYS.user, merged)
       return withDelay(merged)
     }
@@ -472,7 +501,8 @@ const mockApi = {
     setStorage(KEYS.userCounter, counter)
     const phone = params.phone || ''
     const guest = !phone
-    const nickName = guest ? '微信用户' : `${phone.slice(0, 3)}****${phone.slice(-4)}`
+    // 昵称对外可见（活动卡片、报名名单），不能放手机号（哪怕是掩码），统一「微信用户 + 编号」
+    const nickName = mockDefaultNickName(counter)
     const user = {
       openid: `mock_openid_${counter}`,
       userId: counter,
@@ -495,7 +525,10 @@ const mockApi = {
     if (!existed) return fail('UNAUTHORIZED', '请先登录')
     // 昵称会展示在活动卡片与报名名单里（对外可见的 UGC），云端同样先过内容安全再写库
     if (mockTextRisky(userInfo.nickName)) return fail('CONTENT_RISKY', '昵称包含违规内容，请修改后重试')
-    const merged = Object.assign({}, existed, userInfo)
+    // 手机号只能由手机号授权登录写入，资料编辑不接受该字段（与云端 updateUser 一致）
+    const safeInfo = Object.assign({}, userInfo)
+    delete safeInfo.phone
+    const merged = Object.assign({}, existed, safeInfo)
     if (merged.nickName) {
       merged.avatarText = merged.avatarText || merged.nickName.slice(0, 1)
     }
@@ -536,6 +569,8 @@ const mockApi = {
 
   feedback(payload) {
     const content = String((payload && payload.content) || '').slice(0, 1000)
+    // 反馈不公开展示，但仍是用户提交的文本；与云端 feedback 一致先过内容安全
+    if (mockTextRisky(content)) return fail('CONTENT_RISKY', '反馈内容包含违规内容，请修改后重试')
     const user = mock.currentUser()
     const record = {
       id: `mock_fb_${Date.now()}`,
@@ -799,12 +834,28 @@ const cloudApi = {
 
 const api = config.useMock ? mockApi : cloudApi
 
+/**
+ * 费用展示文案。平台不参与任何资金流转，这里只把发起人选择的费用方式与说明原样展示：
+ * - 'aa'    → 「AA制」
+ * - 'nonAA' → 发起人填写的费用说明，缺失时给一句兜底文案
+ * 兼容历史数据：旧版本用 feeMode 'fixed' + 数字 fee（如 30）表示「非 AA 制」。
+ */
+function feeTextOf(activity) {
+  const item = activity || {}
+  const isNonAA = item.feeMode === 'nonAA' || item.feeMode === 'fixed'
+  if (!isNonAA) return 'AA制'
+  const note = String(item.feeNote || '').trim()
+  if (note) return note
+  const legacy = Number(item.fee) || 0
+  return legacy > 0 ? `人均约 ${legacy} 元，自行协商` : '费用由发起人说明'
+}
+
 /** 活动卡片展示所需的派生字段 */
 function decorate(activity) {
   if (!activity) return null
   const item = deepClone(activity)
   item.dateText = item.startTime ? formatCardDate(item.startTime) : ''
-  item.feeText = item.feeMode === 'fixed' ? (item.fee > 0 ? `¥${item.fee}` : '免费') : 'AA制'
+  item.feeText = feeTextOf(item)
   item.peopleText = `${item.joinedCount}/${item.maxPeople}人`
   item.tagNames = (item.tags || []).map(tagName).filter(Boolean)
   item.periodText = item.endTime ? formatCardDate(item.endTime) : '待定'
@@ -814,7 +865,9 @@ function decorate(activity) {
   item.avatarList = (item.joinedPeople || [])
     .slice(0, 5)
     .map((member, index) => Object.assign({}, member, { key: `avatar_${index}` }))
-  item.isClosed = item.status === 'closed'
+  // 展示期届满（发布满 7 天）的活动按已关闭展示；expired 让文案能区分「已到期」与发起人主动关闭
+  item.expired = !!item.expired || expire.isExpired(item)
+  item.isClosed = item.status === 'closed' || item.expired
   item.isFull = item.joinedCount >= item.maxPeople
   item.showMetrics = supportsMetrics(item.type)
   // 全程长度 / 累计爬升为非必填，未填写（0）时详情页不展示对应行

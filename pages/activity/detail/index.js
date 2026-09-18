@@ -8,6 +8,24 @@ const location = require('../../../utils/location')
 /** 举报原因候选：与云端 activity 云函数的 REPORT_REASONS 保持一致 */
 const REPORT_REASONS = ['虚假信息或诈骗', '违法违规内容', '侵权或盗用他人内容', '广告骚扰', '其他']
 
+/**
+ * 活动 id 的两个来源：
+ * - 分享卡片 / 页面跳转带的是 query，即 options.id；
+ * - 扫小程序码（海报上那张）进来时，云端把活动 id 写在 scene 里并且做了 URL 编码，
+ *   只能从 options.scene 取。漏了这条，扫码打开的永远是「活动不存在或已下架」。
+ */
+function resolveActivityId(options) {
+  const opts = options || {}
+  if (opts.id) return String(opts.id)
+  const scene = opts.scene ? String(opts.scene) : ''
+  if (!scene) return ''
+  try {
+    return decodeURIComponent(scene)
+  } catch (e) {
+    return scene
+  }
+}
+
 Page({
   behaviors: [loginBehavior],
 
@@ -35,7 +53,7 @@ Page({
   },
 
   onLoad(options) {
-    const id = (options && options.id) || ''
+    const id = resolveActivityId(options)
     const app = getApp()
     this.setData({ id, user: app.globalData.user })
     this.loadDetail()
@@ -81,18 +99,21 @@ Page({
     activity.avatarList = activity.joinedPeople.map((member, index) =>
       Object.assign({}, member, { key: `member_${index}` })
     )
-    activity.isClosed = raw.status === 'closed'
+    // 展示期届满的活动由服务端标记 expired，对外一律按已关闭处理
+    activity.isClosed = raw.status === 'closed' || !!activity.expired
     activity.isFull = raw.joinedCount >= raw.maxPeople
     activity.descText = raw.desc || '暂无活动介绍，报名前可与发起人沟通确认细节。'
 
     let statusText = '招募中'
-    if (activity.isClosed) {
+    if (activity.expired) {
+      statusText = '已到期'
+    } else if (activity.isClosed) {
       statusText = '已关闭'
     } else if (activity.isFull) {
       statusText = '已满'
     }
     // 未过审的活动只有发起人看得到，状态位直接展示审核结果
-    if (!activity.auditApproved) statusText = activity.auditText
+    if (!activity.auditApproved && !activity.expired) statusText = activity.auditText
 
     // 登录后 globalData 已同步，优先取最新登录态
     const app = getApp()
@@ -110,7 +131,10 @@ Page({
         : !!myOpenid && (raw.joinedPeople || []).some((item) => item.openid === myOpenid)
     // style 为空使用主色按钮，outline / manage 为次要按钮样式
     let mainBtn = { text: '我要报名', disabled: false, mode: 'join', style: '' }
-    if (isOrganizer) {
+    if (activity.expired) {
+      // 展示期届满（发布满 7 天）：已自动关闭，谁都不能再报名，发起人也不能重开或重提
+      mainBtn = { text: '活动已到期', disabled: true, mode: 'expired', style: 'manage' }
+    } else if (isOrganizer) {
       if (activity.auditPending) {
         mainBtn = { text: '审核中，暂不可操作', disabled: true, mode: 'audit', style: 'manage' }
       } else if (activity.auditRejected) {
@@ -184,7 +208,7 @@ Page({
 
   onMainTap() {
     const mode = this.data.mainBtn.mode
-    if (mode === 'closed' || mode === 'full' || mode === 'audit') return
+    if (mode === 'closed' || mode === 'full' || mode === 'audit' || mode === 'expired') return
     if (mode === 'edit') {
       // 驳回后回到发布页，表单预填原内容，重新提交审核
       wx.navigateTo({ url: `/pages/activity/publish/index?id=${this.data.id}` })
@@ -225,7 +249,10 @@ Page({
         .catch((err) => {
           wx.hideLoading()
           ui.toast((err && err.message) || '操作失败，请重试')
-          if (err && (err.code === 'FORBIDDEN' || err.code === 'NOT_FOUND')) this.loadDetail()
+          // 活动已到期（展示期届满自动关闭）时，刷新一次拿回服务端的真实状态
+          if (err && (err.code === 'FORBIDDEN' || err.code === 'NOT_FOUND' || err.code === 'ACTIVITY_EXPIRED')) {
+            this.loadDetail()
+          }
         })
     })
   },
@@ -355,7 +382,8 @@ Page({
       .catch((err) => {
         wx.hideLoading()
         ui.toast((err && err.message) || '报名失败，请重试')
-        if (err && err.code === 'ACTIVITY_CLOSED') {
+        // 关闭 / 已到期都刷新一次，把按钮与状态位切到最新
+        if (err && (err.code === 'ACTIVITY_CLOSED' || err.code === 'ACTIVITY_EXPIRED')) {
           this.loadDetail()
         }
       })

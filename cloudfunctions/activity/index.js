@@ -32,6 +32,8 @@ const {
   summarize,
 } = require('./lib/contentCheck')
 const { MISSING, inspectFiles, collectFileIDs, resolveMedia } = require('./lib/media')
+// 展示期：发布满 7 天的活动自动关闭，首页 / 广场不再展示（见 lib/expire.js）
+const { TTL_MS, isExpired, expireTimeOf } = require('./lib/expire')
 const {
   LIMITS,
   AVATAR_COLORS,
@@ -55,12 +57,18 @@ const auditLogs = db.collection('activity_audits')
 
 const RECRUITING = 'recruiting'
 const CLOSED = 'closed'
+/** 展示期届满（发布后 7 天）后的统一提示，见 lib/expire.js */
+const EXPIRE_JOIN_TEXT = '活动发布已超过 7 天，已自动关闭，无法报名'
+const EXPIRE_TOGGLE_TEXT = '活动发布已超过 7 天，已自动关闭，无法重新打开'
+const EXPIRE_EDIT_TEXT = '活动发布已超过 7 天，已自动关闭，无法修改，请重新发布'
 const DEFAULT_PAGE_SIZE = 10
 const MAX_PAGE_SIZE = 100
 /** 一天的毫秒数：广场按「具体日期」筛选时用来把当天 00:00 换算成次日 00:00 */
 const DAY_MS = 86400000
 /** 我的活动一次最多返回的条数（云函数端单次查询上限 100） */
 const MY_LIST_LIMIT = 100
+/** 到期自动关闭一次处理的活动条数（定时任务分批处理，与云数据库单次查询上限一致） */
+const EXPIRE_BATCH = 100
 /** 默认横幅的历史动作：仅当后台仍保持该动作时，才按最新默认值升级 */
 const LEGACY_BANNER_ACTIONS = [{ _id: 'banner_default_3', action: { type: 'publish' } }]
 /**
@@ -74,6 +82,15 @@ function auditVisibleWhere() {
 /** 未关闭条件：`nin` 同时命中缺 status 字段的历史数据，存量活动不会因此消失 */
 function notClosedWhere() {
   return { status: _.nin([CLOSED]) }
+}
+
+/**
+ * 未过展示期的条件：展示期 = 发布后 7 天（见 lib/expire.js）。
+ * 首页与广场都带上它，所以即便「到期自动关闭」的定时任务还没跑，过期活动也不会露出来。
+ * 反向条件（createTime < 到期线）就是定时任务要关闭的那批活动。
+ */
+function notExpiredWhere() {
+  return { createTime: _.gt(Date.now() - TTL_MS) }
 }
 
 /** 当天 00:00 的时间戳：广场据此判断已关闭的活动是否还在「关闭当天」 */
@@ -120,7 +137,8 @@ function cityCondition(city) {
 /** 组装列表查询条件数组：等值条件走索引，关键字走正则 */
 function buildConditions(query) {
   // 审核条件恒为第一个：非公开状态的活动不能出现在列表里
-  const conditions = [auditVisibleWhere()]
+  // 展示期条件恒为第二个：发布满 7 天的活动从广场消失（见 notExpiredWhere）
+  const conditions = [auditVisibleWhere(), notExpiredWhere()]
   const city = cityCondition(query.city)
   if (city) conditions.push(city)
   if (query.type && query.type !== 'all') conditions.push({ type: String(query.type) })
@@ -164,7 +182,7 @@ function applySort(query, sort) {
  * 首页是推荐位，已关闭的活动不进热门 / 最新（关闭后只在广场保留关闭当天）。
  */
 function cityWhere(city) {
-  const conditions = [auditVisibleWhere(), notClosedWhere()]
+  const conditions = [auditVisibleWhere(), notClosedWhere(), notExpiredWhere()]
   const target = cityCondition(city)
   if (target) conditions.push(target)
   return whereFrom(conditions)
@@ -357,7 +375,16 @@ function normalizeForm(form) {
   if (endTime < startTime) return { error: fail('INVALID_PARAM', '返程时间不能早于集合时间') }
   if (!groupQrCode) return { error: fail('INVALID_PARAM', '请上传活动群二维码') }
 
-  const feeMode = form.feeMode === 'fixed' ? 'fixed' : 'aa'
+  // 费用方式必须由发起人主动选择：AA 制 / 非 AA 制。
+  // 平台不收取任何资金，非 AA 制只接受一段文字说明（如「门票自理」「人均约 80 元现场分摊」），
+  // 不收金额数字，也不产生任何支付行为。历史数据里的 feeMode: 'fixed' 视为非 AA 制。
+  const rawFeeMode = form.feeMode === 'nonAA' || form.feeMode === 'fixed' ? 'nonAA' : form.feeMode === 'aa' ? 'aa' : ''
+  if (!rawFeeMode) return { error: fail('INVALID_PARAM', '请选择费用方式（AA 制 / 非 AA 制）') }
+  const feeNote = text(form.feeNote, LIMITS.feeNote)
+  if (rawFeeMode === 'nonAA' && !feeNote) {
+    return { error: fail('INVALID_PARAM', '非 AA 制活动需填写费用说明（平台不收取任何资金）') }
+  }
+  const feeMode = rawFeeMode
   return {
     data: {
       type: type.key,
@@ -386,8 +413,8 @@ function normalizeForm(form) {
       difficulty: supportsMetrics(type.key) ? limitRange(Math.floor(num(form.difficulty, 0)), 0, 10) : 0,
       distance: supportsMetrics(type.key) ? num(form.distance, 0) : 0,
       elevationGain: supportsMetrics(type.key) ? num(form.elevationGain, 0) : 0,
-      fee: feeMode === 'fixed' ? num(form.fee, 0) : 0,
       feeMode,
+      feeNote: feeMode === 'nonAA' ? feeNote : '',
       maxPeople: limitRange(Math.floor(num(form.maxPeople, 10)), 2, 100),
       tags: supportsTags(type.key) ? sanitizeTags(form.tags) : [],
     },
@@ -578,6 +605,8 @@ async function update(event, openid) {
   const doc = await getActivity(id)
   if (!doc) return fail('NOT_FOUND', '活动不存在或已下架')
   if (!doc.organizer || doc.organizer.openid !== openid) return fail('FORBIDDEN', '仅发起人可修改')
+  // 展示期届满的活动已自动关闭，改完也不会再展示，直接拒绝（免得用户改完才发现白改）
+  if (isExpired(doc)) return fail('ACTIVITY_EXPIRED', EXPIRE_EDIT_TEXT)
 
   const normalized = normalizeForm((event && event.form) || {})
   if (normalized.error) return normalized.error
@@ -612,6 +641,7 @@ async function join(event, openid) {
     const doc = await txDoc(transaction, 'activities', id)
     if (!doc) return fail('NOT_FOUND', '活动不存在或已下架')
     if (!isApproved(doc)) return fail('AUDIT_PENDING', '活动审核通过后才能报名')
+    if (isExpired(doc)) return fail('ACTIVITY_EXPIRED', EXPIRE_JOIN_TEXT)
     if (doc.status === CLOSED) return fail('ACTIVITY_CLOSED', '活动已关闭，无法报名')
 
     const joinedPeople = doc.joinedPeople || []
@@ -659,6 +689,8 @@ async function toggle(event, openid) {
     return fail('FORBIDDEN', '仅发起人可操作')
   }
   if (!isApproved(doc)) return fail('AUDIT_PENDING', '活动审核通过后才能开启或关闭')
+  // 过了展示期的活动不能重新打开：展示期是按发布时间算的，重开也不会再出现在广场
+  if (isExpired(doc)) return fail('ACTIVITY_EXPIRED', EXPIRE_TOGGLE_TEXT)
 
   const closing = doc.status !== CLOSED
   const status = closing ? CLOSED : RECRUITING
@@ -716,12 +748,26 @@ async function phoneFromCode(code) {
   }
 }
 
+/** 历史版本用手机号掩码（138****8888）当默认昵称，等于把手机号前后各 4 位公开给其他用户 */
+const MASKED_PHONE_NICK = /^\d{3}\*{4}\d{4}$/
+
+/**
+ * 默认昵称：昵称会展示在活动卡片、详情页与本活动的报名名单里（对外可见），
+ * 因此不能使用手机号（哪怕是掩码），统一用「微信用户 + 用户编号」，既能区分又不含个人信息。
+ */
+function defaultNickName(userId) {
+  const id = Math.floor(num(userId, 0))
+  return id > 0 ? `微信用户${id}` : '微信用户'
+}
+
 async function login(event, openid) {
   if (!openid) return fail('UNAUTHORIZED', '登录失败，请重试')
   const payload = event || {}
   const profile = payload.profile || {}
   const profileNick = text(profile.nickName, LIMITS.nickName)
-  const phone = text(payload.phone, 20) || (await phoneFromCode(payload.phoneCode))
+  // 手机号只能由微信手机号授权 code 在服务端兑换，不接受前端直接传入的号码
+  // （前端传值等于任何人拿到 AppID 就能给自己的账号写任意手机号）
+  const phone = await phoneFromCode(payload.phoneCode)
   // 昵称对外可见：前端直接带上来的昵称同样要过一遍内容安全，不能因为叫「登录」就跳过
   if (profileNick) {
     const checked = await checkText(profileNick, openid)
@@ -732,16 +778,23 @@ async function login(event, openid) {
   if (existed) {
     const patch = {}
     if (phone && phone !== existed.phone) patch.phone = phone
-    if (!existed.nickName) patch.nickName = phone ? `${phone.slice(0, 3)}****${phone.slice(-4)}` : '微信用户'
+    // 没填昵称、或昵称还是历史遗留的手机号掩码时，就地改成默认昵称
+    if (!existed.nickName || MASKED_PHONE_NICK.test(existed.nickName)) {
+      patch.nickName = defaultNickName(existed.userId)
+      patch.avatarText = patch.nickName.slice(0, 1)
+    }
     if (!Object.keys(patch).length) return withId(existed)
     await users.doc(existed._id).update({ data: patch })
-    return withId(Object.assign({}, existed, patch))
+    const merged = Object.assign({}, existed, patch)
+    // 昵称变了要连带刷新已发布 / 已报名活动里的快照，否则手机号掩码还留在公开列表上
+    if (patch.nickName) await syncSnapshots(merged)
+    return withId(merged)
   }
 
   // 注册序号：openid 唯一索引才是真正的唯一约束，这里只用于展示，重复由并发概率决定
   const countRes = await users.count()
   const userId = countRes.total + 1
-  const nickName = profileNick || (phone ? `${phone.slice(0, 3)}****${phone.slice(-4)}` : '微信用户')
+  const nickName = profileNick || defaultNickName(userId)
   const doc = {
     openid,
     userId,
@@ -802,7 +855,8 @@ async function updateUser(event, openid) {
   if (info.avatarUrl !== undefined) patch.avatarUrl = text(info.avatarUrl, LIMITS.url)
   if (info.avatarColor !== undefined) patch.avatarColor = text(info.avatarColor, 20)
   if (info.bio !== undefined) patch.bio = text(info.bio, LIMITS.bio)
-  if (info.phone !== undefined) patch.phone = text(info.phone, 20)
+  // 手机号只能由「手机号快捷登录」在服务端用微信下发的 code 兑换后写入，
+  // 资料编辑不接受手机号字段，避免绕过微信校验写入未经核实的号码
   if (!Object.keys(patch).length) return withId(existed)
   if (patch.nickName) patch.avatarText = patch.nickName.slice(0, 1)
 
@@ -824,7 +878,9 @@ async function qrcode(event) {
       scene: String(doc._id).slice(0, 32),
       page: 'pages/activity/detail/index',
       checkPath: false,
-      envVersion: 'release',
+      // 小程序码指向哪个版本：正式版 release（默认）。首审 / 内测阶段小程序还没发布，
+      // release 会生成失败（海报退化成占位文案），可在云函数环境变量里把 WXACODE_ENV 设成 trial。
+      envVersion: process.env.WXACODE_ENV || 'release',
       width: 430,
     })
     const uploaded = await cloud.uploadFile({
@@ -841,6 +897,9 @@ async function qrcode(event) {
 async function feedback(event, openid) {
   const content = text(event && event.content, LIMITS.feedback)
   if (!content) return fail('INVALID_PARAM', '请填写反馈内容')
+  // 反馈内容不对外展示，但同样是用户提交的文本，和活动文案 / 昵称一样先过一遍内容安全
+  const checked = await checkText(content, openid)
+  if (checked.suggest === RISKY) return fail('CONTENT_RISKY', '反馈内容包含违规内容，请修改后重试')
 
   const userDoc = await findUser(openid)
   const doc = {
@@ -1027,6 +1086,53 @@ async function media(event) {
   return { media: await resolveMedia(list) }
 }
 
+/* ---------------------------- 到期自动关闭 ---------------------------- */
+
+/**
+ * 把「已过展示期、还没关闭」的活动改成已关闭（发布后 7 天，见 lib/expire.js）。
+ *
+ * 关闭时间写的是到期那一刻而不是「现在」：广场对已关闭的活动只保留关闭当天，
+ * 用到期时间才不会让一批过期活动在任务跑完的那天集体冒出来。
+ *
+ * 读接口自己带着 notExpiredWhere，任务没跑（或定时触发器还没部署）时过期活动也不会被展示；
+ * 这里做的是把库里的状态一并收敛成 closed，让「我的发布」、报名守卫与列表口径完全一致。
+ */
+async function closeExpiredActivities(now) {
+  const deadline = now - TTL_MS
+  let closed = 0
+  for (;;) {
+    // 条件对象每轮新建：同一条 db.command 指令不在多条查询之间复用
+    const res = await activities
+      .where({ status: _.nin([CLOSED]), createTime: _.lt(deadline) })
+      .limit(EXPIRE_BATCH)
+      .get()
+    const rows = res.data || []
+    if (!rows.length) break
+    for (let i = 0; i < rows.length; i += 1) {
+      const doc = rows[i]
+      await activities.doc(doc._id).update({
+        data: { status: CLOSED, closeTime: expireTimeOf(doc) },
+      })
+      closed += 1
+    }
+    // 这一批已经不再是「未关闭」，下一轮不会重复取到；不足一批说明处理完了
+    if (rows.length < EXPIRE_BATCH) break
+  }
+  return closed
+}
+
+/** 定时触发器入口：返回值只用于云函数日志 */
+async function runExpireJob() {
+  try {
+    const closed = await closeExpiredActivities(Date.now())
+    console.log(`[activity] 到期自动关闭：本次关闭 ${closed} 条活动`)
+    return { ok: true, closed }
+  } catch (e) {
+    console.error('[activity] 到期自动关闭失败', e)
+    return { ok: false, closed: 0 }
+  }
+}
+
 /* ------------------------------ 路由 ------------------------------ */
 
 const ACTIONS = {
@@ -1051,6 +1157,8 @@ const ACTIONS = {
 
 exports.main = async (event) => {
   const payload = event || {}
+  // 定时触发器（cloudfunctions/activity/config.json 的 triggers）不带 action，先于业务路由处理
+  if (payload.Type === 'Timer' || payload.type === 'timer') return runExpireJob()
   const action = payload.action || ''
   // 用户身份一律取自云函数上下文，不信任前端传入的 openid
   const { OPENID } = cloud.getWXContext()

@@ -1,5 +1,7 @@
 // 云函数通用工具：字段清洗、成员快照、事务读取、错误结构
 
+const { applyExpiry } = require('./expire')
+
 /** 各文本字段长度上限（与前端表单校验保持一致） */
 const LIMITS = {
   title: 30,
@@ -7,6 +9,8 @@ const LIMITS = {
   location: 50,
   // 地图选点反查出的地址：不展示，只用于城市匹配与地址检索
   locationAddress: 100,
+  // 非 AA 制活动的费用说明：纯文本，平台不参与任何资金流转
+  feeNote: 60,
   nickName: 30,
   bio: 60,
   url: 500,
@@ -125,6 +129,8 @@ function publicActivity(doc, openid) {
   item.isOrganizer = !!openid && !!organizer.openid && organizer.openid === openid
   item.joinedPeople = joinedPeople.map(publicMember)
   item.organizer = publicMember(organizer)
+  // 展示期届满（发布满 7 天）的活动对外一律按「已关闭」处理，见 lib/expire.js
+  applyExpiry(item)
   return item
 }
 

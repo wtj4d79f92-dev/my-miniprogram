@@ -7,5 +7,12 @@
       "security.mediaCheckAsync",
       "img.scanQRCode"
     ]
-  }
+  },
+  "triggers": [
+    {
+      "name": "expireActivities",
+      "type": "timer",
+      "config": "0 0 * * * * *"
+    }
+  ]
 }

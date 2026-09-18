@@ -59,6 +59,8 @@
 }
 
 .audit-tip {
+  display: flex;
+  flex-direction: column;
   margin: 24rpx 8rpx 0;
   padding: 20rpx 24rpx;
   border-radius: 16rpx;
@@ -267,6 +269,13 @@
   color: var(--brand);
   font-weight: 600;
   box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.06);
+}
+
+/* 费用说明：平台不参与任何资金流转，这里的文案要一直可见 */
+.fee-tip {
+  display: block;
+  margin: 4rpx 0 8rpx 190rpx;
+  line-height: 1.5;
 }
 
 .stepper {

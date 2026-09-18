@@ -3,6 +3,8 @@ const { KEYS, getStorage, setStorage } = require('../utils/storage')
 const { getType, DEFAULT_BANNERS, tagName } = require('../utils/dict')
 const { createRandom, pickInt, deepClone, startOfDay } = require('../utils/util')
 const { filterCityKeys } = require('../utils/cities')
+// 展示期：发布满 7 天的活动从首页 / 广场消失（与云函数 lib/expire.js 同一口径）
+const { isExpired } = require('../utils/expire')
 
 const MOCK_JOIN_MAP = 'mock_join_map'
 const MOCK_STATUS_MAP = 'mock_status_map'
@@ -11,7 +13,11 @@ const MOCK_AUDIT_MAP = 'mock_audit_map'
 /** 关闭当天的判定精度：自然日（当天 00:00 之后关闭的活动当天还留在广场） */
 const DAY_MS = 86400000
 
-/** 活动种子数据：覆盖多城市、多类型、多星期、招募中 / 已关闭 */
+/**
+ * 活动种子数据：覆盖多城市、多类型、多星期、招募中 / 已关闭。
+ * 种子里的 fee 数字只用于生成一句演示用的费用说明文案（新模型下费用是纯文本，
+ * 平台不收取也不代收任何资金），因此只有 0 与非 0 两种含义。
+ */
 const SEEDS = [
   { city: '北京', type: 'hiking', title: '香山轻装徒步 · 看层林尽染', location: '北京市海淀区 香山公园东门', difficulty: 3, distance: 12, climb: 420, fee: 0, max: 12, tags: [], day: 2, hour: 8, joined: 7 },
   { city: '北京', type: 'cycling', title: '环青海湖？不，先环雁栖湖', location: '北京市怀柔区 雁栖湖环湖路', difficulty: 0, distance: 0, climb: 0, fee: 0, max: 15, tags: [], day: 4, hour: 7, joined: 9 },
@@ -117,8 +123,9 @@ function buildBaseActivities() {
       difficulty: seed.difficulty,
       distance: seed.distance,
       elevationGain: seed.climb,
-      fee: seed.fee,
-      feeMode: seed.fee > 0 ? 'fixed' : 'aa',
+      // 费用只做信息说明：非 0 的种子生成一句「人均约 X 元」的演示文案，平台不参与资金流转
+      feeMode: seed.fee > 0 ? 'nonAA' : 'aa',
+      feeNote: seed.fee > 0 ? `人均约 ${seed.fee} 元，现场自行分摊` : '',
       maxPeople: seed.max,
       tags: seed.tags.slice(),
       joinedPeople: members,
@@ -201,18 +208,22 @@ function findActivity(id) {
 /**
  * 广场可见性：已关闭的活动只在关闭当天展示，第二天起不再展示。
  * 关闭时间缺失（上线前的旧缓存 / 旧数据）视为已过期，避免已关闭活动长期挂在广场。
+ * 另外，发布满 7 天的活动一律不再展示（展示期届满，见 utils/expire.js）。
  */
 function squareVisible(item, now) {
-  if (!item || item.status !== 'closed') return true
+  if (!item) return true
+  if (isExpired(item, now)) return false
+  if (item.status !== 'closed') return true
+  const at = now === undefined ? Date.now() : now
   const closedAt = Number(item.closeTime) || 0
   if (!closedAt) return false
-  const today = startOfDay(now === undefined ? Date.now() : now)
+  const today = startOfDay(at)
   return closedAt >= today && closedAt < today + DAY_MS
 }
 
-/** 首页推荐位可见：已关闭的活动只在广场保留关闭当天，不进首页热门 / 最新 */
+/** 首页推荐位可见：已关闭的活动只在广场保留关闭当天，不进首页热门 / 最新；过展示期的也不进 */
 function homeVisibleActivities() {
-  return visibleActivities().filter((item) => item.status !== 'closed')
+  return visibleActivities().filter((item) => item.status !== 'closed' && !isExpired(item))
 }
 
 /** 本地状态覆盖：记录业务状态与关闭时间，重新打开时关闭时间归零 */

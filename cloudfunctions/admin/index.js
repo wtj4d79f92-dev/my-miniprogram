@@ -44,6 +44,8 @@ const LIST_FIELDS = {
   endTime: true,
   feeMode: true,
   fee: true,
+  // 非 AA 制活动的费用说明（纯文本，平台不参与资金流转）；fee 只为兼容历史数据保留
+  feeNote: true,
   maxPeople: true,
   joinedCount: true,
   tags: true,

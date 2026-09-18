@@ -249,6 +249,8 @@ function logicLines(relative) {
   ['机审放行判定', 'cloudfunctions/activity/lib/autoAudit.js', 'cloudfunctions/contentCheck/lib/autoAudit.js'],
   // 文本检测：发布当刻由 activity 送检，图片结论回来时由 contentCheck 补检，两份必须同口径
   ['文本检测', 'cloudfunctions/activity/lib/textCheck.js', 'cloudfunctions/contentCheck/lib/textCheck.js'],
+  // 展示期：前端 Mock 与云函数必须同口径，否则本地看着还在招募、线上已经自动关闭
+  ['活动展示期', 'utils/expire.js', 'cloudfunctions/activity/lib/expire.js'],
 ].forEach((pair) => {
   const [name, left, right] = pair
   const bothExist = exists(left) && exists(right)
@@ -500,7 +502,12 @@ const flow = (async () => {
   // 登录（Mock 手机号）
   const user = await step('登录', api.login({ phone: '13800001111' }))
   log(!!user.openid && user.userId >= 1, '登录：生成用户与自增 ID')
-  log(/^\d{3}\*{4}\d{4}$/.test(user.nickName), '登录：昵称脱敏为手机号')
+  // 昵称对外可见（活动卡片、报名名单），不能用手机号（哪怕是掩码）
+  log(
+    !/^\d{3}\*{4}\d{4}$/.test(user.nickName) && user.nickName.indexOf('138') === -1,
+    '登录：默认昵称不含手机号，改用「微信用户 + 编号」'
+  )
+  log(user.nickName === `微信用户${user.userId}`, '登录：默认昵称带用户编号，报名名单里仍可区分')
   globalData.user = user
 
   // 首页
@@ -585,7 +592,6 @@ const flow = (async () => {
         distance: 10,
         elevationGain: 200,
         feeMode: 'aa',
-        fee: 0,
         maxPeople: 8,
         tags: [],
         groupQrCode: 'wxfile://tmp_qr.png',
@@ -667,7 +673,6 @@ const flow = (async () => {
         distance: 10,
         elevationGain: 200,
         feeMode: 'aa',
-        fee: 0,
         maxPeople: 8,
         tags: [],
         groupQrCode: 'wxfile://tmp_qr.png',
@@ -857,7 +862,6 @@ const flow = (async () => {
         distance: 8,
         elevationGain: 150,
         feeMode: 'aa',
-        fee: 0,
         maxPeople: 6,
         tags: [],
         groupQrCode: 'wxfile://tmp_qr2.png',
@@ -1750,7 +1754,362 @@ function checkDeleteAccount() {
     })
 }
 
+/* -------------- 展示期：发布满 7 天的活动自动关闭（Mock 侧同口径） -------------- */
+/**
+ * 规则见 utils/expire.js：活动在首页 / 广场展示 7 天，到期自动关闭。
+ * 这里把本地缓存里的发布时间改到 8 天前，验证列表不再展示、详情按已关闭下发、
+ * 报名 / 重开 / 编辑被拒；再用 6 天前发布的活动验证边界（未满 7 天照常展示）。
+ */
+function checkExpireRule() {
+  const api = require(path.join(ROOT, 'services/api'))
+  const { KEYS } = require(path.join(ROOT, 'utils/storage'))
+  const expire = require(path.join(ROOT, 'utils/expire'))
+  const DAY = 86400000
+  const T0 = 1700000000000
+
+  log(expire.TTL_DAYS === 7, '展示期：规则为发布后 7 天')
+  log(expire.isExpired({ createTime: T0 }, T0 + expire.TTL_MS - 1) === false, '展示期：未满 7 天不算到期')
+  log(expire.isExpired({ createTime: T0 }, T0 + expire.TTL_MS) === true, '展示期：满 7 天即到期')
+  log(expire.isExpired({}, T0) === false, '展示期：取不到发布时间时不到期，不会误关历史数据')
+
+  /** 把本地缓存里某条活动的发布时间改成 N 天前，模拟「发布了一段时间」 */
+  const backdate = (id, days) => {
+    const list = global.wx.storage[KEYS.published] || []
+    list.forEach((item) => {
+      if (item.id === id) item.createTime = Date.now() - days * DAY
+    })
+    global.wx.storage[KEYS.published] = list
+  }
+  const formOf = (title) => ({
+    type: 'hiking',
+    title,
+    location: '四川省成都市 天府广场',
+    locationAddress: '四川省成都市锦江区人民南路',
+    startTime: Date.now() + DAY,
+    endTime: Date.now() + 2 * DAY,
+    feeMode: 'aa',
+    maxPeople: 8,
+    groupQrCode: 'mock://expire-qr',
+    desc: '展示期校验',
+    cityHint: '成都',
+  })
+  const visibleIn = (list, id) => (list || []).some((item) => item.id === id)
+
+  let aged = null
+  let fresh = null
+
+  return api
+    .login({ phone: '13800005555' })
+    .then((user) => {
+      globalData.user = user
+      return api.create({ form: formOf('展示期到期用例') })
+    })
+    .then((created) => {
+      aged = created
+      log(expire.isExpired(created) === false, '展示期：刚发布的活动不到期')
+      return api.create({ form: formOf('展示期边界用例') })
+    })
+    .then((created) => {
+      fresh = created
+      // 一条改到 8 天前（已过展示期），一条改到 6 天前（仍在展示期内）
+      backdate(aged.id, 8)
+      backdate(fresh.id, 6)
+      return Promise.all([
+        api.list({ pageIndex: 0, pageSize: 100, sort: 'latest' }),
+        api.home({ city: '' }),
+        api.detail(aged.id),
+        api.mine('published'),
+      ])
+    })
+    .then((res) => {
+      const square = res[0]
+      const home = res[1]
+      const detail = res[2]
+      const mine = res[3]
+      const mineItem = (mine || []).filter((item) => item.id === aged.id)[0]
+      const mineDecorated = mineItem ? api.decorate(mineItem) : null
+      const detailDecorated = detail ? api.decorate(detail) : null
+
+      log(visibleIn(square.list, aged.id) === false, '展示期：发布满 7 天的活动从广场消失')
+      log(
+        visibleIn((home.hotList || []).concat(home.newestList || []), aged.id) === false,
+        '展示期：发布满 7 天的活动不进首页推荐'
+      )
+      log(visibleIn(square.list, fresh.id) === true, '展示期：发布 6 天的活动照常展示（边界）')
+      log(
+        !!detail && detail.expired === true && detail.status === 'closed' && !!detailDecorated && detailDecorated.isClosed === true,
+        '展示期：详情按「已到期 + 已关闭」下发，分享链接仍可打开'
+      )
+      log(
+        !!mineDecorated && mineDecorated.expired === true && mineDecorated.isClosed === true,
+        '展示期：我的发布里标记为已到期，卡片按已关闭展示'
+      )
+
+      return Promise.all([
+        api.join(aged.id).then(() => null, (err) => err),
+        api.toggle(aged.id).then(() => null, (err) => err),
+        api.update({ id: aged.id, form: formOf('展示期到期用例') }).then(() => null, (err) => err),
+        api.join(fresh.id).then(() => 'joined', (err) => err),
+      ])
+    })
+    .then((res) => {
+      log(!!res[0] && res[0].code === 'ACTIVITY_EXPIRED', '展示期：到期后拒绝报名')
+      log(!!res[1] && res[1].code === 'ACTIVITY_EXPIRED', '展示期：到期后不能重新打开')
+      log(!!res[2] && res[2].code === 'ACTIVITY_EXPIRED', '展示期：到期后不能编辑重提')
+      log(res[3] === 'joined', '展示期：展示期内的活动仍可正常报名')
+    })
+}
+
+/* -------------- 云模式入口守卫：编辑页的发起人判断、小程序码的 scene -------------- */
+/**
+ * 两处都是「云端按隐私要求脱敏了，页面还在按本地数据形状取值」的坑：
+ * - 编辑页曾用 raw.organizer.openid 判断发起人，而云端不下发 openid，编辑、驳回重提会全废；
+ * - 海报上的小程序码把活动 id 放在 scene 里（URL 编码），详情页只读 query 的 id，扫码进来落到「活动不存在」。
+ * 这里直接用云端形状的数据喂给页面，把行为钉住。
+ */
+function checkCloudShapeFixes() {
+  const api = require(path.join(ROOT, 'services/api'))
+  const originalToast = global.wx.showToast
+  const originalNavigateBack = global.wx.navigateBack
+  const originalDetail = api.detail
+  const toasts = []
+  global.wx.showToast = (options) => toasts.push((options && options.title) || '')
+  global.wx.navigateBack = () => {}
+
+  const restore = () => {
+    global.wx.showToast = originalToast
+    global.wx.navigateBack = originalNavigateBack
+    api.detail = originalDetail
+  }
+
+  /* ① 编辑页：云端的发起人快照没有 openid，只有 isOrganizer */
+  const pageOptions = []
+  global.Page = (options) => pageOptions.push(options)
+  delete require.cache[path.join(ROOT, 'pages/activity/publish/index.js')]
+  api.detail = () =>
+    Promise.resolve({
+      id: 'act_cloud_shape',
+      title: '云端形状的活动',
+      type: 'hiking',
+      tags: [],
+      startTime: Date.now() + 86400000,
+      endTime: Date.now() + 2 * 86400000,
+      location: '浙江省杭州市 九溪',
+      difficulty: 3,
+      feeMode: 'aa',
+      maxPeople: 10,
+      groupQrCode: 'cloud://qr.png',
+      desc: '说明',
+      auditStatus: 'rejected',
+      organizer: { nickName: '发起人', avatarColor: '#4ECDC4', avatarUrl: '', avatarText: '发' },
+      isOrganizer: true,
+    })
+  require(path.join(ROOT, 'pages/activity/publish/index.js'))
+  const publishPage = pageOptions[0]
+  const publishCtx = {
+    data: { user: null, cityTip: '', form: {} },
+    setData(patch) {
+      Object.assign(this.data, patch)
+    },
+  }
+  publishCtx.updateCityTip = () => publishPage.updateCityTip.call(publishCtx)
+  globalData.city = '杭州'
+  globalData.user = { openid: 'openid_me', nickName: '我' }
+
+  publishPage.loadActivity.call(publishCtx, 'act_cloud_shape')
+
+  return Promise.resolve()
+    .then(() => null)
+    .then(() => null)
+    .then(() => {
+      log(
+        toasts.indexOf('仅发起人可修改活动') === -1,
+        '编辑页：云端只下发 isOrganizer 时不再误判「仅发起人可修改」'
+      )
+      log(
+        publishCtx.data.form.title === '云端形状的活动',
+        '编辑页：发起人能正常回填表单（编辑 / 驳回重提可用）'
+      )
+
+      /* ② 详情页：扫小程序码进来时活动 id 在 scene 里（URL 编码） */
+      const detailOptions = []
+      global.Page = (options) => detailOptions.push(options)
+      delete require.cache[path.join(ROOT, 'pages/activity/detail/index.js')]
+      require(path.join(ROOT, 'pages/activity/detail/index.js'))
+      const detailPage = detailOptions[0]
+      const detailCtx = {
+        data: { user: null },
+        loadedId: '',
+        setData(patch) {
+          Object.assign(this.data, patch)
+        },
+      }
+      detailCtx.loadDetail = () => {
+        detailCtx.loadedId = detailCtx.data.id
+      }
+      detailPage.onLoad.call(detailCtx, { scene: 'act_scene_plain' })
+      log(detailCtx.loadedId === 'act_scene_plain', '活动详情：扫小程序码进入时用 scene 拿到活动 id')
+      detailPage.onLoad.call(detailCtx, { scene: encodeURIComponent('act_scene_encoded') })
+      log(detailCtx.loadedId === 'act_scene_encoded', '活动详情：scene 做 URL 解码，编码过的 id 也能命中')
+      detailPage.onLoad.call(detailCtx, { id: 'act_by_query' })
+      log(detailCtx.loadedId === 'act_by_query', '活动详情：分享卡片 / 页面跳转仍按 query 的 id 进入')
+      detailPage.onLoad.call(detailCtx, {})
+      log(
+        detailCtx.loadedId === '',
+        '活动详情：既没有 id 也没有 scene 时按空 id 处理，落到「活动不存在」兜底'
+      )
+      restore()
+    })
+    .catch((e) => {
+      restore()
+      log(false, `云模式入口守卫：用例执行异常 → ${e && e.message}`)
+    })
+}
+
+/**
+ * 本轮合规加固的断言集合：
+ * - 手机号只走微信授权 code，默认昵称不含手机号；
+ * - 费用只做信息说明（AA / 非 AA + 文字说明），平台不参与任何资金流转；
+ * - 反馈内容同样送内容安全；
+ * - 审核台不进搜索索引、客服入口可达、发版包排除无关文件。
+ */
+function checkHardening() {
+  const api = require(path.join(ROOT, 'services/api'))
+  const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
+  const cloudJs = read('cloudfunctions/activity/index.js')
+  const publishJs = read('pages/activity/publish/index.js')
+  const publishWxml = read('pages/activity/publish/index.wxml')
+  const publishWxss = read('pages/activity/publish/index.wxss')
+  const usercenterWxml = read('pages/usercenter/index.wxml')
+  const usercenterWxss = read('pages/usercenter/index.wxss')
+  const sitemap = read('sitemap.json')
+  const projectConfig = read('project.config.json')
+  const { PUBLISH_AGREEMENT, SERVICE_AGREEMENT, JOIN_AGREEMENT, PRIVACY_AGREEMENT } = require(
+    path.join(ROOT, 'utils/agreements')
+  )
+
+  /* 手机号与昵称 */
+  log(
+    cloudJs.indexOf('await phoneFromCode(payload.phoneCode)') > -1 && cloudJs.indexOf('text(payload.phone') === -1,
+    '手机号：云函数只认微信手机号授权 code，不再接受前端传入的号码'
+  )
+  log(
+    cloudJs.indexOf("if (info.phone !== undefined)") === -1,
+    '手机号：updateUser 不接受 phone 字段，无法绕过微信校验写号'
+  )
+  log(
+    cloudJs.indexOf('MASKED_PHONE_NICK') > -1 && cloudJs.indexOf('function defaultNickName') > -1,
+    '昵称：默认昵称用「微信用户 + 编号」，登录时纠正历史手机号掩码昵称'
+  )
+  log(
+    PRIVACY_AGREEMENT.paragraphs.join('\n').indexOf('不会展示给其他用户') > -1,
+    '隐私政策：写明手机号不展示给其他用户、也不作为对外昵称'
+  )
+
+  /* 费用：只做信息说明，平台不参与资金流转 */
+  log(
+    publishWxml.indexOf('费用说明') > -1 &&
+      publishWxml.indexOf('平台不收取任何资金') > -1 &&
+      publishWxml.indexOf('人均费用') === -1,
+    '发布页：费用方式是 AA / 非 AA 二选一，非 AA 只填文字说明并常驻「平台不收取任何资金」'
+  )
+  log(
+    publishJs.indexOf("errors.fee = '请选择费用方式") > -1 && publishJs.indexOf('feeNote') > -1,
+    '发布页：费用方式必选、非 AA 制必须填费用说明'
+  )
+  log(
+    publishWxml.indexOf('onFeeInput"') === -1 && publishJs.indexOf('onFeeInput(') === -1,
+    '发布页：费用不再收集金额数字（旧的 onFeeInput / form.fee 已移除）'
+  )
+  log(
+    publishWxss.indexOf('.fee-tip') > -1,
+    '发布页：费用说明的免责提示有独立样式，不会在真机上被挤掉'
+  )
+  log(
+    read('pages/activity/detail/index.wxml').indexOf('平台不收取任何资金') > -1,
+    '详情页：费用行同样标注「平台不收取任何资金」'
+  )
+  log(
+    cloudJs.indexOf("fail('INVALID_PARAM', '请选择费用方式") > -1 &&
+      cloudJs.indexOf("fail('INVALID_PARAM', '非 AA 制活动需填写费用说明") > -1,
+    '云函数：服务端同样强制费用方式与费用说明，前端绕不过去'
+  )
+  const publishText = PUBLISH_AGREEMENT.paragraphs.join('\n')
+  log(
+    publishText.indexOf('不收取、不代收、不托管任何活动费用') > -1,
+    '发布协议：写明平台不收取 / 不代收 / 不托管活动费用，也不提供收款结算通道'
+  )
+
+  /* 管辖条款：平台与发布方约定住所地法院，消费者侧不指定具体法院 */
+  log(
+    publishText.indexOf('平台方住所地有管辖权的人民法院') > -1 && publishText.indexOf('成都市') === -1,
+    '发布协议：管辖条款落到「平台方住所地」，不再留占位信息'
+  )
+  log(
+    JOIN_AGREEMENT.paragraphs.join('\n').indexOf('可依法向**有管辖权的人民法院**提起诉讼') > -1 &&
+      SERVICE_AGREEMENT.paragraphs.join('\n').indexOf('依法向有管辖权的人民法院提起诉讼') > -1,
+    '参与 / 服务协议：不指定平台所在地法院，避免格式条款管辖被认定无效'
+  )
+
+  /* 反馈内容安全 */
+  log(
+    cloudJs.indexOf('async function feedback') > -1 &&
+      cloudJs.slice(cloudJs.indexOf('async function feedback')).indexOf('checkText(content') > -1,
+    '反馈：云函数对反馈文本送内容安全检测'
+  )
+
+  /* 审核台索引与客服入口 */
+  log(
+    sitemap.indexOf('"disallow"') > -1 && sitemap.indexOf('pages/admin/audit/index') > -1,
+    'sitemap：审核台页面不进入微信搜索索引'
+  )
+  log(
+    usercenterWxml.indexOf('open-type="contact"') > -1,
+    '个人中心：提供「联系客服」入口'
+  )
+  // button 自带内容宽度与居中定位，width:100% 压不住，实测会比其他入口窄并按内容居中；
+  // 必须把 button 放进普通 entry 行里用 flex:1 撑满，才能与其它入口对齐
+  log(
+    usercenterWxml.indexOf('<button class="contact-btn" open-type="contact"') > -1 &&
+      /\.contact-btn\s*\{[^}]*flex:\s*1/.test(usercenterWxss),
+    '个人中心：客服按钮用 flex:1 撑满 entry 行，不依赖 button 自身宽度'
+  )
+
+  /* 发版包排除无关文件 */
+  log(
+    projectConfig.indexOf('".DS_Store"') > -1 &&
+      projectConfig.indexOf('".gitignore"') > -1 &&
+      projectConfig.indexOf('".git"') > -1,
+    '发版包：.DS_Store / .gitignore / .git 已加入 packOptions.ignore'
+  )
+
+  /* 费用展示：AA / 非 AA / 历史数据三种都要有可读文案 */
+  const aa = api.decorate({ feeMode: 'aa', feeNote: '' })
+  const nonAA = api.decorate({ feeMode: 'nonAA', feeNote: '门票自理，人均约 80 元现场分摊' })
+  const legacy = api.decorate({ feeMode: 'fixed', fee: 30 })
+  const empty = api.decorate({ feeMode: 'nonAA', feeNote: '' })
+  log(aa.feeText === 'AA制', '展示：AA 制活动显示「AA制」')
+  log(nonAA.feeText === '门票自理，人均约 80 元现场分摊', '展示：非 AA 制原样展示发起人填写的费用说明')
+  log(legacy.feeText.indexOf('30') > -1, '展示：历史「fee 数字」数据仍能读出费用说明')
+  log(empty.feeText === '费用由发起人说明', '展示：费用说明缺失时给兜底文案，不出现空白')
+
+  /* 行为：反馈违规内容被拦、正常内容可提交 */
+  return api
+    .feedback({ content: '这是一条违规反馈内容' })
+    .then(() => false, (err) => (err && err.code) === 'CONTENT_RISKY')
+    .then((blocked) => {
+      log(blocked === true, '反馈：命中违规词时拒绝提交')
+      return api.feedback({ content: '希望增加周末早场活动' })
+    })
+    .then((res) => {
+      log(!!res && !!res.id, '反馈：正常内容可以正常提交')
+    })
+}
+
 return checkDeleteAccount()
+  .then(() => checkHardening())
+  .then(() => checkExpireRule())
+  .then(() => checkCloudShapeFixes())
 })
 .then(() => {
   console.log(`\n通过 ${passed.length} 项，失败 ${errors.length} 项\n`)

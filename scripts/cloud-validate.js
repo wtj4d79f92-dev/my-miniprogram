@@ -648,6 +648,16 @@ async function run() {
   const invalidCreate = await callActivity('create', { form: Object.assign({}, form, { title: '' }) }, ORGANIZER)
   log(invalidCreate.code === 'INVALID_PARAM', '发布：缺少标题被拒绝')
 
+  // 费用只做信息说明：AA / 非 AA 必须选，非 AA 制必须有文字说明，平台不参与资金流转
+  const noFeeMode = await callActivity('create', { form: Object.assign({}, form, { feeMode: '' }) }, ORGANIZER)
+  log(noFeeMode.code === 'INVALID_PARAM', '费用：未选择 AA / 非 AA 时拒绝发布')
+  const noFeeNote = await callActivity(
+    'create',
+    { form: Object.assign({}, form, { feeMode: 'nonAA', feeNote: '' }) },
+    ORGANIZER
+  )
+  log(noFeeNote.code === 'INVALID_PARAM', '费用：非 AA 制未填费用说明时拒绝发布')
+
   const pendingJoin = await callActivity('join', { id: created.id }, OTHER)
   log(pendingJoin.code === 'AUDIT_PENDING', '报名：审核中的活动拒绝报名')
   const pendingToggle = await callActivity('toggle', { id: created.id }, ORGANIZER)
@@ -671,6 +681,21 @@ async function run() {
   log(edited.auditStatus === 'pending', '编辑：重新进入待审核')
   log(edited.joinedPeople.length === beforeEdit.joinedPeople.length, '编辑：报名数据不受影响')
   log(edited.submitTime >= beforeEdit.submitTime, '编辑：提交时间被刷新，待审队列会重新排序')
+
+  const nonAAEdit = await callActivity(
+    'update',
+    {
+      id: created.id,
+      form: Object.assign({}, form, { feeMode: 'nonAA', feeNote: '门票自理，人均约 80 元现场分摊' }),
+    },
+    ORGANIZER
+  )
+  log(
+    nonAAEdit.feeMode === 'nonAA' &&
+      nonAAEdit.feeNote === '门票自理，人均约 80 元现场分摊' &&
+      nonAAEdit.fee === undefined,
+    '费用：非 AA 制只落费用说明，不再写金额字段'
+  )
 
   // 已通过的活动被编辑后同样回到待审
   await callAdmin('approve', { id: created.id }, ADMIN)
@@ -1591,6 +1616,38 @@ async function run() {
   const okNick = await callActivity('updateUser', { userInfo: { nickName: '山野阿宽' } }, OTHER)
   log(okNick.nickName === '山野阿宽' && okNick.openid === OTHER, '昵称：正常昵称保存成功，自己的 openid 照旧返回')
 
+  /* ---------- 手机号：只认微信手机号授权 code，前端传值一律忽略 ---------- */
+  const userByName = () => store.users.filter((item) => item.openid === OTHER)[0]
+  const phoneForged = await callActivity('login', { phone: '13800001111' }, OTHER)
+  log(
+    phoneForged.code === undefined && userByName().phone !== '13800001111',
+    '手机号：登录不接受前端直接传入的号码（只认微信下发的 phoneCode）'
+  )
+  await callActivity('updateUser', { userInfo: { phone: '13900002222' } }, OTHER)
+  log(userByName().phone !== '13900002222', '手机号：资料编辑不接受 phone 字段')
+
+  /* ---------- 历史昵称：手机号掩码在登录时就地纠正，并同步公开快照 ---------- */
+  const legacyNicknameUser = userByName()
+  legacyNicknameUser.nickName = '138****8888'
+  const legacyOrganizer = store.activities.filter(
+    (item) => item.organizer && item.organizer.openid === OTHER
+  )[0]
+  if (legacyOrganizer) legacyOrganizer.organizer.nickName = '138****8888'
+  const migratedUser = await callActivity('login', {}, OTHER)
+  log(/^微信用户\d+$/.test(migratedUser.nickName || ''), '昵称：历史手机号掩码昵称在登录时改成默认昵称')
+  log(
+    !legacyOrganizer || legacyOrganizer.organizer.nickName === migratedUser.nickName,
+    '昵称：纠正后同步刷新已发布活动的发起人快照，公开列表不再残留手机号'
+  )
+
+  /* ---------- 反馈：文本同样过内容安全 ---------- */
+  resetSecurity({ text: 'risky' })
+  const riskyFeedback = await callActivity('feedback', { content: '这是一条违规反馈' }, OTHER)
+  log(riskyFeedback.code === 'CONTENT_RISKY', '反馈：命中违规内容时拒绝写入')
+  resetSecurity()
+  const okFeedback = await callActivity('feedback', { content: '希望增加周末早场活动' }, OTHER)
+  log(!!okFeedback && !!okFeedback.id, '反馈：正常内容写入成功')
+
   /* ---------- 举报：入口落库，运营可复核 ---------- */
   const reportGuest = await callActivity('report', { id: 'act_privacy', reason: '广告骚扰' })
   log(reportGuest.code === 'UNAUTHORIZED', '举报：未登录拒绝提交')
@@ -1673,8 +1730,85 @@ async function run() {
 
   const reRegister = await callActivity('login', {}, OTHER)
   log(
-    !!reRegister && reRegister.openid === OTHER && reRegister.nickName === '微信用户' && reRegister.userId > 1,
+    !!reRegister &&
+      reRegister.openid === OTHER &&
+      /^微信用户\d+$/.test(reRegister.nickName || '') &&
+      reRegister.userId > 1,
     '注销：同一微信再次登录按新账号注册，注销前的数据不会回来'
+  )
+
+  /* ---------- 展示期：发布满 7 天的活动自动关闭（见 lib/expire.js） ---------- */
+  resetStore()
+  seedUser(ORGANIZER, '发起人')
+  seedUser(OTHER, '路人')
+  const DAY = 86400000
+  const aged = seedActivity({
+    _id: 'act_aged',
+    title: '过展示期的活动',
+    auditStatus: 'approved',
+    createTime: Date.now() - 8 * DAY,
+  })
+  const agedPending = seedActivity({
+    _id: 'act_aged_pending',
+    title: '过展示期且仍在待审的活动',
+    auditStatus: 'pending',
+    createTime: Date.now() - 9 * DAY,
+  })
+  const fresh = seedActivity({
+    _id: 'act_fresh',
+    title: '展示期内的活动',
+    auditStatus: 'approved',
+    createTime: Date.now() - 6 * DAY,
+  })
+
+  const expireHome = await callActivity('home', { city: '' }, OTHER)
+  const expireHomeIds = expireHome.hotList.concat(expireHome.newestList).map((item) => item.id)
+  log(expireHomeIds.indexOf('act_aged') === -1, '展示期：发布满 7 天的活动不进首页推荐')
+  log(expireHomeIds.indexOf('act_fresh') > -1, '展示期：发布 6 天的活动照常进首页（边界）')
+
+  const expireList = await callActivity('list', { pageIndex: 0, pageSize: 50, sort: 'latest' }, OTHER)
+  const expireIds = expireList.list.map((item) => item.id)
+  log(expireIds.indexOf('act_aged') === -1, '展示期：发布满 7 天的活动从广场消失')
+  log(expireIds.indexOf('act_fresh') > -1, '展示期：发布 6 天的活动照常展示（边界）')
+  log(expireList.total === 1, `展示期：过展示期的活动不计入广场总数（实际 ${expireList.total}）`)
+
+  const agedDetail = await callActivity('detail', { id: 'act_aged' }, OTHER)
+  log(
+    !!agedDetail && agedDetail.expired === true && agedDetail.status === 'closed',
+    '展示期：详情按「已到期 + 已关闭」下发，分享链接仍可打开'
+  )
+
+  const agedJoin = await callActivity('join', { id: 'act_aged' }, OTHER)
+  log(agedJoin.code === 'ACTIVITY_EXPIRED', '展示期：到期后拒绝报名')
+  const agedToggle = await callActivity('toggle', { id: 'act_aged' }, ORGANIZER)
+  log(agedToggle.code === 'ACTIVITY_EXPIRED', '展示期：到期后不能重新打开')
+  const agedUpdate = await callActivity('update', { id: 'act_aged', form }, ORGANIZER)
+  log(agedUpdate.code === 'ACTIVITY_EXPIRED', '展示期：到期后不能编辑重提')
+  const agedQuit = await callActivity('quit', { id: 'act_aged' }, OTHER)
+  log(!!agedQuit && !agedQuit.code, '展示期：到期后仍可退出活动（不阻断用户清理自己的报名）')
+
+  const expireJob = await activityFn.main({ Type: 'Timer', TriggerName: 'expireActivities' })
+  log(
+    !!expireJob && expireJob.ok === true && expireJob.closed === 2,
+    `展示期：定时任务把到期活动改成已关闭（实际关闭 ${expireJob && expireJob.closed} 条）`
+  )
+  const agedDoc = store.activities.filter((item) => item._id === 'act_aged')[0]
+  log(
+    !!agedDoc && agedDoc.status === 'closed' && agedDoc.closeTime === aged.createTime + 7 * DAY,
+    '展示期：关闭时间写在到期那一刻，广场不会把过期活动当成「当天关闭」重新捞出来'
+  )
+  const agedPendingDoc = store.activities.filter((item) => item._id === 'act_aged_pending')[0]
+  log(
+    !!agedPendingDoc && agedPendingDoc.status === 'closed',
+    '展示期：待审中的过期活动同样被关闭，不会一直挂在待审队列'
+  )
+  const freshDoc = store.activities.filter((item) => item._id === 'act_fresh')[0]
+  log(!!freshDoc && freshDoc.status === 'recruiting', '展示期：展示期内的活动不被定时任务动到')
+
+  const expireJobAgain = await activityFn.main({ Type: 'Timer', TriggerName: 'expireActivities' })
+  log(
+    !!expireJobAgain && expireJobAgain.closed === 0,
+    '展示期：定时任务可重复执行，已经关闭的活动不会被重复处理'
   )
 }
 
