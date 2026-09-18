@@ -42,6 +42,7 @@ const {
   coord,
   escapeRegExp,
   memberOf,
+  publicActivity,
   withId,
   txDoc,
 } = require('./lib/helper')
@@ -250,7 +251,7 @@ function sameAction(a, b) {
   return (left.type || '') === (right.type || '') && (left.value || '') === (right.value || '')
 }
 
-async function home(event) {
+async function home(event, openid) {
   await ensureBanners()
   const where = cityWhere(event.city)
 
@@ -261,8 +262,8 @@ async function home(event) {
     whereToQuery(where).count(),
   ])
 
-  const hotList = hotRes.data.map(withId)
-  const newestList = newestRes.data.map(withId)
+  const hotList = hotRes.data.map((doc) => publicActivity(doc, openid))
+  const newestList = newestRes.data.map((doc) => publicActivity(doc, openid))
   await Promise.all([attachCoverUrls(hotList), attachCoverUrls(newestList)])
 
   return {
@@ -279,7 +280,7 @@ async function home(event) {
  * 拆成两条查询而不是加 `orderBy('status')`，既不用为多字段排序建复合索引，
  * 分页也不会把已关闭的活动混到未关闭的前面。
  */
-async function list(event) {
+async function list(event, openid) {
   const query = event || {}
   const pageIndex = Math.max(0, Math.floor(num(query.pageIndex, 0)))
   const pageSize = limitRange(Math.floor(num(query.pageSize, DEFAULT_PAGE_SIZE)), 1, MAX_PAGE_SIZE)
@@ -312,7 +313,7 @@ async function list(event) {
       : Promise.resolve({ data: [] }),
   ])
 
-  const rows = openedRes.data.concat(closedRes.data).map(withId)
+  const rows = openedRes.data.concat(closedRes.data).map((doc) => publicActivity(doc, openid))
   await attachCoverUrls(rows)
 
   return {
@@ -328,10 +329,8 @@ async function detail(event, openid) {
   const organizer = doc.organizer || {}
   // 审核中 / 未通过的活动只有发起人自己能预览，其他人一律按「不存在」处理
   if (!isApproved(doc) && organizer.openid !== openid) return null
-  const item = withId(doc)
-  const joinedPeople = item.joinedPeople || []
-  item.joined = !!openid && joinedPeople.some((member) => member.openid === openid)
-  item.isOrganizer = !!openid && !!organizer.openid && organizer.openid === openid
+  // 对外输出统一脱敏：joined / isOrganizer 已由 publicActivity 按当前用户算好
+  const item = publicActivity(doc, openid)
   item.full = item.joinedCount >= item.maxPeople
   await attachMediaUrls(item, ['cover', 'groupQrCode'])
   return item
@@ -564,7 +563,7 @@ async function create(event, openid) {
   const res = await activities.add({ data: doc })
   await writeAutoApproveLog(res._id, doc.title, auto, '')
   await writeQrRejectLog(res._id, doc.title, reject, AUDIT_PENDING)
-  return withId(Object.assign({}, doc, { _id: res._id }))
+  return publicActivity(Object.assign({}, doc, { _id: res._id }), openid)
 }
 
 /**
@@ -596,7 +595,7 @@ async function update(event, openid) {
   await activities.doc(id).update({ data: patch })
   await writeAutoApproveLog(id, patch.title, auto, auditStatusOf(doc))
   await writeQrRejectLog(id, patch.title, reject, auditStatusOf(doc))
-  return withId(Object.assign({}, doc, patch))
+  return publicActivity(Object.assign({}, doc, patch), openid)
 }
 
 async function join(event, openid) {
@@ -618,7 +617,7 @@ async function join(event, openid) {
     const joinedPeople = doc.joinedPeople || []
     if (joinedPeople.some((item) => item.openid === openid)) {
       // 重复报名按幂等处理，直接返回当前状态
-      return Object.assign(withId(doc), { joined: true })
+      return publicActivity(doc, openid)
     }
     if (doc.joinedCount >= doc.maxPeople) return fail('ACTIVITY_FULL', '活动已满员')
 
@@ -626,11 +625,7 @@ async function join(event, openid) {
     await transaction.collection('activities').doc(id).update({
       data: { joinedPeople: next, joinedCount: next.length },
     })
-    return Object.assign(withId(doc), {
-      joinedPeople: next,
-      joinedCount: next.length,
-      joined: true,
-    })
+    return publicActivity(Object.assign({}, doc, { joinedPeople: next, joinedCount: next.length }), openid)
   })
 }
 
@@ -650,11 +645,7 @@ async function quit(event, openid) {
         data: { joinedPeople: next, joinedCount: next.length },
       })
     }
-    return Object.assign(withId(doc), {
-      joinedPeople: next,
-      joinedCount: next.length,
-      joined: false,
-    })
+    return publicActivity(Object.assign({}, doc, { joinedPeople: next, joinedCount: next.length }), openid)
   })
 }
 
@@ -674,7 +665,7 @@ async function toggle(event, openid) {
   // 关闭时记录关闭时间（广场只保留关闭当天），重新打开时归零
   const closeTime = closing ? Date.now() : 0
   await activities.doc(id).update({ data: { status, closeTime } })
-  return withId(Object.assign({}, doc, { status, closeTime }))
+  return publicActivity(Object.assign({}, doc, { status, closeTime }), openid)
 }
 
 /* ------------------------------ 我的活动 ------------------------------ */
@@ -690,7 +681,7 @@ async function mine(event, openid) {
       .orderBy('createTime', 'desc')
       .limit(MY_LIST_LIMIT)
       .get()
-    const rows = res.data.map(withId)
+    const rows = res.data.map((doc) => publicActivity(doc, openid))
     await attachCoverUrls(rows)
     return rows
   }
@@ -701,7 +692,7 @@ async function mine(event, openid) {
     .orderBy('startTime', 'asc')
     .limit(MY_LIST_LIMIT)
     .get()
-  const rows = res.data.map(withId)
+  const rows = res.data.map((doc) => publicActivity(doc, openid))
   await attachCoverUrls(rows)
   return rows
 }
@@ -729,7 +720,13 @@ async function login(event, openid) {
   if (!openid) return fail('UNAUTHORIZED', '登录失败，请重试')
   const payload = event || {}
   const profile = payload.profile || {}
+  const profileNick = text(profile.nickName, LIMITS.nickName)
   const phone = text(payload.phone, 20) || (await phoneFromCode(payload.phoneCode))
+  // 昵称对外可见：前端直接带上来的昵称同样要过一遍内容安全，不能因为叫「登录」就跳过
+  if (profileNick) {
+    const checked = await checkText(profileNick, openid)
+    if (checked.suggest === RISKY) return fail('CONTENT_RISKY', '昵称包含违规内容，请修改后重试')
+  }
 
   const existed = await findUser(openid)
   if (existed) {
@@ -744,7 +741,7 @@ async function login(event, openid) {
   // 注册序号：openid 唯一索引才是真正的唯一约束，这里只用于展示，重复由并发概率决定
   const countRes = await users.count()
   const userId = countRes.total + 1
-  const nickName = text(profile.nickName, LIMITS.nickName) || (phone ? `${phone.slice(0, 3)}****${phone.slice(-4)}` : '微信用户')
+  const nickName = profileNick || (phone ? `${phone.slice(0, 3)}****${phone.slice(-4)}` : '微信用户')
   const doc = {
     openid,
     userId,
@@ -795,7 +792,13 @@ async function updateUser(event, openid) {
 
   const info = (event && event.userInfo) || {}
   const patch = {}
-  if (info.nickName !== undefined) patch.nickName = text(info.nickName, LIMITS.nickName)
+  if (info.nickName !== undefined) {
+    const nickName = text(info.nickName, LIMITS.nickName)
+    // 昵称是公开可见的 UGC（活动卡片、报名名单都会展示），和活动文案一样必须先过内容安全
+    const checked = await checkText(nickName, openid)
+    if (checked.suggest === RISKY) return fail('CONTENT_RISKY', '昵称包含违规内容，请修改后重试')
+    patch.nickName = nickName
+  }
   if (info.avatarUrl !== undefined) patch.avatarUrl = text(info.avatarUrl, LIMITS.url)
   if (info.avatarColor !== undefined) patch.avatarColor = text(info.avatarColor, 20)
   if (info.bio !== undefined) patch.bio = text(info.bio, LIMITS.bio)
@@ -841,6 +844,7 @@ async function feedback(event, openid) {
 
   const userDoc = await findUser(openid)
   const doc = {
+    kind: 'feedback',
     openid: openid || '',
     content,
     nickName: (userDoc && userDoc.nickName) || '未登录用户',
@@ -850,6 +854,55 @@ async function feedback(event, openid) {
   }
   const res = await feedbacks.add({ data: doc })
   return { id: res._id, createTime: doc.createTime }
+}
+
+/* ------------------------------ 举报 ------------------------------ */
+
+/**
+ * 举报原因候选：只接受固定选项。
+ * 自由文本要额外送内容安全，而举报本身是给运营的人工线索，固定选项足够，也避免被当成发广告的入口。
+ */
+const REPORT_REASONS = ['虚假信息或诈骗', '违法违规内容', '侵权或盗用他人内容', '广告骚扰', '其他']
+/** 举报记录状态：待运营复核 */
+const REPORT_PENDING = 'pending'
+
+/**
+ * 举报活动：登录用户可提交，记录落在 feedback 集合里（`kind: 'report'`）供运营复核。
+ *
+ * 刻意不另开集合：feedback 已经是必建集合，权限由运营按「仅云函数读写」配置好了，
+ * 举报记录跟反馈一样带着 openid 与昵称，复用同一个集合既能天然继承权限，
+ * 也能在注销账号时跟着 feedback 一起清掉，不会留下孤儿个人信息。
+ * 举报不参与机审放行，也不改活动状态 —— 是否下架由运营判断，避免被恶意举报当成下架工具。
+ */
+async function report(event, openid) {
+  if (!openid) return fail('UNAUTHORIZED', '请先登录')
+  const id = String((event && event.id) || '')
+  if (!id) return fail('NOT_FOUND', '活动不存在或已下架')
+  const reason = text(event && event.reason, 30)
+  if (REPORT_REASONS.indexOf(reason) === -1) return fail('INVALID_PARAM', '请选择举报原因')
+
+  const doc = await getActivity(id)
+  if (!doc) return fail('NOT_FOUND', '活动不存在或已下架')
+
+  const userDoc = await findUser(openid)
+  const record = {
+    kind: 'report',
+    activityId: id,
+    title: doc.title || '',
+    organizerOpenid: (doc.organizer && doc.organizer.openid) || '',
+    reason,
+    openid,
+    nickName: (userDoc && userDoc.nickName) || '',
+    status: REPORT_PENDING,
+    createTime: Date.now(),
+  }
+  try {
+    const res = await feedbacks.add({ data: record })
+    return { id: res._id, status: record.status, createTime: record.createTime }
+  } catch (e) {
+    console.error('[activity] 举报写入失败', e)
+    return fail('SERVER_ERROR', '举报提交失败，请稍后重试')
+  }
 }
 
 /* ------------------------------ 注销账号 ------------------------------ */
@@ -950,6 +1003,7 @@ async function deleteAccount(event, openid) {
   const published = await removeOwnActivities(openid)
   const files = await removeCloudFiles(published.fileIDs)
   const joins = await removeJoinRecords(openid)
+  // 反馈与举报（kind: 'report'）存在同一个集合里，按 openid 一次清掉
   const fb = await feedbacks.where({ openid }).remove()
   const feedbacksRemoved = (fb && fb.stats && fb.stats.removed) || 0
   await users.doc(userDoc._id).remove()
@@ -991,6 +1045,7 @@ const ACTIONS = {
   updateUser,
   qrcode,
   feedback,
+  report,
   deleteAccount,
 }
 

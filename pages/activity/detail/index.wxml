@@ -108,7 +108,7 @@
             <text class="section-title">已报名 ({{activity.joinedCount}})</text>
           </view>
           <view wx:if="{{activity.avatarList.length}}" class="member-list">
-            <view class="member" wx:for="{{activity.avatarList}}" wx:key="openid">
+            <view class="member" wx:for="{{activity.avatarList}}" wx:key="key">
               <avatar url="{{item.avatarUrl}}" color="{{item.avatarColor}}" text="{{item.avatarText}}" size="sm"></avatar>
               <text class="member-name ellipsis">{{item.nickName}}</text>
             </view>
@@ -122,6 +122,11 @@
             <text class="section-title">活动介绍</text>
           </view>
           <text class="desc-text">{{activity.descText}}</text>
+        </view>
+
+        <!-- 举报：UGC 内容需要公开的投诉入口，自己的活动不展示 -->
+        <view wx:if="{{!isOrganizer}}" class="report-entry" bindtap="onReportTap">
+          <text>举报该活动</text>
         </view>
       </view>
     </scroll-view>

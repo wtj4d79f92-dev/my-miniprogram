@@ -48,7 +48,7 @@
       <view class="act-avatars">
         <avatar
           wx:for="{{act.avatarList}}"
-          wx:key="openid"
+          wx:key="key"
           url="{{item.avatarUrl}}"
           color="{{item.avatarColor}}"
           text="{{item.avatarText}}"

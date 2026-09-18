@@ -17,7 +17,13 @@
   "cloudfunctionRoot": "cloudfunctions/",
   "simulatorPluginLibVersion": {},
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      { "type": "suffix", "value": ".md" },
+      { "type": "suffix", "value": ".docx" },
+      { "type": "folder", "value": "scripts" },
+      { "type": "file", "value": "project.private.config.json" },
+      { "type": "file", "value": ".eslintrc.js" }
+    ],
     "include": []
   },
   "appid": "wx6b3a3d2ff660fe0b",

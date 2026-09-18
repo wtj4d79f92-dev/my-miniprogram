@@ -89,6 +89,17 @@
           <text class="entry-title">关于旷行吖</text>
           <text class="entry-arrow">›</text>
         </view>
+        <!-- 协议常驻入口：登录页 / 绑定手机号之外也能随时查看，审核与合规都要求可达 -->
+        <view class="entry" bindtap="openService">
+          <text class="entry-icon">📄</text>
+          <text class="entry-title">用户服务协议</text>
+          <text class="entry-arrow">›</text>
+        </view>
+        <view class="entry" bindtap="openPrivacy">
+          <text class="entry-icon">🔒</text>
+          <text class="entry-title">隐私政策</text>
+          <text class="entry-arrow">›</text>
+        </view>
       </view>
 
       <!-- 注销账号：破坏性操作单独一组，与常规功能入口区分开 -->

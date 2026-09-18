@@ -5,6 +5,9 @@ const loginBehavior = require('../../../behaviors/login-behavior')
 const ui = require('../../../utils/ui')
 const location = require('../../../utils/location')
 
+/** 举报原因候选：与云端 activity 云函数的 REPORT_REASONS 保持一致 */
+const REPORT_REASONS = ['虚假信息或诈骗', '违法违规内容', '侵权或盗用他人内容', '广告骚扰', '其他']
+
 Page({
   behaviors: [loginBehavior],
 
@@ -73,8 +76,11 @@ Page({
     if (activity.qrUrl) this._mediaUrl[activity.groupQrCode] = activity.qrUrl
     activity.coverSrc = activity.coverUrl || this._mediaUrl[activity.cover] || activity.cover
     activity.qrSrc = activity.qrUrl || this._mediaUrl[activity.groupQrCode] || activity.groupQrCode
+    // 云端下发的成员快照只留昵称 / 头像（不带 openid），列表 key 用下标生成
     activity.joinedPeople = raw.joinedPeople || []
-    activity.avatarList = raw.joinedPeople || []
+    activity.avatarList = activity.joinedPeople.map((member, index) =>
+      Object.assign({}, member, { key: `member_${index}` })
+    )
     activity.isClosed = raw.status === 'closed'
     activity.isFull = raw.joinedCount >= raw.maxPeople
     activity.descText = raw.desc || '暂无活动介绍，报名前可与发起人沟通确认细节。'
@@ -94,8 +100,14 @@ Page({
     const myOpenid = (user && user.openid) || ''
     const organizer = raw.organizer || {}
     // 自己发布的活动：用「关闭 / 打开活动」替代报名按钮，且不展示报名协议
-    const isOrganizer = !!myOpenid && organizer.openid === myOpenid
-    const joined = !!myOpenid && (raw.joinedPeople || []).some((item) => item.openid === myOpenid)
+    // 云端已经按当前用户算好这两个标记（脱敏后客户端拿不到 openid，没法自己比对）；
+    // Mock 模式返回的是带 openid 的本地数据，保留本地兜底判断
+    const isOrganizer =
+      typeof raw.isOrganizer === 'boolean' ? raw.isOrganizer : !!myOpenid && organizer.openid === myOpenid
+    const joined =
+      typeof raw.joined === 'boolean'
+        ? raw.joined
+        : !!myOpenid && (raw.joinedPeople || []).some((item) => item.openid === myOpenid)
     // style 为空使用主色按钮，outline / manage 为次要按钮样式
     let mainBtn = { text: '我要报名', disabled: false, mode: 'join', style: '' }
     if (isOrganizer) {
@@ -229,6 +241,39 @@ Page({
       // 已勾选免责协议即视为完成报名确认，直接提交，不再二次弹窗
       this.submitJoin()
     })
+  },
+
+  /**
+   * 举报活动：UGC 内容需要给用户一个公开的投诉入口。
+   * 登录后拉起原因选择，记录与意见反馈同集合（kind: 'report'），由运营复核决定是否下架。
+   */
+  onReportTap() {
+    const activity = this.data.activity
+    if (!activity) return
+    this.ensureLogin('举报活动需要先登录，是否立即登录？').then((user) => {
+      if (!user) return
+      this.handleLoginSuccess(user)
+      wx.showActionSheet({
+        itemList: REPORT_REASONS,
+        success: (res) => this.submitReport(REPORT_REASONS[res.tapIndex]),
+      })
+    })
+  },
+
+  /** 提交举报：成功只提示「已提交」，是否下架由运营判断，避免被当成下架工具 */
+  submitReport(reason) {
+    if (!reason) return
+    wx.showLoading({ title: '提交中', mask: true })
+    api
+      .report(this.data.id, reason)
+      .then(() => {
+        wx.hideLoading()
+        ui.toast('举报已提交，我们会尽快核实', 'success')
+      })
+      .catch((err) => {
+        wx.hideLoading()
+        ui.toast((err && err.message) || '举报提交失败，请稍后重试')
+      })
   },
 
   /** 封面加载失败：临时链接过期或读取被拦时按 fileID 重取一次，仍失败退回默认海报 */

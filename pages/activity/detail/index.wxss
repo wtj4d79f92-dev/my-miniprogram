@@ -207,6 +207,16 @@
   white-space: pre-wrap;
 }
 
+/* 举报入口：放在内容末尾，样式弱化，避免抢主按钮的注意力 */
+.report-entry {
+  margin: 8rpx 0 32rpx;
+  padding: 20rpx 0;
+  text-align: center;
+  font-size: 24rpx;
+  color: var(--text-light);
+  text-decoration: underline;
+}
+
 /* 底部操作栏不浮动：避免挡住滚动内容，也保证按钮点击不会被内容层拦截 */
 .action-bar {
   flex: none;

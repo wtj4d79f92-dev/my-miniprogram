@@ -90,6 +90,44 @@ function withId(doc) {
   return out
 }
 
+/**
+ * 对外展示的用户快照：只保留头像 / 昵称这类展示字段。
+ *
+ * openid 是本小程序的微信身份标识，落库时它是「谁能操作这条数据」的依据，
+ * 但对其他用户没有用途，下发出去只等于把报名者 / 发起人的身份标识给了所有客户端，
+ * 也与《隐私政策》里「报名成员中的微信身份标识不会展示给其他用户」的承诺冲突。
+ */
+function publicMember(member) {
+  const source = member || {}
+  const nickName = text(source.nickName, LIMITS.nickName) || '微信用户'
+  return {
+    nickName,
+    avatarColor: source.avatarColor || AVATAR_COLORS[0],
+    avatarUrl: source.avatarUrl || '',
+    avatarText: source.avatarText || nickName.slice(0, 1),
+  }
+}
+
+/**
+ * 对外输出的活动文档：补 id、抹掉所有人的 openid，并带上「当前用户是否已报名 / 是否发起人」。
+ *
+ * 身份判断必须在这里做完再脱敏：客户端拿到的是布尔标记，没拿到身份标识，
+ * 既不会因为脱敏丢掉「报名 / 退出 / 关闭活动」的按钮状态，也拿不到别人的 openid。
+ * @param {Object} doc 数据库里的活动文档
+ * @param {string} openid 当前请求方（云函数上下文里的 OPENID，未登录为空）
+ */
+function publicActivity(doc, openid) {
+  if (!doc) return null
+  const item = withId(doc)
+  const joinedPeople = doc.joinedPeople || []
+  const organizer = doc.organizer || {}
+  item.joined = !!openid && joinedPeople.some((member) => member && member.openid === openid)
+  item.isOrganizer = !!openid && !!organizer.openid && organizer.openid === openid
+  item.joinedPeople = joinedPeople.map(publicMember)
+  item.organizer = publicMember(organizer)
+  return item
+}
+
 /** 事务内按 id 取文档：文档不存在时 get 会抛错，统一收敛成 null */
 async function txDoc(transaction, collectionName, id) {
   try {
@@ -110,6 +148,8 @@ module.exports = {
   coord,
   escapeRegExp,
   memberOf,
+  publicMember,
+  publicActivity,
   withId,
   txDoc,
 }

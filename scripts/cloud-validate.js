@@ -1508,6 +1508,108 @@ async function run() {
     '重新打开：活动立即回到广场的未关闭序列'
   )
 
+  /* ---------- 对外输出：不下发其他用户的 openid ---------- */
+  seedUser(OTHER, '路人')
+  seedActivity({
+    _id: 'act_privacy',
+    title: '隐私与举报用例活动',
+    auditStatus: 'approved',
+    joinedPeople: [
+      { openid: OTHER, nickName: '路人', avatarColor: '#FF8E72', avatarUrl: '', avatarText: '路' },
+      { openid: ORGANIZER, nickName: '发起人', avatarColor: '#4ECDC4', avatarUrl: '', avatarText: '发' },
+    ],
+    joinedCount: 2,
+  })
+
+  const privacyList = await callActivity('list', { pageIndex: 0, pageSize: 50 }, OTHER)
+  const privacyRow = privacyList.list.filter((item) => item.id === 'act_privacy')[0]
+  log(
+    !!privacyRow &&
+      privacyRow.joinedPeople.length === 2 &&
+      privacyRow.joinedPeople.every((member) => member.openid === undefined) &&
+      privacyRow.joinedPeople.every((member) => !!member.nickName),
+    '列表：不下发报名成员的 openid，展示字段照旧'
+  )
+  log(!!privacyRow && !!privacyRow.organizer && privacyRow.organizer.openid === undefined, '列表：不下发发起人的 openid')
+
+  const privacyHome = await callActivity('home', {}, OTHER)
+  log(
+    privacyHome.hotList
+      .concat(privacyHome.newestList)
+      .every((item) => (item.joinedPeople || []).every((member) => member.openid === undefined)),
+    '首页：不下发报名成员的 openid'
+  )
+
+  const privacyDetail = await callActivity('detail', { id: 'act_privacy' }, OTHER)
+  log(
+    !!privacyDetail &&
+      privacyDetail.joinedPeople.every((member) => member.openid === undefined) &&
+      privacyDetail.organizer.openid === undefined,
+    '详情：不下发报名成员与发起人的 openid'
+  )
+  log(
+    !!privacyDetail && privacyDetail.joined === true && privacyDetail.isOrganizer === false,
+    '详情：脱敏后仍能判定当前用户已报名且不是发起人'
+  )
+  const privacyOwnerDetail = await callActivity('detail', { id: 'act_privacy' }, ORGANIZER)
+  log(!!privacyOwnerDetail && privacyOwnerDetail.isOrganizer === true, '详情：脱敏后仍能判定发起人身份')
+  const privacyGuestDetail = await callActivity('detail', { id: 'act_privacy' }, '')
+  log(
+    !!privacyGuestDetail && privacyGuestDetail.joined === false && privacyGuestDetail.isOrganizer === false,
+    '详情：未登录时报名与发起人标记都为 false'
+  )
+
+  const privacyMine = await callActivity('mine', { kind: 'published' }, ORGANIZER)
+  log(
+    privacyMine.every((item) => (item.joinedPeople || []).every((member) => member.openid === undefined)),
+    '我的发布：不下发报名成员的 openid'
+  )
+
+  const privacyQuit = await callActivity('quit', { id: 'act_privacy' }, OTHER)
+  log(
+    privacyQuit.joined === false &&
+      privacyQuit.joinedCount === 1 &&
+      privacyQuit.joinedPeople.every((member) => member.openid === undefined),
+    '退出：返回体不带 openid，joined 标记与人数正确'
+  )
+  const privacyJoin = await callActivity('join', { id: 'act_privacy' }, OTHER)
+  log(
+    privacyJoin.joined === true &&
+      privacyJoin.joinedPeople.every((member) => member.openid === undefined),
+    '报名：返回体不带 openid，joined 标记正确'
+  )
+
+  /* ---------- 昵称：对外可见的 UGC，同样要过内容安全 ---------- */
+  resetSecurity({ text: 'risky' })
+  const riskyNick = await callActivity('updateUser', { userInfo: { nickName: '违规昵称' } }, OTHER)
+  log(riskyNick.code === 'CONTENT_RISKY', '昵称：命中违规内容时拒绝保存')
+  log(
+    store.users.filter((item) => item.openid === OTHER)[0].nickName === '路人',
+    '昵称：被拒绝的昵称不写库'
+  )
+  resetSecurity()
+  const okNick = await callActivity('updateUser', { userInfo: { nickName: '山野阿宽' } }, OTHER)
+  log(okNick.nickName === '山野阿宽' && okNick.openid === OTHER, '昵称：正常昵称保存成功，自己的 openid 照旧返回')
+
+  /* ---------- 举报：入口落库，运营可复核 ---------- */
+  const reportGuest = await callActivity('report', { id: 'act_privacy', reason: '广告骚扰' })
+  log(reportGuest.code === 'UNAUTHORIZED', '举报：未登录拒绝提交')
+  const reportBadReason = await callActivity('report', { id: 'act_privacy', reason: '随便写的理由' }, OTHER)
+  log(reportBadReason.code === 'INVALID_PARAM', '举报：原因不在候选列表内被拒绝')
+  const reportMissing = await callActivity('report', { id: 'act_not_exist', reason: '广告骚扰' }, OTHER)
+  log(reportMissing.code === 'NOT_FOUND', '举报：活动不存在时拒绝提交')
+  const reported = await callActivity('report', { id: 'act_privacy', reason: '广告骚扰' }, OTHER)
+  log(!!reported.id, '举报：提交成功返回记录 id')
+  const reportDoc = (store.feedback || []).filter((item) => item.kind === 'report')[0]
+  log(
+    !!reportDoc &&
+      reportDoc.activityId === 'act_privacy' &&
+      reportDoc.openid === OTHER &&
+      reportDoc.reason === '广告骚扰' &&
+      reportDoc.status === 'pending',
+    '举报：落在 feedback 集合（kind=report），字段完整可供运营复核'
+  )
+
   /* ---------- 注销账号：账号、发布、报名、反馈与云存储文件一次清干净 ---------- */
   resetStore()
   seedUser(ORGANIZER, '发起人')
@@ -1524,6 +1626,15 @@ async function run() {
     joinedCount: 1,
   })
   store.feedback.push({ _id: 'fb_mine', openid: OTHER, content: '注销前的反馈', createTime: Date.now(), status: 'pending' })
+  store.feedback.push({
+    _id: 'fb_report',
+    kind: 'report',
+    openid: OTHER,
+    activityId: 'act_shared',
+    reason: '广告骚扰',
+    createTime: Date.now(),
+    status: 'pending',
+  })
   store.feedback.push({ _id: 'fb_other', openid: ORGANIZER, content: '别人的反馈', createTime: Date.now(), status: 'pending' })
 
   const deleted = await callActivity('deleteAccount', {}, OTHER)
@@ -1546,7 +1657,7 @@ async function run() {
   log(
     store.feedback.every((item) => item.openid !== OTHER) &&
       store.feedback.some((item) => item.openid === ORGANIZER),
-    '注销：只删自己的反馈，别人的反馈保持不动'
+    '注销：自己的反馈与举报一并删除，别人的反馈保持不动'
   )
   log(
     deletedFiles.indexOf('cloud://env/cover.png') > -1 &&

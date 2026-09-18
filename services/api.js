@@ -72,6 +72,16 @@ const MOCK_REVIEW_WORDS = ['疑似', '兼职']
 const MOCK_QR_NO_CODE = 'noqrcode'
 const MOCK_QR_NOT_GROUP = 'notgroup'
 
+/** 举报原因候选：与云端 activity 云函数的 REPORT_REASONS 保持一致 */
+const REPORT_REASONS = ['虚假信息或诈骗', '违法违规内容', '侵权或盗用他人内容', '广告骚扰', '其他']
+
+/** Mock 版文本送检：命中违规词视为不通，供昵称这类短文本复用 */
+function mockTextRisky(content) {
+  const value = String(content || '')
+  if (!value) return false
+  return MOCK_RISKY_WORDS.some((word) => value.indexOf(word) > -1)
+}
+
 /**
  * 群二维码识别：与云端 lib/contentCheck.js 的 checkQrCode 同一套结论。
  * Mock 不做真实识别，默认视为「识别到微信群邀请链接」，只有文件名带关键词时才模拟不通过。
@@ -483,6 +493,8 @@ const mockApi = {
     const userInfo = (payload && payload.userInfo) || {}
     const existed = getStorage(KEYS.user, null)
     if (!existed) return fail('UNAUTHORIZED', '请先登录')
+    // 昵称会展示在活动卡片与报名名单里（对外可见的 UGC），云端同样先过内容安全再写库
+    if (mockTextRisky(userInfo.nickName)) return fail('CONTENT_RISKY', '昵称包含违规内容，请修改后重试')
     const merged = Object.assign({}, existed, userInfo)
     if (merged.nickName) {
       merged.avatarText = merged.avatarText || merged.nickName.slice(0, 1)
@@ -527,6 +539,7 @@ const mockApi = {
     const user = mock.currentUser()
     const record = {
       id: `mock_fb_${Date.now()}`,
+      kind: 'feedback',
       openid: (user && user.openid) || '',
       nickName: (user && user.nickName) || '未登录用户',
       avatarUrl: (user && user.avatarUrl) || '',
@@ -538,6 +551,36 @@ const mockApi = {
     list.unshift(record)
     setStorage(KEYS.feedback, list)
     return withDelay({ id: record.id, createTime: record.createTime })
+  },
+
+  /**
+   * 举报活动：Mock 与云端一样把记录写进反馈列表（`kind: 'report'`），
+   * 本地也能看到入口产出的内容；注销账号时会随反馈一起清掉。
+   */
+  report(activityId, reason) {
+    const user = mock.currentUser()
+    if (!user) return fail('UNAUTHORIZED', '请先登录')
+    const id = String(activityId || '')
+    if (!id) return fail('NOT_FOUND', '活动不存在或已下架')
+    if (REPORT_REASONS.indexOf(String(reason || '')) === -1) return fail('INVALID_PARAM', '请选择举报原因')
+    const activity = mock.findActivity(id)
+    if (!activity) return fail('NOT_FOUND', '活动不存在或已下架')
+    const record = {
+      id: `mock_report_${Date.now()}`,
+      kind: 'report',
+      activityId: id,
+      title: activity.title || '',
+      organizerOpenid: (activity.organizer && activity.organizer.openid) || '',
+      reason: String(reason),
+      openid: user.openid,
+      nickName: user.nickName || '',
+      status: 'pending',
+      createTime: Date.now(),
+    }
+    const list = getStorage(KEYS.feedback, []) || []
+    list.unshift(record)
+    setStorage(KEYS.feedback, list)
+    return withDelay({ id: record.id, status: record.status, createTime: record.createTime })
   },
 
   /** Mock 的封面 / 二维码是本机临时路径，没有云存储文件需要换临时链接 */
@@ -716,6 +759,10 @@ const cloudApi = {
   feedback(payload) {
     return callCloud('feedback', payload)
   },
+  /** 举报活动：云端与意见反馈同集合（kind: 'report'），供运营复核 */
+  report(id, reason) {
+    return callCloud('report', { id, reason })
+  },
   /** 注销账号：云端会删除账号、其发布的活动（含云存储文件）、报名记录与反馈 */
   deleteAccount() {
     return callCloud('deleteAccount', {})
@@ -763,7 +810,10 @@ function decorate(activity) {
   item.periodText = item.endTime ? formatCardDate(item.endTime) : '待定'
   item.weekdayName = WEEKDAY_TEXT[item.startWeekday] || ''
   item.difficultyText = item.difficulty ? `${item.difficulty}★` : ''
-  item.avatarList = (item.joinedPeople || []).slice(0, 5)
+  // 云端下发的成员快照已抹掉 openid，列表渲染改用下标生成的 key（wx:key 不能为空）
+  item.avatarList = (item.joinedPeople || [])
+    .slice(0, 5)
+    .map((member, index) => Object.assign({}, member, { key: `avatar_${index}` }))
   item.isClosed = item.status === 'closed'
   item.isFull = item.joinedCount >= item.maxPeople
   item.showMetrics = supportsMetrics(item.type)

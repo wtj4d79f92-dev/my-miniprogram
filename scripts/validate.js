@@ -487,6 +487,16 @@ function step(name, promise) {
 }
 
 const flow = (async () => {
+  // 举报接口：Mock 与云端同一签名，未实现时按「未登录」以外的错误暴露出来
+  const reportApi =
+    typeof api.report === 'function'
+      ? api.report
+      : () => Promise.reject(Object.assign(new Error('提交举报失败'), { code: 'NOT_IMPLEMENTED' }))
+
+  // 举报：未登录一律拒绝，与云端口径一致（登录用例在后面）
+  const guestReport = await reportApi('mock_act_1', '广告骚扰').then(() => null, (err) => err)
+  log(!!guestReport && guestReport.code === 'UNAUTHORIZED', '举报：未登录拒绝提交')
+
   // 登录（Mock 手机号）
   const user = await step('登录', api.login({ phone: '13800001111' }))
   log(!!user.openid && user.userId >= 1, '登录：生成用户与自增 ID')
@@ -550,6 +560,16 @@ const flow = (async () => {
   const target = hiking.list[0]
   const detail = await step('详情', api.detail(target.id))
   log(!!detail && detail.joined === false, '详情：返回活动且携带报名标记')
+
+  // 举报：登录后写入本地举报列表，运营侧可复核
+  const report = await step('举报', reportApi(target.id, '广告骚扰').catch((err) => err))
+  log(!!report && !!report.id && report.status === 'pending', '举报：提交成功返回记录')
+  const reportKeys = require(path.join(ROOT, 'utils/storage')).KEYS
+  const reportList = (global.wx.storage[reportKeys.feedback] || []).filter((item) => item.kind === 'report')
+  log(
+    reportList.length === 1 && reportList[0].activityId === target.id && reportList[0].reason === '广告骚扰',
+    '举报：本地记录写在反馈列表里且带 kind=report（Mock）'
+  )
 
   // 发布
   const created = await step(
@@ -755,6 +775,16 @@ const flow = (async () => {
   const afterUpdate = await api.detail(created.id)
   log(updated.nickName === '自动化测试员', '资料：昵称更新成功')
   log(afterUpdate.organizer.nickName === '自动化测试员', '资料：已发布活动的发起人快照同步更新')
+
+  // 昵称是对外可见的 UGC，Mock 与云端一样按关键词拦截
+  const riskyNick = await api
+    .updateUser({ userInfo: { nickName: '违规昵称' } })
+    .then(() => null, (err) => err)
+  log(!!riskyNick && riskyNick.code === 'CONTENT_RISKY', '昵称：命中违规关键词被拒绝保存')
+  log(
+    global.wx.storage[require(path.join(ROOT, 'utils/storage')).KEYS.user].nickName === '自动化测试员',
+    '昵称：被拒绝的昵称不写本地缓存'
+  )
 
   // 反馈
   const feedback = await step('意见反馈', api.feedback({ content: '这是一条来自校验脚本的反馈内容' }))

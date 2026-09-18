@@ -42,7 +42,7 @@ scripts/cloud-validate.js         云函数离线校验（内存数据库跑 act
 `services/config.js` 中 `useMock` 控制数据来源：
 
 - `useMock: true`（默认）：数据由 `services/mock.js` 生成，操作结果写入本地缓存，缓存键与 PRD 5.3 一致（`aa_selected_city`、`square_pending_type`、`my_user`、`my_user_counter`、`my_published`、`my_joined`、`my_feedback`），另加 `mock_join_map`、`mock_status_map`、`mock_audit_map` 三个运行期缓存键，用于记录报名成员、关闭状态与关闭时间、本地审核结果。
-- `useMock: false`：走云开发，客户端调用 `activity` 云函数，action 与 PRD 8.6 一致（`home / list / detail / create / update / join / quit / toggle / mine / user / login / updateUser / qrcode / feedback / deleteAccount`），审核相关调用走独立的 `admin` 云函数。
+- `useMock: false`：走云开发，客户端调用 `activity` 云函数，action 与 PRD 8.6 一致（`home / list / detail / create / update / join / quit / toggle / mine / user / login / updateUser / qrcode / feedback / report / deleteAccount`），审核相关调用走独立的 `admin` 云函数。
 
 > Mock 模式下把当前登录用户视为审核人，本地也能把「发布 → 待审 → 驳回 → 修改重提 → 通过」整条链路跑通；云端真人权限见下方「活动审核」。
 
@@ -51,11 +51,20 @@ scripts/cloud-validate.js         云函数离线校验（内存数据库跑 act
 1. 在微信开发者工具中开通云开发，记录环境 ID；
 2. 把 `services/config.js` 的 `useMock` 改为 `false`，`useCloud` 改为 `true`，填入 `cloudEnv`；
 3. 在 `app.js` 的 `onLaunch` 中初始化：`wx.cloud.init({ env: config.cloudEnv, traceUser: true })`；
-4. 创建 4 个集合 `activities`、`users`、`banners`、`feedback`，权限按 PRD 8.7 设置；
+4. 创建集合 `activities`、`users`、`banners`、`feedback`，权限按 PRD 8.7 设置（用户举报与意见反馈都落在 `feedback`，用 `kind` 区分：`feedback` / `report`，同样只允许云函数读写）；
 5. 新建 `cloudfunctions/activity` 云函数（Node.js），按 `services/api.js` 中 `cloudApi` 的 action 名实现路由，返回结构失败为 `{ code, message }`、成功为业务数据；
 6. 在 `project.config.json` 中补充 `"cloudfunctionRoot": "cloudfunctions/"` 后部署云函数。
 
 前端页面逻辑不依赖具体数据来源，切换开关即可，无需改动页面代码。
+
+## 隐私与合规
+
+发给审核与上线用的几条硬约束，后续改动不要退回去（`scripts/validate.js` 与 `scripts/cloud-validate.js` 里有对应断言）：
+
+1. **接口不下发任何 openid**：活动相关输出统一走 `cloudfunctions/activity/lib/helper.js` 的 `publicActivity()` —— 它先按当前用户算好 `joined` / `isOrganizer`，再把 `joinedPeople` / `organizer` 换成只含昵称头像的快照。前端只认这两个布尔值（`pages/activity/detail/index.js`），不要再拿 `openid` 自己比对。自己的 openid 只出现在 `user` / `login` / `updateUser` 的返回里。
+2. **昵称与活动文案一样要过内容安全**：昵称会展示在活动卡片与报名名单里，`updateUser`（含登录时前端带上来的 `profile.nickName`）和发布 / 编辑共用同一个 `checkText`，命中 `risky` 直接拒绝写库。
+3. **举报入口**：活动详情页底部「举报该活动」（自己的活动不展示）→ `report` action → `feedback` 集合里 `kind: 'report'` 的记录，运营按 `kind` 区分反馈与举报；原因是固定候选，云端 `REPORT_REASONS`、`services/api.js`、`pages/activity/detail/index.js` 三处必须一致。举报只作为人工线索留存，不参与机审放行、不自动下架活动。
+4. **协议可达**：登录页与「我的 → 用户服务协议 / 隐私政策」都能随时查看；《用户服务协议》第三条写明侵权投诉走「举报」入口，对应通知-删除通道。
 
 ## 注销账号
 
@@ -63,7 +72,7 @@ scripts/cloud-validate.js         云函数离线校验（内存数据库跑 act
 
 1. **我发布的活动**：连同 `cover` / `groupQrCode` / `miniQrCode` 三个云存储文件一起删除（Mock 模式清本地 `my_published` 与对应的状态、审核覆盖）；
 2. **我在别人活动里的报名**：从 `joinedPeople` 里移除并同步 `joinedCount`；
-3. **我提交的反馈**：`feedback` 集合里该 openid 的记录删除；
+3. **我提交的反馈与举报**：`feedback` 集合里该 openid 的记录删除（举报是 `kind: 'report'` 的同一集合记录）；
 4. **账号本身**：`users` 里的记录删除。
 
 `activity_audits` 里的审核日志保留：那是平台内容审核的留存记录，只含活动 id、标题与审核人信息，不含注销用户的昵称 / 头像 / 手机号。注销后同一个微信再次登录会重新注册为新账号（用户编号递增），历史数据不会回来。

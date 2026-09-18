@@ -1,4 +1,4 @@
-<!-- 登录页：全屏覆盖，信息结构参考「神州租车」登录页 -->
+<!-- 登录页：全屏覆盖，顶部返回 + 品牌区 + 协议勾选 + 主次登录按钮，底部保留「暂不登录」 -->
 <view class="login-page" wx:if="{{visible}}">
   <view class="login-nav" style="{{navStyle}}">
     <view
