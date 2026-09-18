@@ -1,5 +1,6 @@
 <view class="page tab-page">
-  <navigation-bar title="{{texts.appName}}" back="{{false}}" color="#2D3748" background="#FFFFFF"></navigation-bar>
+  <!-- 单页模式下微信自带固定顶部导航栏，页面里的 navigation-bar 属于被禁用组件，这里不再渲染 -->
+  <navigation-bar wx:if="{{!singlePage}}" title="{{texts.appName}}" back="{{false}}" color="#2D3748" background="#FFFFFF"></navigation-bar>
 
   <scroll-view
     class="page-scroll tab-page-scroll"
@@ -10,6 +11,11 @@
     bindrefresherrefresh="onRefresh"
   >
     <view class="scroll-body">
+      <!-- 单页模式下跳转（搜索 / 卡片 / 发布）都被微信禁用，如实说明能力范围，不做诱导点击 -->
+      <view wx:if="{{singlePage}}" class="single-page-tip">
+        <text>朋友圈浏览模式仅展示活动信息，搜索、报名需在小程序内操作</text>
+      </view>
+
       <!-- 定位栏 -->
       <view class="locate-bar">
         <view class="locate-left" bindtap="onLocateTap">
@@ -95,7 +101,8 @@
     </view>
   </scroll-view>
 
-  <view class="fab" bindtap="goPublish">
+  <!-- 发布要登录态与页面跳转，单页模式下都不可用 -->
+  <view class="fab" wx:if="{{!singlePage}}" bindtap="goPublish">
     <text class="fab-plus">＋</text>
     <text class="fab-text">发布</text>
   </view>

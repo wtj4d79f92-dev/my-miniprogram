@@ -2337,6 +2337,146 @@ function checkSinglePageShare() {
     })
 }
 
+/* -------------- 首页分享：发送给朋友 / 分享到朋友圈 -------------- */
+/**
+ * 首页以前没实现 onShareAppMessage / onShareTimeline，右上角菜单里「转发」和「分享到朋友圈」
+ * 都是灰的（当前页面不可转发 / 不可分享），整个小程序没有对外的分享入口。
+ * 这里钉住三件事：两个分享回调都有内容、分享图是代码包内可用的 5:4 卡片图、
+ * 以及首页被分享到朋友圈后（单页模式）跳转类入口不会点了没反应地硬跳。
+ */
+function checkHomeShare() {
+  const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
+
+  /* ① 页面配置：单页模式下自定义导航栏必须 squeezed，否则微信导航栏压住页面内容 */
+  const homeJson = readJSON(path.join(ROOT, 'pages/home/home.json'))
+  log(
+    !!homeJson.singlePage && homeJson.singlePage.navigationBarFit === 'squeezed',
+    '首页分享：配置 singlePage.navigationBarFit=squeezed，朋友圈打开时内容不被微信导航栏压住'
+  )
+
+  /* ② 页面结构：被禁用的入口（自定义导航栏、发布按钮）在单页模式下不渲染 */
+  const wxml = read('pages/home/home.wxml')
+  log(
+    /<navigation-bar wx:if="\{\{!singlePage\}\}"/.test(wxml),
+    '首页分享：单页模式下不再渲染自定义 navigation-bar'
+  )
+  log(/class="fab"[^>]*wx:if="\{\{!singlePage\}\}"/.test(wxml), '首页分享：单页模式下不再渲染「发布」悬浮按钮')
+  log(/class="single-page-tip"/.test(wxml), '首页分享：顶部如实说明朋友圈浏览模式的能力范围')
+
+  /* ③ 分享图：代码包里的 PNG，好友卡片 5:4、朋友圈卡片 1:1，两张都别指望微信截页面 */
+  const imageSize = (rel) => {
+    if (!exists(rel)) return null
+    const png = fs.readFileSync(path.join(ROOT, rel))
+    const isPng = png.length > 24 && png.slice(1, 4).toString('latin1') === 'PNG'
+    if (!isPng) return { width: 0, height: 0 }
+    return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) }
+  }
+  const friendImage = imageSize('assets/share-home.png')
+  log(
+    !!friendImage && friendImage.height > 0 && Math.abs(friendImage.width / friendImage.height - 1.25) < 0.01,
+    `首页分享：好友卡片图 assets/share-home.png ${friendImage ? `${friendImage.width}×${friendImage.height}` : '缺失'}，符合微信 5:4 比例`
+  )
+  const timelineImage = imageSize('assets/logo.png')
+  log(
+    !!timelineImage && timelineImage.width === timelineImage.height,
+    `首页分享：朋友圈卡片图 assets/logo.png ${timelineImage ? `${timelineImage.width}×${timelineImage.height}` : '缺失'}，符合微信 1:1 比例`
+  )
+
+  /* ④ 页面逻辑：分享回调内容 + 单页模式下的跳转降级（普通模式照旧跳转） */
+  const calls = []
+  const originalEnter = global.wx.getEnterOptionsSync
+  const original = {
+    switchTab: global.wx.switchTab,
+    navigateTo: global.wx.navigateTo,
+    showLoading: global.wx.showLoading,
+    hideLoading: global.wx.hideLoading,
+    showToast: global.wx.showToast,
+    showModal: global.wx.showModal,
+  }
+  const originPage = global.Page
+  const pageOptions = []
+  global.wx.switchTab = (options) => calls.push(`switchTab:${options.url}`)
+  global.wx.navigateTo = (options) => calls.push(`navigateTo:${options.url}`)
+  global.wx.showLoading = () => {}
+  global.wx.hideLoading = () => {}
+  global.wx.showToast = () => {}
+  global.wx.showModal = () => {}
+  global.Page = (options) => pageOptions.push(options)
+  delete require.cache[path.join(ROOT, 'pages/home/home.js')]
+  require(path.join(ROOT, 'pages/home/home.js'))
+  const homePage = pageOptions[0]
+
+  const makeCtx = () => {
+    const ctx = Object.assign({}, homePage, {
+      data: Object.assign({}, homePage.data),
+      setData(patch) {
+        Object.assign(this.data, patch)
+      },
+      selectComponent() {
+        return null
+      },
+    })
+    // behaviors 里的登录守卫由框架合并，单测里补一个「未登录」版本
+    ctx.ensureLogin = () => Promise.resolve(null)
+    return ctx
+  }
+
+  const restore = () => {
+    global.Page = originPage
+    if (originalEnter === undefined) delete global.wx.getEnterOptionsSync
+    else global.wx.getEnterOptionsSync = originalEnter
+    Object.keys(original).forEach((key) => {
+      if (original[key] === undefined) delete global.wx[key]
+      else global.wx[key] = original[key]
+    })
+  }
+
+  // 分享回调：好友卡片带首页路径，朋友圈卡片带标题与同一张图
+  const normalCtx = makeCtx()
+  global.wx.getEnterOptionsSync = () => ({ scene: 1001, query: {} })
+  homePage.onLoad.call(normalCtx)
+  log(normalCtx.data.singlePage === false, '首页分享：普通场景不会被识别成单页模式')
+
+  const friendCard = homePage.onShareAppMessage.call(normalCtx)
+  log(
+    !!friendCard && friendCard.path === '/pages/home/home' && !!friendCard.title,
+    `首页分享：右上角「发送给朋友」有卡片内容（${friendCard && friendCard.title}）`
+  )
+  const timelineCard = homePage.onShareTimeline.call(normalCtx)
+  log(
+    !!timelineCard && !!timelineCard.title,
+    `首页分享：右上角「分享到朋友圈」有卡片内容（${timelineCard && timelineCard.title}）`
+  )
+  log(
+    friendCard && friendCard.imageUrl === '/assets/share-home.png' && timelineCard.imageUrl === '/assets/logo.png',
+    `首页分享：两张卡片分别用 5:4 与 1:1 的代码包内品牌图（${friendCard && friendCard.imageUrl} / ${timelineCard && timelineCard.imageUrl}）`
+  )
+
+  // 普通模式：搜索 / 玩法 / 卡片入口照旧跳转
+  calls.length = 0
+  homePage.goSquare.call(normalCtx, { currentTarget: { dataset: { type: 'hiking' } } })
+  homePage.onCardTap.call(normalCtx, { detail: { id: 'act_home' } })
+  log(
+    calls.join('|') === 'switchTab:/pages/square/index|navigateTo:/pages/activity/detail/index?id=act_home',
+    `首页分享：普通模式下搜索与卡片入口照旧跳转（${calls.join('、')}）`
+  )
+
+  // 单页模式：跳转 / 定位被微信禁用，不能再点了没反应地硬跳
+  global.wx.getEnterOptionsSync = () => ({ scene: 1154, query: {} })
+  const singleCtx = makeCtx()
+  homePage.onLoad.call(singleCtx)
+  log(singleCtx.data.singlePage === true, '首页分享：场景值 1154 被识别为朋友圈单页模式')
+  calls.length = 0
+  homePage.goSquare.call(singleCtx, { currentTarget: { dataset: { type: 'hiking' } } })
+  homePage.onTypeTap.call(singleCtx, { currentTarget: { dataset: { type: 'camping' } } })
+  homePage.onCardTap.call(singleCtx, { detail: { id: 'act_home' } })
+  homePage.goPublish.call(singleCtx)
+  homePage.onLocateTap.call(singleCtx)
+  log(calls.length === 0, `首页分享：单页模式下跳转 / 定位入口全部静默（调用：${calls.join('、') || '无'}）`)
+
+  restore()
+}
+
 /**
  * 本轮合规加固的断言集合：
  * - 手机号只走微信授权 code，默认昵称不含手机号；
@@ -2604,6 +2744,7 @@ return checkDeleteAccount()
   .then(() => checkExpireRule())
   .then(() => checkCloudShapeFixes())
   .then(() => checkSinglePageShare())
+  .then(() => checkHomeShare())
   .then(() => checkSeedData())
 })
 .then(() => {

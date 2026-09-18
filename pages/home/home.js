@@ -3,6 +3,16 @@ const { TEXTS, TYPE_GRID, normalizeBanners } = require('../../utils/dict')
 const { KEYS, setStorage } = require('../../utils/storage')
 const loginBehavior = require('../../behaviors/login-behavior')
 const ui = require('../../utils/ui')
+const scene = require('../../utils/scene')
+
+/**
+ * 分享卡片用代码包里的品牌图，而不是等微信截页面——首屏还没加载完就转发时，截图可能是空白的。
+ * 两个入口的卡片比例不同：发送给朋友是 5:4（assets/share-home.png），
+ * 分享到朋友圈是 1:1（assets/logo.png，与小程序 Logo 同一张图）。
+ */
+const SHARE_IMAGE = '/assets/share-home.png'
+const TIMELINE_IMAGE = '/assets/logo.png'
+const SHARE_TITLE = `${TEXTS.appName} · 同城找搭子，一起出发`
 
 Page({
   behaviors: [loginBehavior],
@@ -20,12 +30,14 @@ Page({
     fallbackTip: '',
     loading: true,
     refreshing: false,
+    // 朋友圈单页模式：微信禁用跳转 / 分享，页面只做内容展示，相关入口按需降级
+    singlePage: false,
     user: null,
   },
 
   onLoad() {
     const app = getApp()
-    this.setData({ user: app.globalData.user })
+    this.setData({ user: app.globalData.user, singlePage: scene.isSinglePageMode() })
     this.syncCityState()
   },
 
@@ -128,6 +140,8 @@ Page({
 
   /** 点击定位栏：未授权引导设置，已授权重新定位 */
   onLocateTap() {
+    // 单页模式没有登录态，授权弹窗与 wx.openSetting 都会被微信拦下，定位栏不做响应
+    if (this.data.singlePage) return
     const app = getApp()
     if (this.data.locationDenied) {
       ui.confirm({
@@ -171,6 +185,8 @@ Page({
   },
 
   goSquare(e) {
+    // 单页模式下微信禁用页面跳转（switchTab / navigateTo 都在禁用列表里），点了只会弹「请前往小程序」
+    if (this.data.singlePage) return
     const type = (e && e.currentTarget && e.currentTarget.dataset.type) || ''
     if (type) {
       setStorage(KEYS.pendingType, type)
@@ -183,6 +199,7 @@ Page({
    * 避免定位还没回来就跳转，广场落到「全部城市」而筛不出同城活动。
    */
   openSquare(type) {
+    if (this.data.singlePage) return
     if (type) setStorage(KEYS.pendingType, type)
     const app = getApp()
     const jump = () => wx.switchTab({ url: '/pages/square/index' })
@@ -210,10 +227,12 @@ Page({
   },
 
   onCardTap(e) {
+    if (this.data.singlePage) return
     wx.navigateTo({ url: `/pages/activity/detail/index?id=${e.detail.id}` })
   },
 
   goPublish() {
+    if (this.data.singlePage) return
     this.ensureLogin('发布活动需要先登录，是否立即登录？').then((user) => {
       if (!user) return
       this.handleLoginSuccess(user)
@@ -224,5 +243,24 @@ Page({
   onLogin(e) {
     this.handleLoginSuccess(e.detail)
     this.loadData()
+  },
+
+  /* ------------------------------ 分享 ------------------------------ */
+
+  /** 右上角菜单「发送给朋友」的卡片内容 */
+  onShareAppMessage() {
+    return {
+      title: SHARE_TITLE,
+      path: '/pages/home/home',
+      imageUrl: SHARE_IMAGE,
+    }
+  },
+
+  /** 右上角菜单「分享到朋友圈」的卡片内容，朋友圈卡片只有标题与方图 */
+  onShareTimeline() {
+    return {
+      title: SHARE_TITLE,
+      imageUrl: TIMELINE_IMAGE,
+    }
   },
 })

@@ -4,34 +4,17 @@ const { formatCardDate } = require('../../../utils/util')
 const loginBehavior = require('../../../behaviors/login-behavior')
 const ui = require('../../../utils/ui')
 const location = require('../../../utils/location')
+const scene = require('../../../utils/scene')
 
 /** 举报原因候选：与云端 activity 云函数的 REPORT_REASONS 保持一致 */
 const REPORT_REASONS = ['虚假信息或诈骗', '违法违规内容', '侵权或盗用他人内容', '广告骚扰', '其他']
 
 /**
- * 朋友圈单页模式的场景值。用户在朋友圈点开分享卡片时，微信不会打开完整小程序，而是进入「单页模式」：
- * 页面没有登录态（wx.login 等登录相关接口不可用），跳转、分享、报名这类交互也被禁用，
- * 云开发资源还必须在控制台开启「允许未登录访问」并配好安全规则才能读取 —— 否则 callFunction
- * 直接失败，页面只能落到兜底态。微信官方建议用「场景值等于 1154」来判断并做页面适配。
+ * 朋友圈单页模式的判定与启动参数都在 utils/scene.js（首页分享同样要用），
+ * 这里的注释「页面没有登录态、跳转/分享/报名被禁用、云资源要开未登录访问」保持同一份口径。
  */
-const SINGLE_PAGE_SCENE = 1154
-
-/** 本次启动参数：单页模式判断、以及 onLoad 没拿到参数时的兜底都从这里取 */
-function launchEntry() {
-  try {
-    const info =
-      (typeof wx.getEnterOptionsSync === 'function' && wx.getEnterOptionsSync()) ||
-      (typeof wx.getLaunchOptionsSync === 'function' && wx.getLaunchOptionsSync()) ||
-      {}
-    return info || {}
-  } catch (e) {
-    return {}
-  }
-}
-
-function isSinglePageMode() {
-  return Number(launchEntry().scene) === SINGLE_PAGE_SCENE
-}
+const launchEntry = scene.launchEntry
+const isSinglePageMode = scene.isSinglePageMode
 
 /**
  * 活动 id 的来源：

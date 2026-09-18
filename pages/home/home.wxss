@@ -147,6 +147,17 @@
   font-size: 24rpx;
 }
 
+/* 朋友圈单页模式：顶部说明，跳转类操作在单页模式下被微信禁用 */
+.single-page-tip {
+  margin: 16rpx 0 0;
+  padding: 18rpx 24rpx;
+  border-radius: 16rpx;
+  background: var(--brand-soft);
+  color: var(--text-sub);
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+
 .footer {
   padding: 48rpx 0 20rpx;
   text-align: center;
