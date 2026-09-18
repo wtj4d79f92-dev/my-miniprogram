@@ -1,5 +1,8 @@
 {
   "navigationBarTitleText": "活动详情 · 旷行吖",
+  "singlePage": {
+    "navigationBarFit": "squeezed"
+  },
   "usingComponents": {
     "navigation-bar": "/components/navigation-bar/navigation-bar",
     "avatar": "/components/avatar/index",

@@ -181,9 +181,12 @@ function callCloud(action, payload) {
         }
         resolve(result)
       },
-      fail: () => {
+      fail: (error) => {
         const err = new Error('网络异常，请稍后重试')
         err.code = 'NETWORK_ERROR'
+        // 原始错误（errCode / errMsg）留着排查：能区分「网络不通」和「云开发不允许未登录访问」
+        // 这类被云函数安全规则拦下的调用（见 README「分享到朋友圈（单页模式）」）
+        err.raw = error
         reject(err)
       },
     })
@@ -206,9 +209,10 @@ function callAdmin(action, payload) {
         }
         resolve(result)
       },
-      fail: () => {
+      fail: (error) => {
         const err = new Error('网络异常，请稍后重试')
         err.code = 'NETWORK_ERROR'
+        err.raw = error
         reject(err)
       },
     })

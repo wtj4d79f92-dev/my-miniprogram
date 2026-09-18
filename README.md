@@ -150,6 +150,30 @@ scripts/seed-data.js              导出提审演示数据（生成云开发控�
 
 配套集合：`activity_audits` 记录每次审核的动作、前后状态、原因、审核人与时间（集合不存在时会自动跳过写日志，不阻塞审核）。集合权限建议设为「仅创建者可读写」或「所有用户不可读写」，只通过云函数访问。
 
+## 分享到朋友圈（单页模式）
+
+用户在朋友圈点开分享卡片时，微信**不会**打开完整小程序，而是进入「单页模式」（场景值 1154）：顶部导航栏与底部「前往小程序」操作栏由微信渲染，页面自身**没有登录态**，跳转、页内分享、报名这些交互也被禁用。官方限制见[分享到朋友圈](https://developers.weixin.qq.com/miniprogram/dev/framework/open-ability/share-timeline.html)。
+
+上线前必须在云开发控制台做两件事，否则**审核通过、正常招募中的活动在朋友圈里也会显示成「活动不存在或已下架」**——未登录的云函数调用会被安全规则直接拦下，前端一条数据都拿不到：
+
+1. 云控制台 → 设置 → 权限设置：为云环境开启「允许未登录访问」；
+2. 开启后云函数 / 数据库 / 文件存储都必须改用安全规则（未登录访问时规则里的 `auth` 为 `null`，见[未登录模式](https://developers.weixin.qq.com/miniprogram/dev/wxcloudservice/wxcloud/basis/identityless)）：
+   - `activity` 云函数：`{ "activity": { "invoke": true }, "*": { "invoke": "auth != null" } }` —— 只放开活动接口，`admin` / `seed` / `contentCheck` 仍然要求登录态；需要身份的 `create` / `update` / `join` / `quit` / `toggle` / `mine` / `report` / `deleteAccount` 在云函数内部另有 `openid` 守卫，未登录一律返回 `UNAUTHORIZED`（`feedback` 是唯一例外：意见反馈本来就允许未登录提交，记录里的昵称会写成「未登录用户」）；
+   - 数据库：`{ "read": false, "write": false }` —— 客户端从不直连数据库，读写都走云函数（服务端不受安全规则限制）；
+   - 文件存储：`{ "read": true, "write": "resource.openid == auth.openid" }` —— 与现状「所有用户可读，仅创建者可读写」等价，分享海报里的群二维码要由 C 端直接下载。
+
+没做这一步时的现象可以在开发者工具里稳定复现：把编译场景值设成 1154（模拟朋友圈打开）后，`wx.cloud.callFunction` 会返回
+`errCode: -501023 permission denied | errMsg: Unauthenticated access is denied`（HTTP 500），页面拿不到任何数据，只能落到兜底态。
+
+页面侧（`pages/activity/detail/index.js`）已按官方要求做了适配：
+
+1. 按场景值 1154 识别单页模式，并且不把场景值当成活动 id（`options.scene` 既是小程序码里的活动 id，也可能是启动场景值）；
+2. 详情页 JSON 配 `singlePage.navigationBarFit: "squeezed"` —— 自定义导航栏页面在单页模式下默认是 `float`，微信导航栏会压住页面内容；
+3. 单页模式下不渲染被禁用的 `navigation-bar`，隐藏分享 / 举报 / 返回入口，主按钮降级为「浏览模式不可报名」（不做「点击前往小程序」这类诱导），活动信息照常完整展示；
+4. 接口失败与「活动不存在」分开：失败显示可重试的「加载失败」，不再谎报下架。`services/api.js` 的 `callCloud` 把原始错误挂在 `err.raw`（`errCode` / `errMsg`）上，便于区分网络问题与安全规则拦截。
+
+`activity` 云函数已经做到「没有 openid 也能查公开活动」：`detail` / `home` / `list` 只用文档数据，未登录时 `publicActivity(doc, '')` 给出的 `joined` / `isOrganizer` 都是 `false`。
+
 ## 机审：内容安全检测 + 群二维码识别
 
 审核解决「人来看」，机审解决「机器先筛」：机器拦下明确违规的、放行明确合规的，只有机器拿不准的才进人工队列。三类检测的实现路径不同：

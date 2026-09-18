@@ -359,6 +359,18 @@
   padding: 0 70rpx;
 }
 
+/* 朋友圈单页模式：顶部导航栏与底部操作栏都由微信渲染，页面被挤压后不再有底部安全区 */
+.detail-page.single-page .action-bar {
+  padding-bottom: 16rpx;
+}
+
+.single-page-tip {
+  margin-bottom: 14rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: var(--text-sub);
+}
+
 .share-list {
   display: flex;
   padding: 10rpx 24rpx 40rpx;

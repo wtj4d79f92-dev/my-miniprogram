@@ -9,16 +9,50 @@ const location = require('../../../utils/location')
 const REPORT_REASONS = ['虚假信息或诈骗', '违法违规内容', '侵权或盗用他人内容', '广告骚扰', '其他']
 
 /**
- * 活动 id 的两个来源：
+ * 朋友圈单页模式的场景值。用户在朋友圈点开分享卡片时，微信不会打开完整小程序，而是进入「单页模式」：
+ * 页面没有登录态（wx.login 等登录相关接口不可用），跳转、分享、报名这类交互也被禁用，
+ * 云开发资源还必须在控制台开启「允许未登录访问」并配好安全规则才能读取 —— 否则 callFunction
+ * 直接失败，页面只能落到兜底态。微信官方建议用「场景值等于 1154」来判断并做页面适配。
+ */
+const SINGLE_PAGE_SCENE = 1154
+
+/** 本次启动参数：单页模式判断、以及 onLoad 没拿到参数时的兜底都从这里取 */
+function launchEntry() {
+  try {
+    const info =
+      (typeof wx.getEnterOptionsSync === 'function' && wx.getEnterOptionsSync()) ||
+      (typeof wx.getLaunchOptionsSync === 'function' && wx.getLaunchOptionsSync()) ||
+      {}
+    return info || {}
+  } catch (e) {
+    return {}
+  }
+}
+
+function isSinglePageMode() {
+  return Number(launchEntry().scene) === SINGLE_PAGE_SCENE
+}
+
+/**
+ * 活动 id 的来源：
  * - 分享卡片 / 页面跳转带的是 query，即 options.id；
  * - 扫小程序码（海报上那张）进来时，云端把活动 id 写在 scene 里并且做了 URL 编码，
  *   只能从 options.scene 取。漏了这条，扫码打开的永远是「活动不存在或已下架」。
+ * - 朋友圈单页模式下微信可能不下发 onLoad 参数，此时用启动参数里的 query 兜底，
+ *   别让参数缺失被显示成「活动不存在」。
+ * 另外 options.scene 同时也是「启动场景值」（如单页模式是 1154），场景值是纯数字，
+ * 不能当成活动 id 去查，否则朋友圈分享页会稳定落到兜底态。
  */
 function resolveActivityId(options) {
   const opts = options || {}
   if (opts.id) return String(opts.id)
-  const scene = opts.scene ? String(opts.scene) : ''
+  const entry = launchEntry()
+  const entryQuery = entry.query || {}
+  if (isSinglePageMode() && entryQuery.id) return String(entryQuery.id)
+  const raw = opts.scene === undefined || opts.scene === null || opts.scene === '' ? entryQuery.scene : opts.scene
+  const scene = raw === undefined || raw === null ? '' : String(raw)
   if (!scene) return ''
+  if (scene === String(entry.scene || '')) return ''
   try {
     return decodeURIComponent(scene)
   } catch (e) {
@@ -39,6 +73,11 @@ Page({
     },
     loading: true,
     notFound: false,
+    // 接口 / 权限失败（例如云开发没开「允许未登录访问」）与「活动不存在」是两回事：
+    // 前者要能重试，不能谎报成「已下架」
+    loadError: '',
+    // 朋友圈单页模式：页面无登录态，报名 / 分享 / 跳转都被微信禁用，只做内容展示
+    singlePage: false,
     agreed: false,
     user: null,
     showSharePanel: false,
@@ -55,7 +94,7 @@ Page({
   onLoad(options) {
     const id = resolveActivityId(options)
     const app = getApp()
-    this.setData({ id, user: app.globalData.user })
+    this.setData({ id, singlePage: isSinglePageMode(), user: app.globalData.user })
     this.loadDetail()
   },
 
@@ -65,7 +104,7 @@ Page({
   },
 
   loadDetail() {
-    this.setData({ loading: true })
+    this.setData({ loading: true, loadError: '' })
     return api
       .detail(this.data.id)
       .then((activity) => {
@@ -77,9 +116,23 @@ Page({
         this.applyActivity(activity)
         return null
       })
-      .catch(() => {
-        this.setData({ loading: false, notFound: true })
+      .catch((err) => {
+        // 以前这里直接置 notFound，等于把「接口失败」说成「活动已下架」：
+        // 朋友圈单页模式没有登录态、云开发又没开未登录访问时，一切正常活动都会显示成不存在
+        console.warn('[activity-detail] 活动详情加载失败', err)
+        this.setData({
+          loading: false,
+          notFound: false,
+          loadError: this.data.singlePage
+            ? '朋友圈内暂时无法加载该活动，请稍后重试'
+            : (err && err.message) || '加载失败，请稍后重试',
+        })
       })
+  },
+
+  /** 加载失败后的重试：单页模式下的失败多半是网络抖动或云开发权限没配好，让用户能再试一次 */
+  retryLoad() {
+    return this.loadDetail()
   },
 
   applyActivity(raw) {
@@ -134,7 +187,11 @@ Page({
         : !!myOpenid && (raw.joinedPeople || []).some((item) => item.openid === myOpenid)
     // style 为空使用主色按钮，outline / manage 为次要按钮样式
     let mainBtn = { text: '我要报名', disabled: false, mode: 'join', style: '' }
-    if (activity.expired) {
+    if (this.data.singlePage) {
+      // 单页模式没有登录态，登录页、报名、跳转都会被微信拦下（点了才弹「请前往小程序使用完整服务」），
+      // 所以按钮只说明情况，不再引导点击
+      mainBtn = { text: '浏览模式不可报名', disabled: true, mode: 'singlepage', style: 'manage' }
+    } else if (activity.expired) {
       // 展示期届满（发布满 7 天）：已自动关闭，谁都不能再报名，发起人也不能重开或重提
       mainBtn = { text: '活动已到期', disabled: true, mode: 'expired', style: 'manage' }
     } else if (isOrganizer) {
@@ -211,7 +268,7 @@ Page({
 
   onMainTap() {
     const mode = this.data.mainBtn.mode
-    if (mode === 'closed' || mode === 'full' || mode === 'audit' || mode === 'expired') return
+    if (mode === 'closed' || mode === 'full' || mode === 'audit' || mode === 'expired' || mode === 'singlepage') return
     if (mode === 'edit') {
       // 驳回后回到发布页，表单预填原内容，重新提交审核
       wx.navigateTo({ url: `/pages/activity/publish/index?id=${this.data.id}` })
@@ -280,6 +337,8 @@ Page({
   onReportTap() {
     const activity = this.data.activity
     if (!activity) return
+    // 单页模式没有登录态，举报这类需要身份的入口不可用（入口在页面上也已隐藏）
+    if (this.data.singlePage) return
     this.ensureLogin('举报活动需要先登录，是否立即登录？').then((user) => {
       if (!user) return
       this.handleLoginSuccess(user)
@@ -437,6 +496,8 @@ Page({
   /* ------------------------------ 分享 ------------------------------ */
 
   openSharePanel() {
+    // 单页模式不支持在小程序页面内发起分享，入口已隐藏，这里只做兜底
+    if (this.data.singlePage) return
     this.setData({ showSharePanel: true })
   },
 
@@ -451,6 +512,7 @@ Page({
   },
 
   onSharePoster() {
+    if (this.data.singlePage) return
     this.setData({ showSharePanel: false })
     const modal = this.selectComponent('#poster-modal')
     if (modal) modal.open(this.data.activity)
@@ -476,10 +538,14 @@ Page({
     return {
       title: `${activity.title}，一起来组队吧！`,
       query: `id=${activity.id}`,
+      // 朋友圈卡片的缩略图同样只认可访问的图片地址，优先用云函数换好的 https 临时链接
+      imageUrl: activity.coverSrc || activity.cover || '',
     }
   },
 
   goBack() {
+    // 单页模式下微信不允许页面跳转（navigateBack / switchTab 都在禁用列表里）
+    if (this.data.singlePage) return
     const pages = getCurrentPages()
     if (pages.length > 1) {
       wx.navigateBack({ delta: 1 })

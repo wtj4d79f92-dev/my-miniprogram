@@ -2184,6 +2184,159 @@ function checkCloudShapeFixes() {
     })
 }
 
+/* -------------- 朋友圈分享：单页模式适配 -------------- */
+/**
+ * 用户在朋友圈点开分享卡片，微信不会打开完整小程序，而是进入「单页模式」：
+ * 页面没有登录态（wx.login 等登录接口不可用），跳转、分享、报名这类交互被禁用，
+ * 云开发资源还必须在控制台开启「允许未登录访问」并配好安全规则才能读到。
+ * 老实现把「接口失败」和「活动不存在」混成同一句「活动不存在或已下架」，
+ * 于是审核通过、正常招募中的活动在朋友圈里也被显示成已下架。
+ * 这里把入口判断、失败态与单页模式的交互降级钉住。
+ */
+function checkSinglePageShare() {
+  const api = require(path.join(ROOT, 'services/api'))
+  const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
+
+  /* ① 页面配置：自定义导航栏页面在单页模式下默认是 float（微信导航栏压住页面内容），要显式改成 squeezed */
+  const detailJson = readJSON(path.join(ROOT, 'pages/activity/detail/index.json'))
+  log(
+    !!detailJson.singlePage && detailJson.singlePage.navigationBarFit === 'squeezed',
+    '朋友圈单页模式：详情页配置 singlePage.navigationBarFit=squeezed，内容不被微信导航栏压住'
+  )
+
+  /* ② 页面结构：禁用能力对应的入口在单页模式下不渲染，加载失败要有独立的重试态 */
+  const wxml = read('pages/activity/detail/index.wxml')
+  log(
+    /<navigation-bar wx:if="\{\{!singlePage\}\}"/.test(wxml),
+    '朋友圈单页模式：不再渲染被禁用的 navigation-bar 组件'
+  )
+  log(
+    /wx:elif="\{\{loadError && !loading\}\}"/.test(wxml) && /bindtap="retryLoad"/.test(wxml),
+    '活动详情：加载失败单独成态并可重试，不再和「活动不存在」混在一起'
+  )
+  log(
+    /wx:if="\{\{!singlePage\}\}" class="share-btn"/.test(wxml),
+    '朋友圈单页模式：隐藏分享入口（单页模式不支持页内发起分享）'
+  )
+  log(
+    /wx:if="\{\{!isOrganizer && !singlePage\}\}" class="report-entry"/.test(wxml),
+    '朋友圈单页模式：隐藏需要登录态的举报入口'
+  )
+  log(/single-page-tip/.test(wxml), '朋友圈单页模式：底部如实说明「仅展示活动信息，报名操作不可用」')
+
+  /* ③ 页面逻辑：入口判定、失败态、单页模式下的按钮 */
+  const originalDetail = api.detail
+  const originalEnter = global.wx.getEnterOptionsSync
+  let entry = { scene: 1154, query: { id: 'act_from_launch_query' } }
+  global.wx.getEnterOptionsSync = () => entry
+
+  const pageOptions = []
+  global.Page = (options) => pageOptions.push(options)
+  delete require.cache[path.join(ROOT, 'pages/activity/detail/index.js')]
+  api.detail = () => Promise.resolve(null)
+  require(path.join(ROOT, 'pages/activity/detail/index.js'))
+  const detailPage = pageOptions[0]
+
+  const makeCtx = (initial) =>
+    Object.assign({}, detailPage, {
+      data: Object.assign({}, detailPage.data, { id: '', singlePage: false, user: null }, initial || {}),
+      setData(patch) {
+        Object.assign(this.data, patch)
+      },
+      selectComponent() {
+        return null
+      },
+    })
+
+  const restore = () => {
+    api.detail = originalDetail
+    if (originalEnter === undefined) delete global.wx.getEnterOptionsSync
+    else global.wx.getEnterOptionsSync = originalEnter
+  }
+
+  // 单页模式下 onLoad 只带场景值：1154 是场景值不是活动 id，不能拿去查活动
+  entry = { scene: 1154, query: {} }
+  const sceneCtx = makeCtx()
+  sceneCtx.loadDetail = () => {
+    sceneCtx.loadedId = sceneCtx.data.id
+  }
+  detailPage.onLoad.call(sceneCtx, { scene: '1154' })
+  log(sceneCtx.data.singlePage === true, '朋友圈单页模式：场景值 1154 被识别为单页模式')
+  log(sceneCtx.loadedId === '', '朋友圈单页模式：场景值 1154 不会被当成活动 id')
+  entry = { scene: 1154, query: { id: 'act_from_launch_query' } }
+
+  // 微信没下发 onLoad 参数时，用启动参数里的 query 兜底，别直接落到「活动不存在」
+  const fallbackCtx = makeCtx()
+  fallbackCtx.loadDetail = () => {
+    fallbackCtx.loadedId = fallbackCtx.data.id
+  }
+  detailPage.onLoad.call(fallbackCtx, {})
+  log(
+    fallbackCtx.loadedId === 'act_from_launch_query',
+    '朋友圈单页模式：onLoad 拿不到参数时用启动参数里的 query 兜底'
+  )
+
+  // 非单页模式：启动场景值同样不能冒充活动 id（历史上扫码进来的 scene 才是 id）
+  entry = { scene: 1008, query: {} }
+  const chatCtx = makeCtx()
+  chatCtx.loadDetail = () => {
+    chatCtx.loadedId = chatCtx.data.id
+  }
+  detailPage.onLoad.call(chatCtx, { scene: '1008' })
+  log(chatCtx.loadedId === '' && chatCtx.data.singlePage === false, '活动详情：会话场景值不会被当成活动 id')
+  entry = { scene: 1154, query: { id: 'act_from_launch_query' } }
+
+  // 单页模式没有登录态：主按钮只做说明，不再引导点击
+  const actCtx = makeCtx({ id: 'act_single_page', singlePage: true })
+  detailPage.applyActivity.call(actCtx, {
+    id: 'act_single_page',
+    title: '朋友圈里的活动',
+    type: 'hiking',
+    tags: [],
+    startTime: Date.now() + 86400000,
+    endTime: Date.now() + 2 * 86400000,
+    location: '浙江省杭州市 九溪',
+    maxPeople: 10,
+    joinedPeople: [],
+    joinedCount: 0,
+    status: 'recruiting',
+    auditStatus: 'approved',
+    organizer: { nickName: '发起人', avatarColor: '#4ECDC4', avatarUrl: '', avatarText: '发' },
+  })
+  log(
+    actCtx.data.mainBtn.disabled === true && actCtx.data.mainBtn.mode === 'singlepage',
+    `朋友圈单页模式：主按钮降级为不可点（${actCtx.data.mainBtn.text}）`
+  )
+  detailPage.openSharePanel.call(actCtx)
+  log(actCtx.data.showSharePanel === false, '朋友圈单页模式：点不到被禁用的分享面板')
+
+  // 接口失败要说「加载失败」并能重试，不能说成「活动不存在或已下架」
+  const failCtx = makeCtx({ id: 'act_single_page', singlePage: true })
+  const originalWarn = console.warn
+  console.warn = () => {}
+  api.detail = () => Promise.reject(Object.assign(new Error('网络异常，请稍后重试'), { code: 'NETWORK_ERROR' }))
+  return detailPage
+    .loadDetail.call(failCtx)
+    .then(() => {
+      log(
+        failCtx.data.notFound === false && /加载|重试/.test(failCtx.data.loadError),
+        `活动详情：接口失败显示加载失败与重试，而不是「已下架」（${failCtx.data.loadError}）`
+      )
+      // 普通模式下接口失败同样不能落到「活动不存在」
+      const normalCtx = makeCtx({ id: 'act_normal' })
+      return detailPage.loadDetail.call(normalCtx).then(() => {
+        log(normalCtx.data.notFound === false, '活动详情：普通模式下接口失败也不会显示成「活动不存在」')
+      })
+    })
+    .catch((e) => {
+      log(false, `朋友圈单页模式适配：用例执行异常 → ${e && e.message}`)
+    })
+    .then(() => {
+      console.warn = originalWarn
+      restore()
+    })
+}
+
 /**
  * 本轮合规加固的断言集合：
  * - 手机号只走微信授权 code，默认昵称不含手机号；
@@ -2450,6 +2603,7 @@ return checkDeleteAccount()
   .then(() => checkHardening())
   .then(() => checkExpireRule())
   .then(() => checkCloudShapeFixes())
+  .then(() => checkSinglePageShare())
   .then(() => checkSeedData())
 })
 .then(() => {
