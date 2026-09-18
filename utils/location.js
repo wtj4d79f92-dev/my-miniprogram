@@ -129,34 +129,78 @@ function reverseGeocode(lng, lat) {
 }
 
 /**
- * 获取当前城市
+ * 用户主动拒绝授权（或系统里关掉了微信定位）：换坐标系重试也拿不到，直接按「定位未开启」处理。
+ * @param {object} err 定位接口的 fail 回调参数
+ * @returns {boolean}
+ */
+function isAuthDeny(err) {
+  return /auth deny|auth denied|authorize/i.test(String((err && err.errMsg) || err || ''))
+}
+
+/**
+ * 模糊定位：判「在哪个城市」只要城市级精度，用 wx.getFuzzyLocation 就够了。
+ *
+ * 原来的 wx.getLocation 需要在小程序后台单独申请开通：接口权限页显示「暂无权限」时调用直接 fail，
+ * 用户永远拿不到城市，而且未开通的接口在代码提审环节会被拦截；wx.getFuzzyLocation 是默认开通的，
+ * 拿到的模糊坐标判「在哪个城市」完全够用，所以主路径只走它。
+ *
+ * type 先按 gcj02 要（与地图选点、导航的坐标系一致），个别环境不认这个值时报错，
+ * 再按默认坐标系要一次 —— 判城市用不上米级精度，坐标系偏移不影响结果。
+ * 基础库低于 2.25.0 没有这个接口，返回 unsupported，由调用方降级成手动选城市。
+ * @returns {Promise<{ coords?: object, denied?: boolean, unsupported?: boolean }>}
+ */
+function fuzzyPosition() {
+  const queue = ['gcj02', '']
+  return new Promise((resolve) => {
+    if (!wx.getFuzzyLocation) {
+      resolve({ unsupported: true })
+      return
+    }
+    const attempt = (index) => {
+      if (index >= queue.length) {
+        resolve({})
+        return
+      }
+      const options = {
+        success: (res) => resolve({ coords: res }),
+        fail: (err) => {
+          if (isAuthDeny(err)) {
+            resolve({ denied: true })
+            return
+          }
+          attempt(index + 1)
+        },
+      }
+      if (queue[index]) options.type = queue[index]
+      wx.getFuzzyLocation(options)
+    }
+    attempt(0)
+  })
+}
+
+/**
+ * 获取当前城市：拿不到模糊坐标（拒绝授权 / 基础库不支持）时按「定位未开启」处理，
+ * 交由页面引导用户去设置里开权限，或手动选城市。
  * @returns {Promise<string>} 归一化城市名，失败返回 ''
  */
 function locate() {
   const app = getApp()
-  return new Promise((resolve) => {
-    wx.getLocation({
-      type: 'gcj02',
-      success: (res) => {
-        if (app) {
-          app.globalData.locationDenied = false
-        }
-        reverseGeocode(res.longitude, res.latitude).then((city) => {
-          if (city) {
-            resolve(city)
-            return
-          }
-          resolve(nearestCity(res.longitude, res.latitude))
-        })
-      },
-      fail: () => {
-        if (app) {
-          app.globalData.locationDenied = true
-          app.globalData.cityLocated = false
-        }
-        resolve('')
-      },
-    })
+  return fuzzyPosition().then((pos) => {
+    const coords = pos && pos.coords
+    if (!coords) {
+      if (app) {
+        app.globalData.locationDenied = true
+        app.globalData.cityLocated = false
+      }
+      return ''
+    }
+    if (app) {
+      app.globalData.locationDenied = false
+    }
+    return reverseGeocode(coords.longitude, coords.latitude).then(
+      // 未配置地图 key / 逆地址解析失败时，按模糊坐标就近匹配城市
+      (city) => city || nearestCity(coords.longitude, coords.latitude)
+    )
   })
 }
 

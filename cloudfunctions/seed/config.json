@@ -1,0 +1,9 @@
+{
+  "triggers": [
+    {
+      "name": "refreshDemoActivities",
+      "type": "timer",
+      "config": "0 7 4 * * * *"
+    }
+  ]
+}

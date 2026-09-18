@@ -53,7 +53,9 @@ function collectJsonFiles(dir, acc) {
     const full = path.join(dir, name)
     const stat = fs.statSync(full)
     if (stat.isDirectory()) {
-      if (name === 'node_modules' || name === '.git') return
+      // scripts/ 里放的是本地校验脚本与提审导出物（activities.json 是逐行 JSON，不是标准 JSON），
+      // 不参与 usingComponents 引用解析；云函数目录里也没有页面配置
+      if (name === 'node_modules' || name === '.git' || name === 'scripts') return
       collectJsonFiles(full, acc)
     } else if (name.endsWith('.json')) {
       acc.push(full)
@@ -227,6 +229,36 @@ fs.readdirSync(path.join(ROOT, 'cloudfunctions'))
       `云调用权限：${name} 声明的接口覆盖代码用到的${missing.length ? `（缺 ${missing.join('、')}）` : ''}`
     )
   })
+
+/* -------------- 3.8 地理位置接口声明检查 --------------
+ * requiredPrivateInfos 里没声明的地理位置接口，线上调用会直接 fail，用户侧只看到「定位未开启」。
+ * 这里把「代码里真正用到的接口」和 app.json 的声明对一遍，避免换了定位接口忘了改声明。
+ * 只看随包上传的业务代码（scripts/ 是本地校验脚本，里面的桩函数不算），并跳过注释行，
+ * 避免说明文字里提到的接口名被当成真实调用。
+ */
+const declaredPrivateInfos = appJson.requiredPrivateInfos || []
+const privateInfoPattern =
+  /wx\.(getFuzzyLocation|getLocation|onLocationChange|startLocationUpdate|startLocationUpdateBackground|chooseLocation|choosePoi|chooseAddress)\b/g
+const usedPrivateInfos = new Set()
+jsFiles
+  .filter((file) => path.relative(ROOT, file).indexOf(`scripts${path.sep}`) !== 0)
+  .forEach((file) => {
+    const source = fs
+      .readFileSync(file, 'utf8')
+      .split('\n')
+      .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+      .join('\n')
+    let matched = privateInfoPattern.exec(source)
+    while (matched) {
+      usedPrivateInfos.add(matched[1])
+      matched = privateInfoPattern.exec(source)
+    }
+  })
+const missingPrivateInfos = Array.from(usedPrivateInfos).filter((api) => declaredPrivateInfos.indexOf(api) === -1)
+log(
+  missingPrivateInfos.length === 0,
+  `地理位置接口声明：app.json 覆盖代码用到的${missingPrivateInfos.length ? `（缺 ${missingPrivateInfos.join('、')}）` : ''}`
+)
 
 /* -------------- 3.7 前后端镜像文件一致性检查 --------------
  * 云函数打包时只上传自己的目录，require 不到小程序根目录的文件，所以城市字典、机审放行判定
@@ -448,6 +480,11 @@ function createWxStub() {
   const storage = {}
   return {
     storage,
+    // 页面标题：搜索优化用，这里记录最后一次设置的值供断言
+    navigationBarTitle: '',
+    setNavigationBarTitle(options) {
+      this.navigationBarTitle = (options && options.title) || ''
+    },
     getStorageSync(key) {
       return Object.prototype.hasOwnProperty.call(storage, key) ? storage[key] : ''
     },
@@ -1105,6 +1142,10 @@ function checkDetailCoverUrl() {
   const activity = ctx.data.activity
   log(!!activity && activity.coverSrc === 'https://cdn.test/detail-cover.jpg', '活动详情：封面优先用临时链接渲染')
   log(!!activity && activity.qrSrc === 'https://cdn.test/detail-qr.jpg', '活动详情：群二维码优先用临时链接渲染')
+  log(
+    global.wx.navigationBarTitle === '带封面的活动 · 旷行吖',
+    `活动详情：页面标题用于微信搜索理解页面 → ${global.wx.navigationBarTitle}`
+  )
 }
 
 return checkCoverUrlPreference().then(() => {
@@ -1479,7 +1520,184 @@ function checkLocationNavigation() {
   })()
 }
 
-return checkPickedPlaceText().then(() => checkLocationNavigation())
+/* ---------- 10. 定位主路径：只走默认开通的模糊定位，不碰需要单独申请开通的精确接口 ---------- */
+/**
+ * 精确接口在小程序后台显示「暂无权限」时调用直接 fail，用户侧只看到首页一直「定位未开启」，
+ * 而且未开通的接口在提审环节还会被拦截。判城市只要城市级精度，所以主路径改走默认开通的模糊定位：
+ * - 模糊定位成功就用它的坐标匹配城市，全程不调用精确接口；
+ * - 用户明确拒绝授权时按「定位未开启」处理，页面引导去设置里开权限；
+ * - 基础库低于 2.25.0 没有模糊定位接口，降级成手动选城市，同样不去调未开通的接口。
+ */
+function checkFuzzyLocate() {
+  const location = require(path.join(ROOT, 'utils/location'))
+  const originalFuzzy = global.wx.getFuzzyLocation
+  const originalPrecise = global.wx.getLocation
+  const fuzzyCalls = []
+  const preciseCalls = []
+  let fuzzyReply = null
+  let fuzzyFail = 'getFuzzyLocation:fail auth deny'
+
+  config.mapKey = ''
+  const fuzzyMock = (options) => {
+    fuzzyCalls.push(options.type || '(默认)')
+    if (fuzzyReply) options.success(fuzzyReply)
+    else options.fail({ errMsg: fuzzyFail })
+  }
+  global.wx.getFuzzyLocation = fuzzyMock
+  // 精确接口的桩只用来计数：被调用一次就说明主路径还挂着未开通的接口
+  global.wx.getLocation = (options) => {
+    preciseCalls.push(options.type)
+    options.fail({ errMsg: 'getLocation:fail api scope is not declared' })
+  }
+  const chengdu = { longitude: 104.0805, latitude: 30.6673 }
+
+  return (async () => {
+    // 1) 模糊定位可用：拿到城市就够了，全程不碰未开通的精确接口
+    globalData.locationDenied = true
+    fuzzyReply = chengdu
+    fuzzyCalls.length = 0
+    preciseCalls.length = 0
+    let city = await location.locate()
+    log(city === '成都', '定位：模糊定位坐标能匹配出当前城市')
+    log(fuzzyCalls.length === 1 && fuzzyCalls[0] === 'gcj02', '定位：默认按 gcj02 要模糊坐标，与地图选点坐标系一致')
+    log(preciseCalls.length === 0, '定位：拿城市全程不调用未开通的精确接口，提审不会被拦')
+    log(globalData.locationDenied === false, '定位：定位成功后清掉「定位未开启」标记')
+
+    // 2) 用户拒绝授权：按「定位未开启」处理，换坐标系也不重试
+    fuzzyCalls.length = 0
+    preciseCalls.length = 0
+    fuzzyReply = null
+    fuzzyFail = 'getFuzzyLocation:fail auth deny'
+    city = await location.locate()
+    log(city === '' && globalData.locationDenied === true, '定位：用户拒绝授权时提示「定位未开启」')
+    log(fuzzyCalls.length === 1 && preciseCalls.length === 0, '定位：拒绝授权后不再重复请求，页面走「去设置」引导')
+
+    // 3) 基础库过旧没有模糊定位接口：降级成手动选城市，不误调未开通的接口
+    preciseCalls.length = 0
+    // 删掉接口本身来模拟低版本基础库，跑完再把桩装回去
+    delete global.wx.getFuzzyLocation
+    city = await location.locate()
+    log(city === '' && globalData.locationDenied === true, '定位：低版本基础库没有模糊定位接口时降级提示「定位未开启」')
+    log(preciseCalls.length === 0, '定位：降级时也不会去调未开通的精确接口')
+    global.wx.getFuzzyLocation = fuzzyMock
+
+    // 4) 模糊定位报的不是授权问题（如接口未声明）：换默认坐标系再试一次，仍失败才提示未开启
+    fuzzyCalls.length = 0
+    preciseCalls.length = 0
+    fuzzyReply = null
+    fuzzyFail = 'getFuzzyLocation:fail api scope is not declared'
+    city = await location.locate()
+    log(
+      city === '' && globalData.locationDenied === true && fuzzyCalls.length === 2 && preciseCalls.length === 0,
+      '定位：模糊定位非授权失败时换坐标系再试一次，仍失败才落到「定位未开启」'
+    )
+
+    // 5) 环境不认 gcj02：按默认坐标系再要一次模糊定位，别把能拿到的城市丢掉
+    const fuzzyTypes = []
+    global.wx.getFuzzyLocation = (options) => {
+      fuzzyTypes.push(options.type || '(默认)')
+      if (options.type) options.fail({ errMsg: 'getFuzzyLocation:fail invalid type' })
+      else options.success(chengdu)
+    }
+    city = await location.locate()
+    log(
+      city === '成都' && fuzzyTypes.length === 2 && fuzzyTypes[1] === '(默认)',
+      '定位：环境不认 gcj02 时按默认坐标系再要一次，城市照样能拿到'
+    )
+
+    global.wx.getFuzzyLocation = originalFuzzy
+    global.wx.getLocation = originalPrecise
+    globalData.locationDenied = false
+    return null
+  })()
+}
+
+/* ---------- 11. 首页不在启动时自动索要位置权限 ---------- */
+/**
+ * 首页曾在 onLoad 里自动 app.relocate()，用户一进小程序什么都没点就会看到位置授权弹窗
+ * （审核口径里「收集地理位置须经用户明确同意」，启动即索权既打断浏览也容易被挑）。
+ * 现在改成：启动只读已有状态、按「全部城市」展示，等用户点定位栏再弹。
+ * 这里把两条路径都钉住：启动/切回首页不请求定位，点击定位栏才请求。
+ */
+function checkHomeNoAutoLocate() {
+  const pagePath = path.join(ROOT, 'pages/home/home.js')
+  const pageOptions = []
+  const relocateCalls = []
+  const originPage = global.Page
+  const originGetApp = global.getApp
+  const originShowLoading = global.wx.showLoading
+  const originHideLoading = global.wx.hideLoading
+  const homeGlobalData = { city: '', user: null, locationDenied: false, cityLocated: false }
+
+  global.Page = (options) => pageOptions.push(options)
+  global.getApp = () => ({
+    globalData: homeGlobalData,
+    relocate() {
+      relocateCalls.push('relocate')
+      homeGlobalData.city = '成都'
+      homeGlobalData.cityLocated = true
+      return Promise.resolve('成都')
+    },
+  })
+  global.wx.showLoading = () => {}
+  global.wx.hideLoading = () => {}
+
+  delete require.cache[pagePath]
+  try {
+    require(pagePath)
+  } finally {
+    global.Page = originPage
+  }
+  const page = pageOptions[pageOptions.length - 1]
+  const ctx = {
+    data: {},
+    setData(patch) {
+      Object.assign(this.data, patch)
+    },
+    loadData() {
+      return Promise.resolve(null)
+    },
+    getTabBar() {
+      return null
+    },
+  }
+  Object.keys(page).forEach((key) => {
+    if (typeof page[key] === 'function' && !ctx[key]) {
+      ctx[key] = (...args) => page[key].apply(ctx, args)
+    }
+  })
+
+  return Promise.resolve()
+    .then(() => {
+      page.onLoad.call(ctx)
+      log(relocateCalls.length === 0, '首页：启动时不自动请求定位，位置授权弹窗等用户点击')
+      log(
+        ctx.data.cityLabel === '全部' && ctx.data.locateTip === '点击定位',
+        '首页：首屏未定位时按「全部城市」展示，定位栏提示「点击定位」'
+      )
+      page.onShow.call(ctx)
+      log(relocateCalls.length === 0, '首页：切回首页同样不自动请求定位')
+      return null
+    })
+    .then(() => ctx.onLocateTap())
+    .then(() => {
+      log(relocateCalls.length === 1, '首页：用户点定位栏才发起定位（主动触发）')
+      log(
+        ctx.data.cityLabel === '成都' && ctx.data.locationDenied === false && ctx.data.locateTip === '点击重新定位',
+        '首页：定位成功后定位栏显示城市，并可再次点击重新定位'
+      )
+      global.getApp = originGetApp
+      global.wx.showLoading = originShowLoading
+      global.wx.hideLoading = originHideLoading
+      delete require.cache[pagePath]
+      return null
+    })
+}
+
+return checkPickedPlaceText()
+  .then(() => checkLocationNavigation())
+  .then(() => checkFuzzyLocate())
+  .then(() => checkHomeNoAutoLocate())
 })
 .then(() => {
 /* ---------- 8. 城市选择器：省 + 全部按全省筛选 ---------- */
@@ -2106,10 +2324,133 @@ function checkHardening() {
     })
 }
 
+/* ---------------------- 提审演示数据（cloudfunctions/seed） ----------------------
+ * 演示数据是提审时的门面：审核员打开首页 / 广场 / 详情看到的就是这批活动。
+ * 它绕过发布表单直接写库，没有 normalizeForm 的校验兜底，字段漏一个线上就是空白或报错；
+ * 而且只有 auditStatus: approved 的活动才对外可见，所以「造了数据却看不见」也是这里的错。
+ */
+function checkSeedData() {
+  const seedData = require(path.join(ROOT, 'cloudfunctions/seed/lib/data'))
+  const dict = require(path.join(ROOT, 'utils/dict'))
+  const citiesCloud = require(path.join(ROOT, 'cloudfunctions/activity/lib/cities'))
+  const activitySource = fs.readFileSync(path.join(ROOT, 'cloudfunctions/activity/index.js'), 'utf8')
+  const now = Date.now()
+  const docs = seedData.buildDocs(now, {})
+
+  log(docs.length >= 20, `演示数据：活动条数 ${docs.length} 条`)
+
+  // ① 类型素材（名称 / emoji / 配色）必须与字典同源，否则卡片配色与类型名对不上
+  const typeMismatch = Object.keys(seedData.TYPES).filter((key) => {
+    const type = dict.ACTIVITY_TYPES.filter((item) => item.key === key)[0]
+    const seed = seedData.TYPES[key]
+    return !type || type.name !== seed.name || type.emoji !== seed.emoji || type.color !== seed.color
+  })
+  log(
+    typeMismatch.length === 0 && Object.keys(seedData.TYPES).length === dict.ACTIVITY_TYPES.length,
+    `演示数据：类型字典与 utils/dict.js 一致${typeMismatch.length ? `（不一致：${typeMismatch.join('、')}）` : ''}`
+  )
+
+  // ② 字段清单：normalizeForm 组装的表单字段 + create 补的运行期字段，演示数据一条都不能少。
+  // 直接从云函数源码里抽字段名（含 `title,` 这种简写属性），改了活动字段却忘了改演示数据时会在这里报出来
+  const sliceOf = (start, end) => activitySource.slice(activitySource.indexOf(start), activitySource.indexOf(end))
+  const fieldNamesIn = (source, indent) =>
+    (source.match(new RegExp(`^ {${indent}}([A-Za-z][A-Za-z0-9]*)\\s*[:,]`, 'gm')) || []).map((line) =>
+      line.trim().replace(/\s*[:,]$/, '')
+    )
+  const formFields = fieldNamesIn(sliceOf('function normalizeForm', 'function auditPatch'), 6)
+  const runtimeFields = fieldNamesIn(sliceOf('async function create(', 'async function update('), 4)
+  const missingFields = formFields.concat(runtimeFields).filter((field) => docs.some((doc) => doc[field] === undefined))
+  log(
+    formFields.length > 20 && runtimeFields.length >= 5 && missingFields.length === 0,
+    `演示数据：字段覆盖 normalizeForm + create 的全部 ${formFields.length + runtimeFields.length} 个字段${
+      missingFields.length ? `（缺 ${missingFields.join('、')}）` : ''
+    }`
+  )
+
+  // ③ 审核状态：pending / rejected 的活动只有发起人自己看得到，演示数据必须直接是已通过
+  log(docs.every((doc) => doc.auditStatus === 'approved'), '演示数据：全部为「审核已通过」，审核员打开就能看到')
+
+  // ④ 时间：开始时间在未来、结束不早于开始，且发布时间落在 7 天展示期内（见 utils/expire.js）
+  log(
+    docs.every((doc) => doc.startTime > now && doc.endTime >= doc.startTime),
+    '演示数据：开始时间都在未来，结束时间不早于开始时间'
+  )
+  log(
+    docs.every((doc) => doc.createTime > now - 7 * 86400000),
+    '演示数据：发布时间都在 7 天展示期内（不会一导入就被当成过期活动）'
+  )
+
+  // ⑤ 报名：人数与名单一致，且每条都还留得出名额 —— 审核员点进任意一条都能走完报名流程
+  log(
+    docs.every(
+      (doc) =>
+        doc.joinedCount === doc.joinedPeople.length && doc.joinedCount >= 0 && doc.joinedCount <= doc.maxPeople - 2
+    ),
+    '演示数据：报名人数与名单一致，且每条都留有不少于 2 个空位'
+  )
+  log(
+    docs.every((doc) => doc.organizer && doc.organizer.openid && doc.joinedPeople.every((m) => m.openid)),
+    '演示数据：发起人与报名成员都带快照字段（昵称 / 配色 / 头像文字）'
+  )
+
+  // ⑥ 城市：必须是广场 / 首页城市筛选认得的 key，否则按城市筛选时永远查不到
+  const unknownCity = docs.filter((doc) => !doc.city || citiesCloud.filterCityKeys(doc.city).indexOf(doc.city) === -1)
+  log(
+    unknownCity.length === 0,
+    `演示数据：城市都是筛选认得的 key${unknownCity.length ? `（可疑：${unknownCity.map((doc) => doc.city).join('、')}）` : ''}`
+  )
+
+  // ⑦ 覆盖面：广场能按类型 / 日期 / 星期几筛选，任一维度都不能筛出空列表
+  const byType = {}
+  const byDay = {}
+  const byWeekday = {}
+  docs.forEach((doc) => {
+    byType[doc.type] = (byType[doc.type] || 0) + 1
+    const day = new Date(doc.startTime).toDateString()
+    byDay[day] = (byDay[day] || 0) + 1
+    byWeekday[doc.startWeekday] = (byWeekday[doc.startWeekday] || 0) + 1
+  })
+  const dayCounts = Object.keys(byDay).map((key) => byDay[key])
+  const thinTypes = Object.keys(byType).filter((key) => byType[key] < 2)
+  const minPerDay = Math.min.apply(null, dayCounts)
+  log(
+    Object.keys(byType).length === dict.ACTIVITY_TYPES.length,
+    `演示数据：覆盖全部 ${Object.keys(byType).length} 种活动类型`
+  )
+  log(thinTypes.length === 0, `演示数据：每种类型至少 2 条${thinTypes.length ? `（偏少：${thinTypes.join('、')}）` : ''}`)
+  log(
+    dayCounts.length === 7 && minPerDay >= 2,
+    `演示数据：未来 7 天每天都有活动（按具体日期筛选不会空，单日最少 ${minPerDay} 条）`
+  )
+  log(Object.keys(byWeekday).length === 7, '演示数据：7 个星期几都有活动（按星期筛选不会空）')
+
+  // ⑧ 字段长度：与 cloudfunctions/activity/lib/helper.js 的 LIMITS 同一口径
+  const limits = { title: 30, desc: 500, location: 50, locationAddress: 100, feeNote: 60 }
+  const tooLong = docs.filter((doc) =>
+    Object.keys(limits).some((field) => String(doc[field] || '').length > limits[field])
+  )
+  log(tooLong.length === 0, '演示数据：标题 / 介绍 / 地点 / 费用说明都没超过字段长度上限')
+
+  // ⑨ 费用：平台不参与资金流转，非 AA 制必须是一段文字说明，AA 制不带说明
+  log(
+    docs.every((doc) => (doc.feeMode === 'nonAA' ? !!doc.feeNote : doc.feeMode === 'aa' && !doc.feeNote)),
+    '演示数据：AA 制不带费用说明，非 AA 制带文字说明'
+  )
+
+  // ⑩ id 唯一且带演示标记：清理演示数据时只删这一批，不碰真实用户发布的活动
+  const ids = docs.map((doc) => doc._id)
+  log(
+    new Set(ids).size === ids.length &&
+      docs.every((doc) => doc.isDemo === true && doc._id.indexOf(seedData.DEMO_PREFIX) === 0),
+    '演示数据：id 唯一且都带 isDemo 标记'
+  )
+}
+
 return checkDeleteAccount()
   .then(() => checkHardening())
   .then(() => checkExpireRule())
   .then(() => checkCloudShapeFixes())
+  .then(() => checkSeedData())
 })
 .then(() => {
   console.log(`\n通过 ${passed.length} 项，失败 ${errors.length} 项\n`)

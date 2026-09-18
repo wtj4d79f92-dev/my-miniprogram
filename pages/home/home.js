@@ -13,6 +13,7 @@ Page({
     city: '',
     cityLabel: '全部',
     locationDenied: false,
+    locateTip: '点击定位',
     banners: [],
     hotList: [],
     newestList: [],
@@ -24,13 +25,8 @@ Page({
 
   onLoad() {
     const app = getApp()
-    this.setData({
-      user: app.globalData.user,
-      city: app.globalData.city,
-      cityLabel: app.globalData.city || '全部',
-      locationDenied: app.globalData.locationDenied,
-    })
-    this.initCity()
+    this.setData({ user: app.globalData.user })
+    this.syncCityState()
   },
 
   onShow() {
@@ -38,11 +34,9 @@ Page({
     if (this.getTabBar && this.getTabBar()) {
       this.getTabBar().setData({ selected: 0 })
     }
-    this.setData({
-      user: app.globalData.user,
-      city: app.globalData.city,
-      cityLabel: app.globalData.city || '全部',
-    })
+    this.setData({ user: app.globalData.user })
+    this.syncCityState()
+    this.syncPageTitle()
     this.loadData()
   },
 
@@ -50,18 +44,42 @@ Page({
     this.loadData().then(() => wx.stopPullDownRefresh())
   },
 
-  /** 首次进入且用户未手动选过城市时自动定位 */
-  initCity() {
+  /**
+   * 同步城市状态：只读已有状态，不在启动时自动发起定位。
+   *
+   * 位置授权弹窗要等用户主动点定位栏（或在广场点城市栏）再弹，
+   * 一进小程序就索权既打断浏览，也容易被审核判成「未主动触发即索要敏感权限」。
+   * 首屏没定位时按「全部城市」展示，用户点一下定位栏即可自动匹配同城。
+   */
+  syncCityState() {
     const app = getApp()
-    if (app.globalData.city) return
-    app.relocate().then((city) => {
-      this.setData({
-        city: city || '',
-        cityLabel: city || '全部',
-        locationDenied: !city,
-      })
-      this.loadData()
+    const city = app.globalData.city || ''
+    this.setData({
+      city,
+      cityLabel: city || '全部',
+      locationDenied: app.globalData.locationDenied,
+      locateTip: city ? '点击重新定位' : '点击定位',
     })
+  },
+
+  /** 定位结果落到页面：城市 + 定位栏文案（失败按「定位未开启」处理） */
+  applyLocateResult(city) {
+    this.setData({
+      city: city || '',
+      cityLabel: city || '全部',
+      locationDenied: !city,
+      locateTip: city ? '点击重新定位' : '点击定位',
+    })
+    this.syncPageTitle()
+  },
+
+  /**
+   * 页面标题带上城市，方便微信理解页面主题（自定义导航栏下用户看不到）。
+   * 标题里保留「找搭子 / 同城」这类业务词，关键词入口拿不到时，标题是最直接的相关性来源。
+   */
+  syncPageTitle() {
+    const city = this.data.city
+    ui.setPageTitle(city ? `${city}找搭子 · 旷行吖` : '旷行吖 · 同城找搭子')
   },
 
   loadData() {
@@ -121,7 +139,7 @@ Page({
         wx.openSetting({
           success: () => {
             app.relocate().then((city) => {
-              this.setData({ city: city || '', cityLabel: city || '全部', locationDenied: !city })
+              this.applyLocateResult(city)
               this.loadData()
             })
           },
@@ -132,7 +150,7 @@ Page({
     wx.showLoading({ title: '定位中', mask: true })
     app.relocate().then((city) => {
       wx.hideLoading()
-      this.setData({ city: city || '', cityLabel: city || '全部', locationDenied: !city })
+      this.applyLocateResult(city)
       if (!city) ui.toast('定位未开启，可手动选择城市')
       this.loadData()
     })
@@ -147,7 +165,8 @@ Page({
     const app = getApp()
     const city = e.detail.city || ''
     app.setCity(city)
-    this.setData({ city, cityLabel: city || '全部', locationDenied: false })
+    this.setData({ city, cityLabel: city || '全部', locationDenied: false, locateTip: '点击重新定位' })
+    this.syncPageTitle()
     this.loadData()
   },
 
@@ -172,7 +191,7 @@ Page({
       return
     }
     app.relocate().then((city) => {
-      this.setData({ city: city || '', cityLabel: city || '全部', locationDenied: !city })
+      this.applyLocateResult(city)
       jump()
     })
   },

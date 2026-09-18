@@ -70,6 +70,7 @@ Page({
       .detail(this.data.id)
       .then((activity) => {
         if (!activity) {
+          ui.setPageTitle('活动详情 · 旷行吖')
           this.setData({ notFound: true, loading: false, activity: null })
           return null
         }
@@ -83,6 +84,8 @@ Page({
 
   applyActivity(raw) {
     const activity = api.decorate(raw)
+    // 页面标题用活动名，微信搜索会据此理解这个页面在讲什么（自定义导航栏下用户看不到标题）
+    ui.setPageTitle(`${activity.title} · 旷行吖`)
     activity.startLabel = formatCardDate(activity.startTime)
     activity.endLabel = activity.endTime ? formatCardDate(activity.endTime) : '待定'
     activity.coverGradient = activity.bg

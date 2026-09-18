@@ -77,6 +77,7 @@ Page({
     })
     // 首页玩法 / 横幅带参进入
     this.applyPendingType()
+    this.syncPageTitle()
     if (this._loadedOnce) {
       this.loadList(true)
     }
@@ -159,6 +160,7 @@ Page({
     const app = getApp()
     app.setCity('')
     this.setData({ city: '', cityLabel: '全部', type: 'all', typeLabel: TYPE_PLACEHOLDER })
+    this.syncPageTitle()
     const fallbackQuery = Object.assign({}, query, { city: '', type: 'all', pageIndex: 0 })
     return api.list(fallbackQuery).then((fallback) => {
       const decorated = (fallback.list || []).map(api.decorate)
@@ -276,6 +278,7 @@ Page({
         success: () => {
           app.relocate().then((city) => {
             this.setData({ city: city || '', cityLabel: city || '全部', locationDenied: !city })
+            this.syncPageTitle()
             this.loadList(true)
           })
         },
@@ -286,8 +289,18 @@ Page({
     app.relocate().then((city) => {
       wx.hideLoading()
       this.setData({ city: city || '', cityLabel: city || '全部', locationDenied: !city })
+      this.syncPageTitle()
       this.loadList(true)
     })
+  },
+
+  /**
+   * 页面标题带上城市，便于微信理解页面主题（自定义导航栏下用户看不到标题）。
+   * 关键词入口拿不到时，标题里的「找搭子 / 同城」是相关性最直接的来源。
+   */
+  syncPageTitle() {
+    const city = this.data.city
+    ui.setPageTitle(city ? `${city}同城找搭子 · 活动广场` : '活动广场 · 同城找搭子')
   },
 
   openCityPicker() {
@@ -300,6 +313,7 @@ Page({
     const city = e.detail.city || ''
     app.setCity(city)
     this.setData({ city, cityLabel: city || '全部', locationDenied: false })
+    this.syncPageTitle()
     this.loadList(true)
   },
 

@@ -52,7 +52,7 @@
     }
   },
   "requiredPrivateInfos": [
-    "getLocation",
+    "getFuzzyLocation",
     "chooseLocation"
   ],
   "sitemapLocation": "sitemap.json",

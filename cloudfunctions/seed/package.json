@@ -1,0 +1,9 @@
+{
+  "name": "seed",
+  "version": "1.0.0",
+  "description": "旷行吖 · 提审演示数据（写入 / 续期 / 清理，仅提审期间使用）",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

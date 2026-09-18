@@ -15,7 +15,7 @@
         <view class="locate-left" bindtap="onLocateTap">
           <text class="locate-icon">📍</text>
           <text class="locate-city">{{locationDenied ? '定位未开启' : cityLabel}}</text>
-          <text class="locate-tips">{{locationDenied ? '点击开启' : '点击重新定位'}}</text>
+          <text class="locate-tips">{{locationDenied ? '点击开启' : locateTip}}</text>
         </view>
         <view class="locate-switch" bindtap="openCityPicker">
           <text>切换城市</text>

@@ -4,6 +4,18 @@
     "action": "disallow",
     "page": "pages/admin/audit/index"
     }, {
+    "action": "disallow",
+    "page": "pages/usercenter/index"
+    }, {
+    "action": "disallow",
+    "page": "pages/user/activity-list/index"
+    }, {
+    "action": "disallow",
+    "page": "pages/activity/publish/index"
+    }, {
+    "action": "disallow",
+    "page": "pages/feedback/index"
+    }, {
     "action": "allow",
     "page": "*"
     }]

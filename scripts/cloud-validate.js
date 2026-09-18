@@ -159,6 +159,21 @@ class DocRef {
     return { stats: { updated: 1 } }
   }
 
+  /**
+   * 与云端一致：文档不存在时创建、存在时整份覆盖。
+   * seed 云函数用它做幂等写入（重复执行不该写重、也不该残留上一次的字段）。
+   */
+  async set({ data }) {
+    const doc = this.find()
+    const next = Object.assign({ _id: this.id }, deepCopy(data))
+    if (!doc) {
+      store[this.name].push(next)
+      return { _id: this.id }
+    }
+    store[this.name][store[this.name].indexOf(doc)] = next
+    return { _id: this.id }
+  }
+
   async remove() {
     const index = store[this.name].findIndex((item) => item._id === this.id)
     if (index === -1) return { stats: { removed: 0 } }
@@ -483,6 +498,16 @@ const ROOT = path.resolve(__dirname, '..')
 const activityFn = require(path.join(ROOT, 'cloudfunctions/activity/index.js'))
 const adminFn = require(path.join(ROOT, 'cloudfunctions/admin/index.js'))
 const contentCheckFn = require(path.join(ROOT, 'cloudfunctions/contentCheck/index.js'))
+const seedFn = require(path.join(ROOT, 'cloudfunctions/seed/index.js'))
+const seedData = require(path.join(ROOT, 'cloudfunctions/seed/lib/data'))
+
+/** 演示数据云函数的口令：正常来自云函数环境变量，测试里固定一个 */
+const SEED_TOKEN = 'seed-token-for-test'
+
+async function callSeed(action, payload) {
+  process.env.SEED_TOKEN = SEED_TOKEN
+  return seedFn.main(Object.assign({ action, token: SEED_TOKEN }, payload || {}))
+}
 
 async function callActivity(action, payload, openid) {
   currentOpenid = openid || ''
@@ -1809,6 +1834,92 @@ async function run() {
   log(
     !!expireJobAgain && expireJobAgain.closed === 0,
     '展示期：定时任务可重复执行，已经关闭的活动不会被重复处理'
+  )
+
+  /* ---------- 提审演示数据：造的数据必须真的能被审核员看到 ---------- */
+  // 演示数据绕过发布表单直接写库，所以这里用真实的 home / list / detail / join
+  // 跑一遍可见性：造了数据却因为审核状态、展示期、城市 key 不对而看不见，等于没造。
+  resetStore()
+  const demoCount = seedData.buildDocs(Date.now(), {}).length
+
+  delete process.env.SEED_TOKEN
+  const noToken = await seedFn.main({ action: 'seed', token: '' })
+  log(noToken.code === 'SEED_TOKEN_MISSING', '演示数据：没配 SEED_TOKEN 时拒绝写入')
+  process.env.SEED_TOKEN = SEED_TOKEN
+  const wrongToken = await seedFn.main({ action: 'seed', token: 'wrong-token' })
+  log(wrongToken.code === 'FORBIDDEN', '演示数据：口令不对时拒绝写入')
+
+  const seeded = await callSeed('seed')
+  log(
+    seeded.saved === demoCount && seeded.failed === 0,
+    `演示数据：一次写入 ${seeded.saved} 条且没有失败项`
+  )
+  const seededAgain = await callSeed('seed')
+  log(
+    seededAgain.saved === demoCount && store.activities.length === demoCount,
+    '演示数据：重复执行是幂等的，不会写重也不会叠加'
+  )
+
+  const demoHome = await callActivity('home', { city: '' }, OTHER)
+  log(
+    demoHome.hotList.length === 6 && demoHome.newestList.length === 3 && demoHome.empty === false,
+    '演示数据：首页热门 6 条 / 最新 3 条都有内容，不走空态'
+  )
+  const demoSquare = await callActivity('list', { pageIndex: 0, pageSize: 100 }, OTHER)
+  log(
+    demoSquare.total === demoCount && demoSquare.list.length === demoCount,
+    `演示数据：广场一次能翻到全部 ${demoSquare.total} 条活动`
+  )
+  const demoByCity = await callActivity('list', { city: '北京' }, OTHER)
+  const demoByType = await callActivity('list', { type: 'hiking' }, OTHER)
+  log(
+    demoByCity.total > 0 && demoByType.total > 0,
+    '演示数据：按城市 / 按类型筛选都能筛出活动（城市 key 与字典一致）'
+  )
+  const demoDetail = await callActivity('detail', { id: 'demo_act_01' }, OTHER)
+  log(
+    !!demoDetail &&
+      demoDetail.joinedPeople.length === demoDetail.joinedCount &&
+      !demoDetail.organizer.openid &&
+      !demoDetail.joinedPeople.some((member) => member.openid),
+    '演示数据：详情能打开，报名名单与人数一致且照旧不下发 openid'
+  )
+
+  // 审核员登录后直接报名：演示数据每条都留了名额，报名流程走得通
+  seedUser(OTHER, '审核员')
+  const demoJoin = await callActivity('join', { id: 'demo_act_01' }, OTHER)
+  log(demoJoin.joined === true, '演示数据：审核员登录后能报名（每条都留了空位）')
+
+  // 展示期：发布满 7 天活动就消失，refresh 负责把时间整体往后推
+  store.activities.forEach((doc) => {
+    doc.createTime -= 6 * 86400000
+  })
+  const driftedCreate = store.activities.filter((item) => item._id === 'demo_act_01')[0].createTime
+  const refreshed = await callSeed('refresh')
+  const demoAfter = store.activities.filter((item) => item._id === 'demo_act_01')[0].createTime
+  log(
+    refreshed.saved === demoCount &&
+      demoAfter - driftedCreate > 5 * 86400000 &&
+      // 续期后全部活动都回到「刚发布」的状态（时间戳按条错开，最旧的也就几小时前）
+      store.activities.every((doc) => doc.createTime > Date.now() - 86400000),
+    '演示数据：refresh 把展示期整体往后推，审核拖久了首页 / 广场也不会空掉'
+  )
+
+  delete process.env.SEED_REFRESH
+  const timerSkipped = await seedFn.main({ Type: 'Timer', TriggerName: 'refreshDemoActivities' })
+  log(!!timerSkipped && !!timerSkipped.skipped, '演示数据：SEED_REFRESH 未开启时定时器什么都不做')
+  process.env.SEED_REFRESH = '1'
+  const timerRefreshed = await seedFn.main({ Type: 'Timer', TriggerName: 'refreshDemoActivities' })
+  log(!!timerRefreshed && timerRefreshed.refreshed === true, '演示数据：SEED_REFRESH=1 时定时器每天自动续期')
+  delete process.env.SEED_REFRESH
+
+  const noConfirm = await callSeed('clear')
+  log(noConfirm.code === 'CONFIRM_REQUIRED', '演示数据：清理需要二次确认口令')
+  store.activities.push({ _id: 'real_act_keep', isDemo: false, title: '真实用户发布的活动' })
+  const cleared = await callSeed('clear', { confirm: 'DELETE_DEMO' })
+  log(
+    cleared.removed === demoCount && store.activities.length === 1 && store.activities[0]._id === 'real_act_keep',
+    '演示数据：清理只删演示数据，真实用户发布的活动不受影响'
   )
 }
 

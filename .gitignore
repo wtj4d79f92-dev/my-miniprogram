@@ -3,3 +3,6 @@
 
 # 微信开发者工具个人私有配置（记录本地编译模式与偏好，由工具自动生成）
 project.private.config.json
+
+# 提审演示数据的导出物（node scripts/seed-data.js 生成，含时间戳，随用随生成）
+scripts/seed/
