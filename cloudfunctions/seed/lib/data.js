@@ -152,7 +152,7 @@ function demoId(index) {
  * 装配演示活动文档。
  *
  * @param {number} now 生成时刻（毫秒时间戳），云函数每次调用传当前时间，刷新时只用它平移时间字段
- * @param {{ cover?: string, qr?: string }} [options] 可选的封面 / 群二维码云存储 fileID
+ * @param {{ cover?: string, qr?: string }} [options] 可选的封面 / 活动二维码云存储 fileID
  *   （留空时卡片走渐变海报兜底、详情页不出现「查看二维码」入口，都不会出现加载失败的空图）
  * @returns {Array<Object>} 可直接写库的 activity 文档（含 _id / isDemo 标记）
  */
@@ -222,7 +222,7 @@ function buildDocs(now, options) {
         text: { suggest: 'pass', label: 0, traceId: '', time: submitTime, failed: false },
         // 演示数据没有可送检的云存储图片（封面为空或远程图），留空数组
         images: [],
-        // 只有真的配了群二维码才写识别结论，否则审核台会显示一条「二维码检测失败」
+        // 只有真的配了活动二维码才写识别结论，否则审核台会显示一条「二维码检测失败」
         qrcode: qr
           ? { status: 'ok', ok: true, typeName: 'QR_CODE', content: 'https://weixin.qq.com/g/demo', time: submitTime }
           : null,

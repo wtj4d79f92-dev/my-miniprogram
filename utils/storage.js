@@ -8,6 +8,8 @@ const KEYS = {
   published: 'my_published',
   joined: 'my_joined',
   feedback: 'my_feedback',
+  // 首页列表快照：冷启动时先渲染上一次的结果，接口回来再覆盖（纯公开数据，不含个人信息）
+  homeCache: 'aa_home_cache',
 }
 
 function getStorage(key, fallback) {
@@ -31,6 +33,23 @@ function setStorage(key, value) {
   }
 }
 
+/**
+ * 异步写入：首页列表有几十 KB，同步写入会占着 JS 线程，
+ * 布局渲染就在同一个时机，所以这种「写缓存」的场景走异步，失败同样静默降级。
+ */
+function setStorageAsync(key, value) {
+  try {
+    wx.setStorage({
+      key,
+      data: value,
+      fail: () => {},
+    })
+    return true
+  } catch (e) {
+    return false
+  }
+}
+
 function removeStorage(key) {
   try {
     wx.removeStorageSync(key)
@@ -40,4 +59,4 @@ function removeStorage(key) {
   }
 }
 
-module.exports = { KEYS, getStorage, setStorage, removeStorage }
+module.exports = { KEYS, getStorage, setStorage, setStorageAsync, removeStorage }

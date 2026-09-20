@@ -404,7 +404,30 @@ const fakeCloud = {
         if (securityBehavior.qrcode === 'barcode') {
           return { errcode: 0, code_results: [{ type_name: 'EAN_13', data: '6901234567892' }] }
         }
-        if (securityBehavior.qrcode === 'notgroup') {
+        if (securityBehavior.qrcode === 'personal') {
+          return {
+            errcode: 0,
+            code_results: [{ type_name: 'QR_CODE', data: 'https://u.wechat.com/MockPersonalCard' }],
+          }
+        }
+        if (securityBehavior.qrcode === 'personalr') {
+          // 旧版微信导出的个人名片码：https://weixin.qq.com/r/xxxxx，同样算个人微信二维码
+          return {
+            errcode: 0,
+            code_results: [{ type_name: 'QR_CODE', data: 'https://weixin.qq.com/r/MockOldCard' }],
+          }
+        }
+        if (securityBehavior.qrcode === 'mixed') {
+          // 同一张图里多个码：个人名片码排在前面，用来验证「群码优先」
+          return {
+            errcode: 0,
+            code_results: [
+              { type_name: 'QR_CODE', data: 'https://u.wechat.com/MockPersonalCard' },
+              { type_name: 'QR_CODE', data: 'https://weixin.qq.com/g/AaBbCcDd' },
+            ],
+          }
+        }
+        if (securityBehavior.qrcode === 'notwechat') {
           return { errcode: 0, code_results: [{ type_name: 'QR_CODE', data: 'https://pay.example.com/abc' }] }
         }
         return {
@@ -418,7 +441,9 @@ const fakeCloud = {
 
 // 内容安全接口的行为开关：text/image 取值 pass | review | risky | null（null 表示调用失败）
 // imageFailOnce：仅第一次图片送检失败，用于验证「部分图片没结论」的降级路径
-// qrcode：group 识别到微信群邀请链接 | notqr 没识别到码 | notgroup 识别到的不是群链接 |
+// qrcode：group 识别到微信群邀请链接 | personal 个人微信二维码（u.wechat.com）|
+//         personalr 旧版个人名片码（weixin.qq.com/r）| mixed 群码与个人码同图（名片码在前）|
+//         notqr 没识别到码 | notwechat 识别到的不是微信二维码 |
 //         barcode 只有一维码 | null 接口调用失败
 const securityBehavior = {
   text: 'pass',
@@ -784,7 +809,7 @@ async function run() {
   log(pendingList.list[0].auditStatus === 'pending' && pendingList.list[0].joinedPeople === undefined, '审核台：列表不带报名成员等大字段')
   log(
     pendingList.list.every((item) => typeof item.groupQrCode === 'string'),
-    '审核台：列表带出群二维码，弹层不用等详情接口就能看到'
+    '审核台：列表带出活动二维码，弹层不用等详情接口就能看到'
   )
 
   const allList = await callAdmin('list', { status: 'all' }, ADMIN)
@@ -981,7 +1006,7 @@ async function run() {
 
   const coverDetail = await callActivity('detail', { id: 'act_cover_ok' }, OTHER)
   log(/^https:\/\//.test(coverDetail.coverUrl || ''), '详情：封面下发临时链接')
-  log(/^https:\/\//.test(coverDetail.qrUrl || ''), '详情：群二维码下发临时链接')
+  log(/^https:\/\//.test(coverDetail.qrUrl || ''), '详情：活动二维码下发临时链接')
 
   const homeWithCover = await callActivity('home', { city: '' }, OTHER)
   const homeAll = homeWithCover.hotList.concat(homeWithCover.newestList)
@@ -1333,24 +1358,74 @@ async function run() {
   const noCheckableReview = await callActivity('create', { form: noCheckableForm }, ORGANIZER)
   log(noCheckableReview.auditStatus === 'pending', '内容安全：没有可送检图片但文本疑似时仍留给人工')
 
-  /* ---------- 机审：群二维码识别（只认微信群邀请链接） ---------- */
+  /* ---------- 机审：活动二维码识别（只认微信群邀请码与个人微信二维码） ---------- */
   resetSecurity()
   const groupQr = await callActivity(
     'create',
-    { form: Object.assign({}, form, { title: '群二维码正常的活动' }) },
+    { form: Object.assign({}, form, { title: '活动二维码正常的活动' }) },
     ORGANIZER
   )
   log(
     qrCalls.length >= 1 && /^https:\/\//.test(qrCalls[0].imgUrl),
-    '二维码识别：发布时把群二维码换成 https 临时链接送识别'
+    '二维码识别：发布时把活动二维码换成 https 临时链接送识别'
   )
   log(
-    groupQr.machineCheck.qrcode.ok === true && groupQr.machineCheck.qrcode.status === 'ok',
+    groupQr.machineCheck.qrcode.ok === true &&
+      groupQr.machineCheck.qrcode.status === 'ok' &&
+      groupQr.machineCheck.qrcode.kind === 'group',
     '二维码识别：识别到微信群邀请链接算通过'
   )
   log(
     groupQr.machineCheck.qrcode.content === 'https://weixin.qq.com/g/AaBbCcDd',
     '二维码识别：留存解出的群邀请链接，审核台与发起人都能看到'
+  )
+
+  // 个人微信二维码（加好友名片码）与群邀请码一样放行：
+  // 有 cloud:// 二维码时发布当刻只等到 pending（图片结论没回来），结论回来后才自动放行
+  resetSecurity({ qrcode: 'personal' })
+  const personalQr = await callActivity(
+    'create',
+    { form: Object.assign({}, form, { title: '上传了个人微信二维码的活动' }) },
+    ORGANIZER
+  )
+  log(
+    personalQr.machineCheck.qrcode.ok === true && personalQr.machineCheck.qrcode.kind === 'personal',
+    '二维码识别：个人微信二维码同样算通过'
+  )
+  log(
+    personalQr.machineCheck.qrcode.content === 'https://u.wechat.com/MockPersonalCard',
+    '二维码识别：留存解出的个人名片链接，审核台与发起人都能看到'
+  )
+  await pushMediaResult(personalQr.machineCheck.images[0].traceId, 'pass', 100)
+  const personalDoc = store.activities.filter((item) => item._id === personalQr.id)[0]
+  log(
+    personalDoc.auditStatus === 'approved' && personalDoc.auditBy === '内容安全检测',
+    '二维码识别：个人微信二维码的活动机审全过即自动放行'
+  )
+
+  // 旧版微信导出的个人码（weixin.qq.com/r/xxxxx）同样算个人微信二维码
+  resetSecurity({ qrcode: 'personalr' })
+  const oldPersonalQr = await callActivity(
+    'create',
+    { form: Object.assign({}, form, { title: '上传了旧版个人名片码的活动' }) },
+    ORGANIZER
+  )
+  log(
+    oldPersonalQr.machineCheck.qrcode.ok === true && oldPersonalQr.machineCheck.qrcode.kind === 'personal',
+    '二维码识别：旧版个人名片码（weixin.qq.com/r）同样算通过'
+  )
+
+  // 一张图里同时有群码与个人码：按群码算，发起人想拉群就别被名片码带偏
+  resetSecurity({ qrcode: 'mixed' })
+  const mixedQr = await callActivity(
+    'create',
+    { form: Object.assign({}, form, { title: '群码与个人码同图的活动' }) },
+    ORGANIZER
+  )
+  log(
+    mixedQr.machineCheck.qrcode.kind === 'group' &&
+      mixedQr.machineCheck.qrcode.content === 'https://weixin.qq.com/g/AaBbCcDd',
+    '二维码识别：同一张图里群码优先于个人名片码'
   )
 
   resetSecurity({ qrcode: 'notqr' })
@@ -1361,8 +1436,8 @@ async function run() {
   )
   log(!!noQrCode.id && noQrCode.auditStatus === 'rejected', '二维码识别：没识别到码时直接驳回')
   log(
-    noQrCode.auditRemark === '活动二维码上传有误，请重新上传微信群二维码',
-    '二维码识别：驳回原因写明重新上传微信群二维码'
+    noQrCode.auditRemark === '活动二维码上传有误，请重新上传微信群二维码或个人微信二维码',
+    '二维码识别：驳回原因写明重新上传微信群二维码或个人微信二维码'
   )
   log(noQrCode.auditBy === '内容安全检测', '二维码识别：驳回来源记为内容安全检测')
   log(
@@ -1370,7 +1445,7 @@ async function run() {
     '二维码识别：记录「没识别到二维码」的结论'
   )
 
-  resetSecurity({ qrcode: 'notgroup' })
+  resetSecurity({ qrcode: 'notwechat' })
   const notGroupQr = await callActivity(
     'create',
     { form: Object.assign({}, form, { title: '上传了收款码的活动' }) },
@@ -1378,9 +1453,9 @@ async function run() {
   )
   log(
     notGroupQr.auditStatus === 'rejected' &&
-      notGroupQr.auditRemark === '活动二维码上传有误，请重新上传微信群二维码' &&
-      notGroupQr.machineCheck.qrcode.status === 'not-group',
-    '二维码识别：识别到的不是微信群邀请链接时直接驳回，原因写明重新上传微信群二维码'
+      notGroupQr.auditRemark === '活动二维码上传有误，请重新上传微信群二维码或个人微信二维码' &&
+      notGroupQr.machineCheck.qrcode.status === 'not-wechat',
+    '二维码识别：识别到的不是微信二维码时直接驳回，原因写明重新上传微信群二维码或个人微信二维码'
   )
   // 驳回的活动不进人工待审队列，也不出现在发起人以外的任何列表里
   const pendingAfterQrReject = await callAdmin('list', { status: 'pending' }, ADMIN)
@@ -1405,17 +1480,18 @@ async function run() {
   )
 
   // 二维码识别不通过被驳回后，图片结论全回来且全是 pass 也不能自动放行（不能覆盖驳回结论）
-  resetSecurity({ qrcode: 'notgroup' })
+  resetSecurity({ qrcode: 'notwechat' })
   const notGroupWithImages = await callActivity(
     'create',
-    { form: Object.assign({}, formWithCover, { title: '二维码不是群码的图片活动' }) },
+    { form: Object.assign({}, formWithCover, { title: '二维码不是微信码的图片活动' }) },
     ORGANIZER
   )
   await pushMediaResult(notGroupWithImages.machineCheck.images[0].traceId, 'pass', 100)
   await pushMediaResult(notGroupWithImages.machineCheck.images[1].traceId, 'pass', 100)
   const notGroupDoc = store.activities.filter((item) => item._id === notGroupWithImages.id)[0]
   log(
-    notGroupDoc.auditStatus === 'rejected' && notGroupDoc.auditRemark === '活动二维码上传有误，请重新上传微信群二维码',
+    notGroupDoc.auditStatus === 'rejected' &&
+      notGroupDoc.auditRemark === '活动二维码上传有误，请重新上传微信群二维码或个人微信二维码',
     '二维码识别：被驳回后图片全通过也不会被机审放行'
   )
 
@@ -1745,7 +1821,7 @@ async function run() {
     deletedFiles.indexOf('cloud://env/cover.png') > -1 &&
       deletedFiles.indexOf('cloud://env/qr.png') > -1 &&
       deletedFiles.indexOf('cloud://env/mini.png') > -1,
-    '注销：封面、群二维码与小程序码文件一并从云存储删除'
+    '注销：封面、活动二维码与小程序码文件一并从云存储删除'
   )
 
   const deleteAgain = await callActivity('deleteAccount', {}, OTHER)
@@ -1812,6 +1888,32 @@ async function run() {
   const agedQuit = await callActivity('quit', { id: 'act_aged' }, OTHER)
   log(!!agedQuit && !agedQuit.code, '展示期：到期后仍可退出活动（不阻断用户清理自己的报名）')
 
+  /* ---------- 集合时间已过：每天自动关闭 ---------- */
+  // 判定按「天」：昨天集合的关掉，今天（哪怕已过点）与明天的都留着，
+  // 另外补一条取不到集合时间的脏数据，确认不会被误关
+  const todayZero = new Date().setHours(0, 0, 0, 0)
+  seedActivity({
+    _id: 'act_past_start',
+    title: '昨天集合的活动',
+    auditStatus: 'approved',
+    startTime: todayZero - 12 * 60 * 60 * 1000,
+    endTime: todayZero + 6 * 60 * 60 * 1000,
+  })
+  seedActivity({
+    _id: 'act_today_start',
+    title: '今天集合的活动',
+    auditStatus: 'approved',
+    startTime: todayZero + 23 * 60 * 60 * 1000,
+    endTime: todayZero + 30 * 60 * 60 * 1000,
+  })
+  seedActivity({
+    _id: 'act_no_start',
+    title: '取不到集合时间的历史数据',
+    auditStatus: 'approved',
+    startTime: 0,
+    endTime: 0,
+  })
+
   const expireJob = await activityFn.main({ Type: 'Timer', TriggerName: 'expireActivities' })
   log(
     !!expireJob && expireJob.ok === true && expireJob.closed === 2,
@@ -1830,9 +1932,36 @@ async function run() {
   const freshDoc = store.activities.filter((item) => item._id === 'act_fresh')[0]
   log(!!freshDoc && freshDoc.status === 'recruiting', '展示期：展示期内的活动不被定时任务动到')
 
+  log(
+    !!expireJob && expireJob.closedPast === 1,
+    `集合时间：定时任务关闭「集合时间早于今天」的未关闭活动（实际关闭 ${expireJob && expireJob.closedPast} 条）`
+  )
+  const pastStartDoc = store.activities.filter((item) => item._id === 'act_past_start')[0]
+  log(
+    !!pastStartDoc && pastStartDoc.status === 'closed' && pastStartDoc.closeTime > 0,
+    '集合时间：关闭时间写任务执行时刻，广场按「关闭当天可见」再展示一天'
+  )
+  const todayStartDoc = store.activities.filter((item) => item._id === 'act_today_start')[0]
+  log(
+    !!todayStartDoc && todayStartDoc.status === 'recruiting',
+    '集合时间：集合时间在今天的活动当天保持可报名（边界）'
+  )
+  const noStartDoc = store.activities.filter((item) => item._id === 'act_no_start')[0]
+  log(
+    !!noStartDoc && noStartDoc.status === 'recruiting',
+    '集合时间：取不到集合时间的历史数据不被误关'
+  )
+  const pastClosedList = await callActivity('list', { pageIndex: 0, pageSize: 50, sort: 'latest' }, OTHER)
+  const pastClosedIndex = pastClosedList.list.findIndex((item) => item.id === 'act_past_start')
+  log(
+    pastClosedIndex > -1 &&
+      pastClosedList.list.slice(0, pastClosedIndex).every((item) => item.status !== 'closed'),
+    '集合时间：自动关闭的活动在广场排在未关闭活动之后（沉底）'
+  )
+
   const expireJobAgain = await activityFn.main({ Type: 'Timer', TriggerName: 'expireActivities' })
   log(
-    !!expireJobAgain && expireJobAgain.closed === 0,
+    !!expireJobAgain && expireJobAgain.closed === 0 && expireJobAgain.closedPast === 0,
     '展示期：定时任务可重复执行，已经关闭的活动不会被重复处理'
   )
 

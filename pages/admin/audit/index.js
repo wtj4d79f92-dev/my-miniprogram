@@ -14,7 +14,7 @@ const REJECT_PRESETS = [
   '活动内容涉嫌违规，请修改后重试',
   '存在安全风险，请补充安全说明',
   '图片或文字不符合社区规范',
-  '封面或群二维码已失效，请重新上传',
+  '封面或活动二维码已失效，请重新上传',
 ]
 
 /** 机器初审结论的展示文案 */
@@ -30,16 +30,21 @@ const MACHINE_LABEL = {
 }
 
 /**
- * 群二维码识别结论：只有识别出微信群邀请链接才算通过，
- * 识别不出、识别到的不是群链接、接口异常都会转人工，所以审核台要把原因摆出来。
+ * 活动二维码识别结论：只有识别出微信群邀请码或个人微信二维码才算通过，
+ * 识别不出、识别到的不是微信二维码、接口异常都会转人工，所以审核台要把原因摆出来。
  */
 const QR_VERDICT = {
-  ok: { label: '微信群邀请码', className: 'pass' },
+  ok: { label: '微信二维码', className: 'pass' },
   'not-qrcode': { label: '未识别到二维码', className: 'review' },
-  'not-group': { label: '不是微信群邀请码', className: 'review' },
+  'not-wechat': { label: '不是微信二维码', className: 'review' },
+  // 旧结论：改名前的历史数据仍按同一层含义展示，别让老活动在台面上显示成「未识别」
+  'not-group': { label: '不是微信二维码', className: 'review' },
   failed: { label: '二维码识别失败', className: 'review' },
   unknown: { label: '未识别', className: 'pending' },
 }
+
+/** 机审通过时按识别出的类型细分，运营一眼能看出是群码还是个人名片码 */
+const QR_KIND_LABEL = { group: '微信群邀请码', personal: '个人微信二维码' }
 
 /**
  * 封面 / 二维码的展示地址分三类，审核台对每一类都要给出能对得上的解释，而不是留一块空白灰块：
@@ -223,12 +228,12 @@ Page({
     item.machineReview = !!raw.machineReview
     item.machinePending = !!raw.machinePending
 
-    // 群二维码识别：识别出的群邀请链接一并带出来，审核人不用长按二维码也能核对
+    // 活动二维码识别：识别出的二维码内容一并带出来，审核人不用长按二维码也能核对
     const qrcode = (machine && machine.qrcode) || null
     const verdict = QR_VERDICT[(qrcode && qrcode.status) || 'unknown'] || QR_VERDICT.unknown
     item.machineQrcodeOk = !!(qrcode && qrcode.ok)
     item.machineQrcodeFailed = !!(qrcode && qrcode.ok === false)
-    item.machineQrcodeLabel = verdict.label
+    item.machineQrcodeLabel = (qrcode && qrcode.ok && QR_KIND_LABEL[qrcode.kind]) || verdict.label
     item.machineQrcodeClass = verdict.className
     item.machineQrcodeContent = (qrcode && qrcode.content) || ''
     item.machineQrcodeMessage = (qrcode && qrcode.message) || ''
@@ -370,7 +375,7 @@ Page({
     const item = this.findItem(id)
     if (!item) return
     // 先用列表内容把弹层撑开，避免点一下等半天；列表少带 joinedPeople 等字段，
-    // 群二维码、完整介绍要再取一次详情补齐，否则审核时会漏看关键信息
+    // 活动二维码、完整介绍要再取一次详情补齐，否则审核时会漏看关键信息
     this.setData({ detail: item, detailLoading: true })
     api
       .adminDetail(id)

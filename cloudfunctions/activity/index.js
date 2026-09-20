@@ -67,8 +67,8 @@ const MAX_PAGE_SIZE = 100
 const DAY_MS = 86400000
 /** 我的活动一次最多返回的条数（云函数端单次查询上限 100） */
 const MY_LIST_LIMIT = 100
-/** 到期自动关闭一次处理的活动条数（定时任务分批处理，与云数据库单次查询上限一致） */
-const EXPIRE_BATCH = 100
+/** 定时关闭一次处理的活动条数（分批处理，与云数据库单次查询上限一致） */
+const CLOSE_BATCH = 100
 /** 默认横幅的历史动作：仅当后台仍保持该动作时，才按最新默认值升级 */
 const LEGACY_BANNER_ACTIONS = [{ _id: 'banner_default_3', action: { type: 'publish' } }]
 /**
@@ -93,16 +93,19 @@ function notExpiredWhere() {
   return { createTime: _.gt(Date.now() - TTL_MS) }
 }
 
-/** 当天 00:00 的时间戳：广场据此判断已关闭的活动是否还在「关闭当天」 */
-function startOfToday() {
-  const d = new Date()
+/**
+ * 当天 00:00 的时间戳（传时间戳则取那一天，不传取现在）。
+ * 两处用到：广场判断已关闭的活动是否还在「关闭当天」；集合时间是否已经早于今天。
+ */
+function startOfDay(at) {
+  const d = new Date(at === undefined ? Date.now() : at)
   d.setHours(0, 0, 0, 0)
   return d.getTime()
 }
 
 /** 已关闭且仍在「关闭当天」的条件：广场只保留关闭当天，次日不再展示 */
 function closedTodayWhere() {
-  return { status: CLOSED, closeTime: _.gte(startOfToday()) }
+  return { status: CLOSED, closeTime: _.gte(startOfDay()) }
 }
 
 /* ------------------------------ 基础工具 ------------------------------ */
@@ -191,7 +194,7 @@ function cityWhere(city) {
 /**
  * 给活动补上云存储临时链接。
  *
- * 封面 / 群二维码以 cloud:// 文件 ID 落库，客户端能不能直接渲染取决于云存储读取权限 /
+ * 封面 / 活动二维码以 cloud:// 文件 ID 落库，客户端能不能直接渲染取决于云存储读取权限 /
  * 安全规则；首页、广场、详情展示的往往是别人上传的文件，一旦被拦就只能看到默认海报。
  * 这里用云函数的管理员身份统一换成 https 临时链接，换不到时不下发该字段，前端退回原始值。
  *
@@ -225,13 +228,17 @@ function attachCoverUrls(rows) {
 
 /* ------------------------------ 首页 / 列表 ------------------------------ */
 
-/** banners 集合为空时写入默认 3 条（固定 _id，重复写入会失败，忽略即可） */
-async function ensureBanners() {
-  const res = await banners.count()
-  if (res.total > 0) {
-    await upgradeDefaultBannerActions()
-    return
-  }
+/**
+ * banners 集合为空时写入默认 3 条（固定 _id，重复写入会失败，忽略即可）。
+ *
+ * 入参是本次已经查到的横幅：横幅查询因此不用等这一步，可以和活动查询一起并行发出；
+ * 集合为空时直接把要写入的默认值当结果返回，省掉「先查一次空集合、写完再查一次」的串行往返。
+ * @param {Array} rows 本次查到的横幅文档
+ * @returns {Promise<Array>} 本次要下发的横幅
+ */
+async function ensureBanners(rows) {
+  const list = rows || []
+  if (list.length) return list
   for (let i = 0; i < DEFAULT_BANNERS.length; i += 1) {
     try {
       await banners.add({ data: Object.assign({}, DEFAULT_BANNERS[i]) })
@@ -239,24 +246,27 @@ async function ensureBanners() {
       // 并发写入时另一路已经插进去了，无需处理
     }
   }
+  return DEFAULT_BANNERS
 }
 
 /**
  * 默认横幅历史动作纠正：老环境里「想去看海呀」写的是「去发布」，
  * 后台没改过 action 时按最新默认值纠成「广场 + 自驾游」，避免点了落错页面。
  * 只处理固定 _id、标题与动作都还是默认值的文档，后台自定义过的配置不受影响。
+ * 判断直接用本次查到的横幅，不再为每条默认横幅多查一次库。
  */
-async function upgradeDefaultBannerActions() {
+async function upgradeDefaultBannerActions(rows) {
+  const list = rows || []
   for (let i = 0; i < LEGACY_BANNER_ACTIONS.length; i += 1) {
     const legacy = LEGACY_BANNER_ACTIONS[i]
     const target = DEFAULT_BANNERS.filter((item) => item._id === legacy._id)[0]
     if (!target) continue
     if (sameAction(legacy.action, target.action)) continue
+    const doc = list.filter((item) => item._id === legacy._id)[0]
+    if (!doc || doc.title !== target.title || !sameAction(doc.action, legacy.action)) continue
     try {
-      const res = await banners.doc(legacy._id).get()
-      const doc = res && res.data
-      if (!doc || doc.title !== target.title || !sameAction(doc.action, legacy.action)) continue
       await banners.doc(legacy._id).update({ data: { action: target.action } })
+      doc.action = target.action
     } catch (e) {
       // 文档不存在 / 已被后台删除时忽略
     }
@@ -270,9 +280,9 @@ function sameAction(a, b) {
 }
 
 async function home(event, openid) {
-  await ensureBanners()
   const where = cityWhere(event.city)
 
+  // 横幅查询与活动查询一起发，不再串在 ensureBanners 后面（横幅为空时的补写见下）
   const [bannerRes, hotRes, newestRes, countRes] = await Promise.all([
     banners.orderBy('sort', 'asc').limit(20).get(),
     whereToQuery(where).orderBy('joinedCount', 'desc').limit(6).get(),
@@ -280,12 +290,19 @@ async function home(event, openid) {
     whereToQuery(where).count(),
   ])
 
+  // 只有全新的空集合环境才会走写入分支，正常环境这里直接返回上面查到的横幅
+  const bannerRows = await ensureBanners(bannerRes.data)
+
   const hotList = hotRes.data.map((doc) => publicActivity(doc, openid))
   const newestList = newestRes.data.map((doc) => publicActivity(doc, openid))
-  await Promise.all([attachCoverUrls(hotList), attachCoverUrls(newestList)])
+  // 热门 + 最新的封面一次换完，少一次云存储往返；历史默认横幅的纠正也并进这一批，不占串行时间
+  await Promise.all([
+    attachCoverUrls(hotList.concat(newestList)),
+    upgradeDefaultBannerActions(bannerRows),
+  ])
 
   return {
-    banners: bannerRes.data.map(withId),
+    banners: bannerRows.map(withId),
     hotList,
     newestList,
     empty: countRes.total === 0,
@@ -373,7 +390,7 @@ function normalizeForm(form) {
   if (!location) return { error: fail('INVALID_PARAM', '请填写集合地点') }
   if (!startTime || !endTime) return { error: fail('INVALID_PARAM', '请选择活动时间') }
   if (endTime < startTime) return { error: fail('INVALID_PARAM', '返程时间不能早于集合时间') }
-  if (!groupQrCode) return { error: fail('INVALID_PARAM', '请上传活动群二维码') }
+  if (!groupQrCode) return { error: fail('INVALID_PARAM', '请上传活动二维码') }
 
   // 费用方式必须由发起人主动选择：AA 制 / 非 AA 制。
   // 平台不收取任何资金，非 AA 制只接受一段文字说明（如「门票自理」「人均约 80 元现场分摊」），
@@ -436,7 +453,7 @@ function auditPatch() {
 /** 上传失败时按字段给不同的提示，用户在发布页能直接对上要重传哪一张 */
 const UPLOAD_FAIL_TEXT = {
   cover: '封面图片上传失败，请重新选择图片后再提交',
-  groupQrCode: '活动群二维码上传失败，请重新上传后再提交',
+  groupQrCode: '活动二维码上传失败，请重新上传后再提交',
 }
 
 /**
@@ -467,10 +484,11 @@ async function writeLog(data) {
 }
 
 /**
- * 机器初审：文本同步检测 + 图片异步发起 + 群二维码同步识别。
+ * 机器初审：文本同步检测 + 图片异步发起 + 活动二维码同步识别。
  * - 文本命中违规：直接拦下，不写库（避免违规内容进库），由发起人改完重发；
  * - 图片只有 traceId，结果由消息推送回调补写，这里先记 pending；
- * - 群二维码识别只认微信群邀请链接，识别不出 / 不是群链接直接驳回（详见 qrRejectPatch 与 lib/contentCheck.js）；
+ * - 活动二维码只认微信群邀请码与个人微信二维码，识别不出 / 不是微信二维码直接驳回
+ *   （详见 qrRejectPatch 与 lib/contentCheck.js）；
  * - 检测接口本身失败：降级为纯人工审核（待审队列），既不阻塞发布也不误驳。
  */
 async function runMachineCheck(fields, openid) {
@@ -497,8 +515,8 @@ async function runMachineCheck(fields, openid) {
 }
 
 /**
- * 机审直接放行：文本检测与群二维码识别都是同步的，发布当刻就有结论；
- * 只有封面 / 群二维码的图片内容安全结论要等 mediaCheckAsync 的回调，
+ * 机审直接放行：文本检测与活动二维码识别都是同步的，发布当刻就有结论；
+ * 只有封面 / 活动二维码的图片内容安全结论要等 mediaCheckAsync 的回调，
  * 有可送检图片时不置「已通过」——否则没检完的图片就直接上线了；那一步由 contentCheck 云函数用同一套规则判定。
  * 机审没通过时返回空对象，沿用 auditPatch() 的待审状态交给人工。
  */
@@ -514,8 +532,8 @@ function autoAuditPatch(machine, data) {
 }
 
 /**
- * 群二维码没识别出微信群邀请链接：直接驳回，不进人工队列。
- * 发起人在详情页与「我的发布」看到「未通过原因：活动二维码上传有误，请重新上传微信群二维码」，
+ * 上传的二维码既不是微信群邀请码也不是个人微信二维码：直接驳回，不进人工队列。
+ * 发起人在详情页与「我的发布」看到「未通过原因：活动二维码上传有误，请重新上传微信群二维码或个人微信二维码」，
  * 改好二维码重新提交即可（重提会重新走一遍检测）。
  *
  * 识别接口异常 / 超时（failed）属于「没有结论」，返回空对象沿用待审状态，绝不因为检测本身出问题驳回用户。
@@ -554,7 +572,7 @@ async function writeQrRejectLog(activityId, title, patch, from) {
     action: 'auto-reject',
     from: from || '',
     to: AUDIT_REJECTED,
-    remark: `机审驳回：${QR_REJECT_REMARK}（群二维码未识别出微信群邀请链接）`,
+    remark: `机审驳回：${QR_REJECT_REMARK}（识别到的不是微信群邀请码或个人微信二维码）`,
     adminOpenid: '',
     adminName: AUTO_AUDIT_BY,
   })
@@ -974,7 +992,7 @@ const FILE_BATCH = 50
 const ACTIVITY_FILES = ['cover', 'groupQrCode', 'miniQrCode']
 
 /**
- * 删除该用户发布的所有活动，并把它们的云存储文件（封面、群二维码、小程序码）收集出来。
+ * 删除该用户发布的所有活动，并把它们的云存储文件（封面、活动二维码、小程序码）收集出来。
  * 活动删掉后这些文件不再有入口引用，留着只会占空间，也违背「删除个人信息」的承诺。
  */
 async function removeOwnActivities(openid) {
@@ -1086,7 +1104,7 @@ async function media(event) {
   return { media: await resolveMedia(list) }
 }
 
-/* ---------------------------- 到期自动关闭 ---------------------------- */
+/* ---------------------------- 定时自动关闭 ---------------------------- */
 
 /**
  * 把「已过展示期、还没关闭」的活动改成已关闭（发布后 7 天，见 lib/expire.js）。
@@ -1104,7 +1122,7 @@ async function closeExpiredActivities(now) {
     // 条件对象每轮新建：同一条 db.command 指令不在多条查询之间复用
     const res = await activities
       .where({ status: _.nin([CLOSED]), createTime: _.lt(deadline) })
-      .limit(EXPIRE_BATCH)
+      .limit(CLOSE_BATCH)
       .get()
     const rows = res.data || []
     if (!rows.length) break
@@ -1116,21 +1134,71 @@ async function closeExpiredActivities(now) {
       closed += 1
     }
     // 这一批已经不再是「未关闭」，下一轮不会重复取到；不足一批说明处理完了
-    if (rows.length < EXPIRE_BATCH) break
+    if (rows.length < CLOSE_BATCH) break
   }
   return closed
 }
 
-/** 定时触发器入口：返回值只用于云函数日志 */
-async function runExpireJob() {
-  try {
-    const closed = await closeExpiredActivities(Date.now())
-    console.log(`[activity] 到期自动关闭：本次关闭 ${closed} 条活动`)
-    return { ok: true, closed }
-  } catch (e) {
-    console.error('[activity] 到期自动关闭失败', e)
-    return { ok: false, closed: 0 }
+/**
+ * 把「集合时间已过、还没关闭」的活动改成已关闭。
+ *
+ * 口径按「天」而不是「时刻」：集合时间（startTime）早于今天 00:00 才算过 ——
+ * 集合时间在今天的活动当天仍可报名（活动还没开始），次日的定时任务才把它关掉。
+ * 跨天活动（集合时间在昨天、返程时间在今天）同样按集合时间关闭，不再接受新报名。
+ *
+ * 关闭时间写任务执行时刻，与发起人手动关闭同一口径：这批活动按广场的「关闭当天可见」
+ * 规则再展示一天（沉底），第二天起消失，不会让人以为它凭空不见了。
+ * 广场本身只展示发布 7 天内的活动（见 notExpiredWhere），所以不会把历史数据一次性捞出来。
+ */
+async function closePastActivities(now) {
+  const deadline = startOfDay(now)
+  let closed = 0
+  for (;;) {
+    // 条件对象每轮新建：同一条 db.command 指令不在多条查询之间复用。
+    // startTime > 0 一并过滤掉取不到集合时间的脏数据：0 会命中 lt(deadline)。
+    const res = await activities
+      .where(whereFrom([{ status: _.nin([CLOSED]) }, { startTime: _.gt(0) }, { startTime: _.lt(deadline) }]))
+      .limit(CLOSE_BATCH)
+      .get()
+    const rows = res.data || []
+    if (!rows.length) break
+    for (let i = 0; i < rows.length; i += 1) {
+      await activities.doc(rows[i]._id).update({
+        data: { status: CLOSED, closeTime: now },
+      })
+      closed += 1
+    }
+    // 这一批已经不再是「未关闭」，下一轮不会重复取到；不足一批说明处理完了
+    if (rows.length < CLOSE_BATCH) break
   }
+  return closed
+}
+
+/**
+ * 单条关闭任务：各自兜错，一条规则异常不影响另一条（比如一个查询报错时另一个照常收敛）。
+ * @returns {Promise<{ok: boolean, count: number}>}
+ */
+async function runCloseJob(label, task, now) {
+  try {
+    const count = await task(now)
+    console.log(`[activity] 定时关闭（${label}）：本次关闭 ${count} 条活动`)
+    return { ok: true, count }
+  } catch (e) {
+    console.error(`[activity] 定时关闭（${label}）失败`, e)
+    return { ok: false, count: 0 }
+  }
+}
+
+/**
+ * 定时触发器入口：一条触发器跑两条关闭规则 —— 展示期届满（发布满 7 天）、集合时间已过。
+ * 触发器每小时整点跑一次，所以「集合时间早于今天」这条实际是在每天 00:00 那一轮生效。
+ * 返回值只用于云函数日志与离线回归。
+ */
+async function runExpireJob() {
+  const now = Date.now()
+  const expired = await runCloseJob('展示期届满', closeExpiredActivities, now)
+  const past = await runCloseJob('集合时间已过', closePastActivities, now)
+  return { ok: expired.ok && past.ok, closed: expired.count, closedPast: past.count }
 }
 
 /* ------------------------------ 路由 ------------------------------ */

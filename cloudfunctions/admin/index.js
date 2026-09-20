@@ -35,7 +35,7 @@ const LIST_FIELDS = {
   color: true,
   bg: true,
   cover: true,
-  // 审核时要核对群二维码，列表里也带上，弹层先展示、详情接口再补齐完整字段
+  // 审核时要核对活动二维码，列表里也带上，弹层先展示、详情接口再补齐完整字段
   groupQrCode: true,
   desc: true,
   location: true,
@@ -174,7 +174,7 @@ async function list(event) {
   }
 }
 
-/** 单条活动详情：审核时需要看到完整介绍与群二维码 */
+/** 单条活动详情：审核时需要看到完整介绍与活动二维码 */
 async function detail(event) {
   const id = text(event && event.id, 64)
   if (!id) return fail('INVALID_PARAM', '缺少活动 id')

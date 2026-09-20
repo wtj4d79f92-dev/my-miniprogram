@@ -415,7 +415,7 @@ Page({
   },
 
   removeGroupQr() {
-    ui.confirm({ title: '删除二维码', content: '确定删除已上传的活动群二维码吗？' }).then((ok) => {
+    ui.confirm({ title: '删除二维码', content: '确定删除已上传的活动二维码吗？' }).then((ok) => {
       if (ok) this.setData({ 'form.groupQrCode': '' })
     })
   },
@@ -466,7 +466,7 @@ Page({
     else if (form.feeMode === 'nonAA' && !String(form.feeNote || '').trim()) {
       errors.fee = '非 AA 制请填写费用说明，例如「门票自理」「人均约 80 元现场分摊」'
     }
-    if (!form.groupQrCode) errors.groupQrCode = '请上传活动群二维码'
+    if (!form.groupQrCode) errors.groupQrCode = '请上传活动二维码'
     // 与表单从上到下的顺序保持一致，提示第一条
     const order = [
       'agreement',
@@ -530,7 +530,8 @@ Page({
         wx.hideLoading()
         // 保持按钮锁定，直到自动跳转到新活动详情页
         this.setData({ published: true })
-        // 群二维码没识别出微信群邀请链接：活动已被驳回，详情页会写明「未通过原因」与重新提交入口，
+        // 活动二维码不是微信群邀请码也不是个人微信二维码：活动已被驳回，
+        // 详情页会写明「未通过原因」与重新提交入口，
         // 这里只提前说一句，用户不用等跳到详情页才发现
         const rejected = String(activity && activity.auditStatus) === 'rejected'
         ui.toast(rejected ? '二维码未识别，活动未通过审核' : '已提交审核', rejected ? 'none' : 'success')
@@ -576,7 +577,7 @@ Page({
   },
 
   /**
-   * 云模式：封面 / 群二维码此时还是本机临时路径，先上传到云存储换成 fileID 再提交
+   * 云模式：封面 / 活动二维码此时还是本机临时路径，先上传到云存储换成 fileID 再提交
    * Mock 模式直接透传，保持本地流程不变
    */
   uploadFiles(payload) {

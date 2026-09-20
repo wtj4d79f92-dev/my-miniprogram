@@ -194,3 +194,77 @@
   font-size: 28rpx;
   font-weight: 600;
 }
+
+/* ------------------------------ 首屏骨架 ------------------------------ */
+/* 没有任何内容可显示时（首次打开、没有本地快照）先占位，形状与真实卡片一致，加载完自然替换 */
+.banner-skeleton,
+.skeleton-card {
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.banner-skeleton {
+  border-radius: 24rpx;
+}
+
+.skeleton-card {
+  overflow: hidden;
+  border-radius: var(--radius);
+  margin-bottom: 24rpx;
+}
+
+.skeleton-cover {
+  height: 280rpx;
+  border-radius: var(--radius);
+  background: #e6ecf2;
+}
+
+.skeleton-body {
+  padding: 24rpx;
+}
+
+.skeleton-line {
+  height: 24rpx;
+  margin-top: 20rpx;
+  border-radius: 999rpx;
+  background: #e6ecf2;
+}
+
+.skeleton-line:first-child {
+  margin-top: 0;
+}
+
+.skeleton-title {
+  width: 180rpx;
+  height: 30rpx;
+  margin: 0;
+}
+
+.skeleton-line-lg {
+  width: 68%;
+  height: 32rpx;
+}
+
+.skeleton-line-sm {
+  width: 40%;
+}
+
+.banner-skeleton,
+.skeleton-cover,
+.skeleton-line {
+  animation: skeleton-breathe 1.2s ease-in-out infinite;
+}
+
+@keyframes skeleton-breathe {
+  0% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.72;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}

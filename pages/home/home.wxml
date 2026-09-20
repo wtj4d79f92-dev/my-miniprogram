@@ -36,7 +36,10 @@
       </view>
 
       <!-- 横幅轮播 -->
+      <!-- 首次打开且没有本地快照时，先占住横幅高度，避免页面从空白长出来 -->
+      <view wx:if="{{loading && !banners.length}}" class="banner banner-skeleton"></view>
       <swiper
+        wx:if="{{banners.length}}"
         class="banner"
         autoplay="{{true}}"
         interval="4000"
@@ -71,6 +74,19 @@
       <view wx:if="{{fallbackTip}}" class="fallback-tip">
         <text>{{fallbackTip}}</text>
       </view>
+
+      <!-- 首屏骨架：没有任何内容可显示时先占位，加载完由下面的卡片自然替换 -->
+      <block wx:if="{{loading && !hotList.length && !newestList.length}}">
+        <view class="section-head"><view class="skeleton-line skeleton-title"></view></view>
+        <view class="skeleton-card" wx:for="{{[0, 1, 2]}}" wx:key="*this">
+          <view class="skeleton-cover"></view>
+          <view class="skeleton-body">
+            <view class="skeleton-line skeleton-line-lg"></view>
+            <view class="skeleton-line"></view>
+            <view class="skeleton-line skeleton-line-sm"></view>
+          </view>
+        </view>
+      </block>
 
       <!-- 热门组队 -->
       <view class="section-head" wx:if="{{hotList.length}}">

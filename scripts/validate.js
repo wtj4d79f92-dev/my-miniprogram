@@ -728,7 +728,7 @@ const flow = (async () => {
 
   // 报名（自己发布的活动）
   const joined = await step('报名', api.join(created.id))
-  log(joined.joinedCount === 1 && joined.groupQrCode === 'wxfile://tmp_qr.png', '报名：人数增加且返回群二维码')
+  log(joined.joinedCount === 1 && joined.groupQrCode === 'wxfile://tmp_qr.png', '报名：人数增加且返回活动二维码')
 
   // 重复报名幂等
   const again = await step('重复报名', api.join(created.id))
@@ -912,10 +912,10 @@ const flow = (async () => {
   const autoApprovedList = await step('机审放行后广场', api.list({ pageIndex: 0, pageSize: 100, sort: 'latest' }))
   log(autoApprovedList.list.some((item) => item.id === autoApproved.id), '机审放行：活动不经人工就能出现在广场')
 
-  // 群二维码没识别出微信群邀请链接：内容再干净也直接驳回
+  // 活动二维码不是微信群邀请码也不是个人微信二维码：内容再干净也直接驳回
   const qrForm = (groupQrCode) => ({
     type: 'hiking',
-    title: '自动化测试 · 群二维码校验',
+    title: '自动化测试 · 活动二维码校验',
     location: '浙江省杭州市 九溪',
     startTime: Date.now() + 86400000,
     endTime: Date.now() + 2 * 86400000,
@@ -924,10 +924,21 @@ const flow = (async () => {
     groupQrCode,
     desc: '内容正常，仅二维码有问题',
   })
-  const notGroupQr = await step('二维码非群链接', api.create({ form: qrForm('wxfile://notgroup_qr.png') }))
-  log(notGroupQr.auditStatus === 'rejected', '二维码识别：不是微信群邀请链接时直接驳回')
-  log(notGroupQr.auditRemark === '活动二维码上传有误，请重新上传微信群二维码', '二维码识别：驳回原因写明重新上传微信群二维码')
-  log(notGroupQr.machineCheck.qrcode.status === 'not-group', '二维码识别：记录「不是群邀请链接」的识别结论')
+  const notGroupQr = await step('二维码非微信码', api.create({ form: qrForm('wxfile://notwechat_qr.png') }))
+  log(notGroupQr.auditStatus === 'rejected', '二维码识别：不是微信二维码时直接驳回')
+  log(
+    notGroupQr.auditRemark === '活动二维码上传有误，请重新上传微信群二维码或个人微信二维码',
+    '二维码识别：驳回原因写明重新上传微信群二维码或个人微信二维码'
+  )
+  log(notGroupQr.machineCheck.qrcode.status === 'not-wechat', '二维码识别：记录「不是微信二维码」的识别结论')
+
+  // 个人微信二维码同样允许上传：识别结论带上 kind，机审照常放行
+  const personalQr = await step('个人微信二维码', api.create({ form: qrForm('wxfile://personqr_card.png') }))
+  log(personalQr.auditStatus === 'approved', '二维码识别：个人微信二维码同样机审放行')
+  log(
+    personalQr.machineCheck.qrcode.status === 'ok' && personalQr.machineCheck.qrcode.kind === 'personal',
+    '二维码识别：个人微信二维码记录 kind=personal'
+  )
 
   const noQrCode = await step('二维码识别不出', api.create({ form: qrForm('wxfile://noqrcode_poster.png') }))
   log(noQrCode.auditStatus === 'rejected', '二维码识别：图里没识别到二维码时直接驳回')
@@ -936,7 +947,7 @@ const flow = (async () => {
   const qrRejectedCard = api.decorate(await step('二维码驳回详情', api.detail(notGroupQr.id)))
   log(qrRejectedCard.auditRejected && !qrRejectedCard.auditPending, '二维码识别：发起人看到的是「未通过」而不是「审核中」')
   log(
-    qrRejectedCard.auditReason === '活动二维码上传有误，请重新上传微信群二维码',
+    qrRejectedCard.auditReason === '活动二维码上传有误，请重新上传微信群二维码或个人微信二维码',
     '二维码识别：详情页「未通过原因」用的是二维码驳回文案'
   )
   // 驳回的活动不出现在广场，只有发起人自己能预览
@@ -1141,7 +1152,7 @@ function checkDetailCoverUrl() {
   })
   const activity = ctx.data.activity
   log(!!activity && activity.coverSrc === 'https://cdn.test/detail-cover.jpg', '活动详情：封面优先用临时链接渲染')
-  log(!!activity && activity.qrSrc === 'https://cdn.test/detail-qr.jpg', '活动详情：群二维码优先用临时链接渲染')
+  log(!!activity && activity.qrSrc === 'https://cdn.test/detail-qr.jpg', '活动详情：活动二维码优先用临时链接渲染')
   log(
     global.wx.navigationBarTitle === '带封面的活动 · 旷行吖',
     `活动详情：页面标题用于微信搜索理解页面 → ${global.wx.navigationBarTitle}`
@@ -1960,7 +1971,7 @@ function checkDeleteAccount() {
       // 图片上传、相册（仅写入）、设备信息、剪切板（仅写入）四项之前漏写，注销途径也要指向自助入口
       const { PRIVACY_AGREEMENT } = require(path.join(ROOT, 'utils/agreements'))
       const policy = PRIVACY_AGREEMENT.paragraphs.join('\n')
-      log(policy.indexOf('封面图与活动群二维码') > -1, '隐私政策：写明发布时选择的图片用途')
+      log(policy.indexOf('封面图与活动二维码') > -1, '隐私政策：写明发布时选择的图片用途')
       log(policy.indexOf('相册（仅写入）权限') > -1, '隐私政策：写明相册仅写入权限')
       log(policy.indexOf('设备信息') > -1, '隐私政策：写明设备信息用途')
       log(policy.indexOf('剪切板（仅写入）') > -1, '隐私政策：写明剪切板仅写入且不读取')

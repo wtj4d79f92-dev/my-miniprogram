@@ -10,7 +10,7 @@ const cloud = require('wx-server-sdk')
 const BATCH_LIMIT = 50
 
 /**
- * 收集一批活动文档里需要展示的云存储文件：封面、群二维码、机器初审缩略图。
+ * 收集一批活动文档里需要展示的云存储文件：封面、活动二维码、机器初审缩略图。
  * 按出现顺序去重并截断，返回真正要解析的 fileID 列表。
  */
 function collectFileIDs(items) {

@@ -165,7 +165,7 @@
           <text class="share-icon">↗</text>
           <text>分享</text>
         </view>
-        <!-- 报名后才出现：重新查看活动群二维码，无需先退出活动 -->
+        <!-- 报名后才出现：重新查看活动二维码，无需先退出活动 -->
         <view
           wx:if="{{!isOrganizer && activity.joined && activity.groupQrCode}}"
           class="qr-entry"
@@ -207,7 +207,7 @@
     </view>
   </view>
 
-  <!-- 报名成功群二维码 -->
+  <!-- 报名成功后的活动二维码 -->
   <view wx:if="{{showQrModal}}">
     <view class="mask" bindtap="closeQrModal"></view>
     <view class="dialog qr-dialog">
@@ -222,8 +222,8 @@
           binderror="onQrError"
         ></image>
         <view wx:else class="qr-placeholder">
-          <text class="qr-placeholder-text">活动群二维码</text>
-          <text class="qr-placeholder-tip">长按或扫码进群</text>
+          <text class="qr-placeholder-text">活动二维码</text>
+          <text class="qr-placeholder-tip">{{qrPlaceholderTip}}</text>
         </view>
       </view>
       <text class="qr-tip">长按二维码识别，或保存后分享给同行伙伴</text>

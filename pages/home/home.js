@@ -1,6 +1,6 @@
 const api = require('../../services/api')
 const { TEXTS, TYPE_GRID, normalizeBanners } = require('../../utils/dict')
-const { KEYS, setStorage } = require('../../utils/storage')
+const { KEYS, getStorage, setStorage, setStorageAsync } = require('../../utils/storage')
 const loginBehavior = require('../../behaviors/login-behavior')
 const ui = require('../../utils/ui')
 const scene = require('../../utils/scene')
@@ -13,6 +13,14 @@ const scene = require('../../utils/scene')
 const SHARE_IMAGE = '/assets/share-home.png'
 const TIMELINE_IMAGE = '/assets/logo.png'
 const SHARE_TITLE = `${TEXTS.appName} · 同城找搭子，一起出发`
+
+/**
+ * 首页列表本地快照的有效期。冷启动时先用快照把活动渲染出来，接口返回后再覆盖，
+ * 用户看到的是「打开就有内容」而不是一块空白；超过有效期就退回骨架屏等接口。
+ * 取 2 小时与封面临时链接的有效期一致，快照里的封面在这个窗口内仍然能显示
+ * （真过期了卡片会按 fileID 自动重取一次，见 components/activity-card）。
+ */
+const HOME_CACHE_TTL = 2 * 60 * 60 * 1000
 
 Page({
   behaviors: [loginBehavior],
@@ -39,6 +47,7 @@ Page({
     const app = getApp()
     this.setData({ user: app.globalData.user, singlePage: scene.isSinglePageMode() })
     this.syncCityState()
+    this.renderCache()
   },
 
   onShow() {
@@ -103,34 +112,69 @@ Page({
         if (!hasData && city) {
           ui.toast('暂无符合要求的活动')
           return api.home({ city: '' }).then((fallback) => {
-            const hotList = (fallback.hotList || []).map(api.decorate)
-            const newestList = (fallback.newestList || []).map(api.decorate)
-            this.setData({
-              banners: normalizeBanners(fallback.banners),
-              hotList,
-              newestList,
+            const hotList = fallback.hotList || []
+            const newestList = fallback.newestList || []
+            this.applyHomeData(
+              fallback,
               // 全库都没有活动时只说「暂无活动」，别再提示「为你推荐其他活动」而下面空着
-              fallbackTip: hotList.length || newestList.length ? '暂无符合要求的活动，为你推荐其他活动' : '',
-              loading: false,
-              refreshing: false,
-            })
+              hotList.length || newestList.length ? '暂无符合要求的活动，为你推荐其他活动' : ''
+            )
+            return null
           })
         }
-        this.setData({
-          // 老环境的默认横幅还写着「去发布」，进入页面时按最新默认动作升级
-          banners: normalizeBanners(res.banners),
-          hotList: (res.hotList || []).map(api.decorate),
-          newestList: (res.newestList || []).map(api.decorate),
-          fallbackTip: '',
-          loading: false,
-          refreshing: false,
-        })
+        this.applyHomeData(res, '')
         return null
       })
       .catch(() => {
         // 接口失败静默降级为空数据，不阻塞浏览
         this.setData({ loading: false, refreshing: false })
       })
+  },
+
+  /**
+   * 首帧渲染上次的快照：只负责「先给内容」，onShow 里的 loadData 照常请求并覆盖。
+   * 只在城市没变且快照没过期时使用——城市变了还拿旧快照，会看到别的城市的活动。
+   */
+  renderCache() {
+    const cached = getStorage(KEYS.homeCache, null)
+    if (!cached || !cached.time) return false
+    const app = getApp()
+    if ((cached.city || '') !== ((app && app.globalData.city) || '')) return false
+    if (Date.now() - cached.time > HOME_CACHE_TTL) return false
+    this.renderHome(cached, cached.fallbackTip || '')
+    return true
+  },
+
+  /**
+   * 接口结果落到页面，同时留一份快照给下次冷启动。
+   * 存的是接口原始数据（没 decorate 过），下次启动重新 decorate，
+   * 「已关闭 / 已到期」这类按当前时间算出来的展示状态不会跟着快照一起变陈。
+   */
+  applyHomeData(res, fallbackTip) {
+    const source = res || {}
+    this.renderHome(source, fallbackTip)
+    setStorageAsync(KEYS.homeCache, {
+      city: this.data.city,
+      time: Date.now(),
+      banners: source.banners || [],
+      hotList: source.hotList || [],
+      newestList: source.newestList || [],
+      fallbackTip: fallbackTip || '',
+    })
+  },
+
+  /** 列表 + 横幅的渲染只有这一处：接口返回和本地快照走同一条路径，字段不会两边跑偏 */
+  renderHome(res, fallbackTip) {
+    const source = res || {}
+    this.setData({
+      // 老环境的默认横幅还写着「去发布」，进入页面时按最新默认动作升级
+      banners: normalizeBanners(source.banners),
+      hotList: (source.hotList || []).map(api.decorate),
+      newestList: (source.newestList || []).map(api.decorate),
+      fallbackTip: fallbackTip || '',
+      loading: false,
+      refreshing: false,
+    })
   },
 
   onRefresh() {

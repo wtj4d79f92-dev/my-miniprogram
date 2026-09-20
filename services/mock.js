@@ -112,7 +112,7 @@ function buildBaseActivities() {
       bg: `linear-gradient(135deg, ${type.from} 0%, ${type.to} 100%)`,
       title: seed.title,
       cover: '',
-      // Mock 基础数据中部分活动无群二维码，用于覆盖「无二维码直接 Toast」的分支
+      // Mock 基础数据中部分活动没配二维码，用于覆盖「无二维码直接 Toast」的分支
       groupQrCode: index % 3 === 0 ? 'mock://placeholder' : '',
       desc: DESCS[index % DESCS.length],
       location: seed.location,

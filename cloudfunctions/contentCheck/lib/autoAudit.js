@@ -2,7 +2,7 @@
 //
 // 只有「所有送检项都明确通过」才算机审没问题：
 // - 文本必须 pass，且接口真的跑通了（failed 表示结论不可信，不能当成通过）；
-// - 群二维码必须识别出微信群邀请链接（识别不出、不是群链接、识别接口异常都不算通过）；
+// - 活动二维码必须识别出微信群邀请码或个人微信二维码（识别不出、不是微信二维码、识别接口异常都不算通过）；
 // - 有可送检图片时，每张图都要有结论且都是 pass —— 送检失败、结论没回来都算「没结论」，
 //   一律留给人工，不能因为检测本身出问题就把内容放上线；
 // - 没有可送检图片（封面 / 二维码都是 https 远程图或本机历史路径）时，只看文本结论。
@@ -27,7 +27,7 @@ function checkableImageCount(files) {
 function canAutoApprove(machineCheck, checkable) {
   const text = (machineCheck && machineCheck.text) || {}
   if (text.suggest !== PASS || text.failed) return false
-  // 群二维码：只有明确识别到微信群邀请链接才算通过（ok 为 true 只有这一种情况）
+  // 活动二维码：只有明确识别到微信群邀请码或个人微信二维码才算通过（ok 为 true 只有这两种情况）
   const qrcode = (machineCheck && machineCheck.qrcode) || null
   if (!qrcode || qrcode.ok !== true) return false
 

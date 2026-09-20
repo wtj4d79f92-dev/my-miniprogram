@@ -51,7 +51,7 @@ Component({
       }
     },
 
-    /** 海报所需的两张二维码图片来源：小程序码（云函数懒生成）+ 活动群二维码 */
+    /** 海报所需的两张二维码图片来源：小程序码（云函数懒生成）+ 活动二维码 */
     loadAssets(activity) {
       const act = activity || {}
       return Promise.all([this.loadMiniQr(act), this.toLocalPath(act.groupQrCode)]).then((res) => ({
@@ -143,7 +143,7 @@ Component({
         return
       }
       const ctx = canvas.getContext('2d')
-      // 两张二维码图片（小程序码 / 群二维码）先备齐，再整体绘制并导出图片
+      // 两张二维码图片（小程序码 / 活动二维码）先备齐，再整体绘制并导出图片
       this.loadAssets(activity)
         .then((assets) => this.paint(ctx, canvas, activity, assets))
         .then(() => this.toTempFile(canvas))
@@ -250,7 +250,7 @@ Component({
       })
     },
 
-    /** 活动群二维码：有图则绘制，否则绘制占位文案 */
+    /** 活动二维码：有图则绘制，否则绘制占位文案 */
     drawGroupQr(ctx, canvas, src) {
       return this.drawImageFit(ctx, canvas, src, { x: 75, y: 545, w: 600, h: 340 }).then((drawn) => {
         if (drawn) return
@@ -258,7 +258,7 @@ Component({
         ctx.textBaseline = 'alphabetic'
         ctx.fillStyle = '#C4CFCF'
         ctx.font = '28px sans-serif'
-        ctx.fillText('活动群二维码', 375, 706)
+        ctx.fillText('活动二维码', 375, 706)
         ctx.font = '24px sans-serif'
         ctx.fillText('发布活动时可上传', 375, 750)
       })

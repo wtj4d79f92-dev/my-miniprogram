@@ -51,7 +51,7 @@ console.log(`  城市：${countText(summary.byCity)}`)
 console.log(`  类型：${countText(summary.byType)}`)
 console.log(`  日期：${countText(summary.byDay)}`)
 if (!args.qr) {
-  console.log('  提示：未传 --qr，演示活动没有群二维码，详情页不会出现「查看二维码」入口')
+  console.log('  提示：未传 --qr，演示活动没配二维码，详情页不会出现「查看二维码」入口')
 }
 console.log('')
 console.log('下一步：')

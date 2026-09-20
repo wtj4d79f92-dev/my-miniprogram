@@ -1,7 +1,7 @@
 // 文本内容安全检测（msgSecCheck v2）：同步接口，一次调用就出结论，同时提供检测步骤的时间预算工具。
 //
 // 机审三类检测里，文本走这里（同步），图片走 mediaCheckAsync（异步，结论靠消息推送回调），
-// 群二维码走 img.scanQRCode（同步）。
+// 活动二维码走 img.scanQRCode（同步）。
 //
 // 本文件与 cloudfunctions/contentCheck/lib/textCheck.js 内容保持一致（两份镜像必须同时改）：
 // - activity 云函数在发布 / 编辑当刻送检文本；

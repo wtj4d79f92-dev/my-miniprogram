@@ -4,6 +4,17 @@ const { locate } = require('./utils/location')
 const config = require('./services/config')
 const api = require('./services/api')
 
+/**
+ * 启动后多久去校验本地登录态。
+ *
+ * 校验要打一次 activity 云函数，而首页的活动请求也在启动瞬间发出：两个调用同时打过去，
+ * 云函数会一下子冷启动两个实例（默认单实例单并发），首屏要等的那一次反而更慢。
+ * 延后这一会儿，首页请求先把实例占热，校验再发就能复用同一个实例。
+ * 延后期间任何需要登录态的操作都会通过 app.userReady 等这次校验（见 behaviors/login-behavior.js），
+ * 所以本地那份可能已失效的登录态不会被放行。
+ */
+const USER_VERIFY_DELAY = 1500
+
 App({
   globalData: {
     statusBarHeight: 20,
@@ -26,7 +37,17 @@ App({
     this.initSystemInfo()
     this.restoreState()
     // 本地缓存只是登录态的快照，真伪以服务端为准；页面侧用 userReady 等待这次校验
-    this.userReady = this.verifyUser()
+    this.userReady = new Promise((resolve) => {
+      setTimeout(() => {
+        let ready = null
+        try {
+          ready = this.verifyUser()
+        } catch (e) {
+          ready = null
+        }
+        resolve(ready)
+      }, USER_VERIFY_DELAY)
+    })
   },
 
   /**

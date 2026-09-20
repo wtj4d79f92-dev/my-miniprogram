@@ -71,9 +71,13 @@ function mockFormFields(form) {
  */
 const MOCK_RISKY_WORDS = ['违规', '赌博', '代刷', '外挂']
 const MOCK_REVIEW_WORDS = ['疑似', '兼职']
-/** Mock 里用文件名模拟二维码识别的两种不通过情况（云端用 img.scanQRCode 真实识别） */
+/**
+ * Mock 里用文件名模拟二维码识别的几种情况（云端用 img.scanQRCode 真实识别）：
+ * noqrcode 图里没码 / notwechat 不是微信二维码 / personqr 个人微信二维码，其余视为群邀请码。
+ */
 const MOCK_QR_NO_CODE = 'noqrcode'
-const MOCK_QR_NOT_GROUP = 'notgroup'
+const MOCK_QR_NOT_WECHAT = 'notwechat'
+const MOCK_QR_PERSONAL = 'personqr'
 
 /** 举报原因候选：与云端 activity 云函数的 REPORT_REASONS 保持一致 */
 const REPORT_REASONS = ['虚假信息或诈骗', '违法违规内容', '侵权或盗用他人内容', '广告骚扰', '其他']
@@ -95,30 +99,43 @@ function mockDefaultNickName(userId) {
 }
 
 /**
- * 群二维码识别：与云端 lib/contentCheck.js 的 checkQrCode 同一套结论。
- * Mock 不做真实识别，默认视为「识别到微信群邀请链接」，只有文件名带关键词时才模拟不通过。
+ * 活动二维码识别：与云端 lib/contentCheck.js 的 checkQrCode 同一套结论。
+ * Mock 不做真实识别，默认视为「识别到微信群邀请码」，只有文件名带关键词时才模拟别的结论。
  */
 function mockQrCodeCheck(file) {
   const value = String(file || '')
-  const base = { typeName: '', content: '', time: Date.now() }
+  const base = { kind: '', kindName: '', typeName: '', content: '', time: Date.now() }
   if (!value) {
-    return Object.assign(base, { status: 'failed', ok: false, message: '未上传群二维码' })
+    return Object.assign(base, { status: 'failed', ok: false, message: '未上传活动二维码' })
   }
   if (value.indexOf(MOCK_QR_NO_CODE) > -1) {
     return Object.assign(base, { status: 'not-qrcode', ok: false, message: '这张图里没有识别到二维码' })
   }
-  if (value.indexOf(MOCK_QR_NOT_GROUP) > -1) {
+  if (value.indexOf(MOCK_QR_NOT_WECHAT) > -1) {
     return Object.assign(base, {
-      status: 'not-group',
+      status: 'not-wechat',
       ok: false,
       typeName: 'QR_CODE',
       content: 'https://pay.example.com/mock',
-      message: '识别到码，但不是微信群邀请链接',
+      message: '识别到码，但不是微信群邀请码或个人微信二维码',
+    })
+  }
+  if (value.indexOf(MOCK_QR_PERSONAL) > -1) {
+    return Object.assign(base, {
+      status: 'ok',
+      ok: true,
+      kind: 'personal',
+      kindName: '个人微信二维码',
+      typeName: 'QR_CODE',
+      content: 'https://u.wechat.com/mockpersonal',
+      message: '识别到个人微信二维码',
     })
   }
   return Object.assign(base, {
     status: 'ok',
     ok: true,
+    kind: 'group',
+    kindName: '微信群邀请码',
     typeName: 'QR_CODE',
     content: 'https://weixin.qq.com/g/mockgroup',
     message: '识别到微信群邀请链接',
@@ -143,7 +160,7 @@ function mockMachineCheck(form) {
 /**
  * 机审放行判定：与云端两个云函数里的 lib/autoAudit.js 同一套规则。
  * Mock 的封面 / 二维码是本机临时路径，没有可送检的图片，所以看文本结论 + 二维码识别结论；
- * 文本疑似（review）留在待审队列交给人工；二维码识别出「不是微信群码」时直接驳回，见 mockQrReject。
+ * 文本疑似（review）留在待审队列交给人工；二维码识别出「不是微信二维码」时直接驳回，见 mockQrReject。
  */
 function mockAutoAudit(machine) {
   if (machine.text.suggest !== 'pass' || machine.text.failed || !machine.qrcode.ok) {
@@ -152,16 +169,16 @@ function mockAutoAudit(machine) {
   return { auditStatus: 'approved', auditRemark: '', auditTime: Date.now(), auditBy: '内容安全检测' }
 }
 
-/** 群二维码没识别出微信群邀请链接时的驳回原因，与云端 lib/contentCheck.js 的 QR_REJECT_REMARK 一致 */
-const QR_REJECT_REMARK = '活动二维码上传有误，请重新上传微信群二维码'
+/** 识别到的不是微信二维码时的驳回原因，与云端 lib/contentCheck.js 的 QR_REJECT_REMARK 一致 */
+const QR_REJECT_REMARK = '活动二维码上传有误，请重新上传微信群二维码或个人微信二维码'
 
 /**
- * 群二维码识别结论明确「不是微信群邀请二维码」：直接驳回，不进人工队列。
+ * 二维码识别结论明确「不是微信二维码」：直接驳回，不进人工队列。
  * 接口异常 / 没结论（failed）不驳回，交给人工复核（与云端 qrRejectPatch 同一套规则）。
  */
 function mockQrReject(machine) {
   const status = (machine && machine.qrcode && machine.qrcode.status) || ''
-  if (status !== 'not-qrcode' && status !== 'not-group') return {}
+  if (status !== 'not-qrcode' && status !== 'not-wechat') return {}
   return { auditStatus: 'rejected', auditRemark: QR_REJECT_REMARK, auditTime: Date.now(), auditBy: '内容安全检测' }
 }
 

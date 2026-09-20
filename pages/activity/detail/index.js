@@ -17,6 +17,29 @@ const launchEntry = scene.launchEntry
 const isSinglePageMode = scene.isSinglePageMode
 
 /**
+ * 二维码弹窗文案按二维码类型分开：群邀请码是「扫码进群」，个人微信二维码是「扫码加发起人好友」，
+ * 同一句「扫码加入活动群」放到个人码上会让人以为扫出来是个群。
+ * kind 来自机审识别结论（machineCheck.qrcode.kind）；没这个结论的历史活动按群码展示。
+ */
+const QR_COPY = {
+  group: {
+    joinTitle: '报名成功，扫码加入活动群',
+    viewTitle: '扫码加入活动群',
+    placeholderTip: '长按或扫码进群',
+  },
+  personal: {
+    joinTitle: '报名成功，扫码添加发起人微信',
+    viewTitle: '扫码添加发起人微信',
+    placeholderTip: '长按或扫码加好友',
+  },
+}
+
+function qrCopyOf(activity) {
+  const qrcode = (activity && activity.machineCheck && activity.machineCheck.qrcode) || null
+  return qrcode && qrcode.kind === 'personal' ? QR_COPY.personal : QR_COPY.group
+}
+
+/**
  * 活动 id 的来源：
  * - 分享卡片 / 页面跳转带的是 query，即 options.id；
  * - 扫小程序码（海报上那张）进来时，云端把活动 id 写在 scene 里并且做了 URL 编码，
@@ -65,9 +88,10 @@ Page({
     user: null,
     showSharePanel: false,
     showQrModal: false,
-    // 二维码弹窗文案随入口变化：报名成功时是结果提示，已报名用户主动查看时只是查群入口
+    // 二维码弹窗文案随入口变化：报名成功时是结果提示，已报名用户主动查看时只是查二维码入口
     qrFromJoin: false,
     qrTitle: '报名成功，扫码加入活动群',
+    qrPlaceholderTip: '长按或扫码进群',
     qrPlaceholder: false,
     statusText: '招募中',
     isOrganizer: false,
@@ -125,7 +149,7 @@ Page({
     activity.startLabel = formatCardDate(activity.startTime)
     activity.endLabel = activity.endTime ? formatCardDate(activity.endTime) : '待定'
     activity.coverGradient = activity.bg
-    // 封面 / 群二维码是发起人上传的云存储文件，客户端直连 cloud:// 可能被存储权限拦下，
+    // 封面 / 活动二维码是发起人上传的云存储文件，客户端直连 cloud:// 可能被存储权限拦下，
     // 云函数已换好 https 临时链接（coverUrl / qrUrl），这里优先用它渲染
     // 报名 / 退出 / 关闭活动等动作的返回体没有带临时链接，缓存住已经换到的地址复用，避免封面闪回占位图
     this._mediaUrl = this._mediaUrl || {}
@@ -353,7 +377,7 @@ Page({
     this.refreshMedia('cover')
   },
 
-  /** 群二维码加载失败：同上 */
+  /** 活动二维码加载失败：同上 */
   onQrError() {
     this.refreshMedia('groupQrCode')
   },
@@ -405,7 +429,7 @@ Page({
     })
   },
 
-  /** 提交报名：成功后有活动群二维码则直接展示 */
+  /** 提交报名：成功后有活动二维码则直接展示 */
   submitJoin() {
     wx.showLoading({ title: '报名中', mask: true })
     api
@@ -414,10 +438,12 @@ Page({
         wx.hideLoading()
         this.applyActivity(updated)
         if (updated.groupQrCode) {
+          const copy = qrCopyOf(updated)
           this.setData({
             showQrModal: true,
             qrFromJoin: true,
-            qrTitle: '报名成功，扫码加入活动群',
+            qrTitle: copy.joinTitle,
+            qrPlaceholderTip: copy.placeholderTip,
             qrPlaceholder: String(updated.groupQrCode).indexOf('mock://') === 0,
           })
         } else {
@@ -460,18 +486,20 @@ Page({
     if (fromJoin) ui.toast('报名成功', 'success')
   },
 
-  /** 已报名用户从底部按钮重新查看活动群二维码 */
+  /** 已报名用户从底部按钮重新查看活动二维码 */
   openQrModal() {
     const activity = this.data.activity
     if (!activity) return
     if (!activity.groupQrCode) {
-      ui.toast('发起人还没有上传活动群二维码')
+      ui.toast('发起人还没有上传活动二维码')
       return
     }
+    const copy = qrCopyOf(activity)
     this.setData({
       showQrModal: true,
       qrFromJoin: false,
-      qrTitle: '扫码加入活动群',
+      qrTitle: copy.viewTitle,
+      qrPlaceholderTip: copy.placeholderTip,
       qrPlaceholder: String(activity.groupQrCode).indexOf('mock://') === 0,
     })
   },
