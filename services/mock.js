@@ -10,6 +10,8 @@ const MOCK_JOIN_MAP = 'mock_join_map'
 const MOCK_STATUS_MAP = 'mock_status_map'
 // 本地审核结果覆盖：{ [活动id]: { auditStatus, auditRemark, auditTime, auditBy } }
 const MOCK_AUDIT_MAP = 'mock_audit_map'
+// 活动留言：{ [活动id]: 留言数组 }，与云端 activity_comments 集合同一套字段口径
+const MOCK_COMMENT_MAP = 'mock_comment_map'
 /** 关闭当天的判定精度：自然日（当天 00:00 之后关闭的活动当天还留在广场） */
 const DAY_MS = 86400000
 
@@ -250,6 +252,18 @@ function saveJoin(activityId, members) {
   setStorage(MOCK_JOIN_MAP, joinMap)
 }
 
+/** 某个活动下的全部留言（含已被软删除的，调用方按 status 过滤） */
+function commentList(activityId) {
+  const commentMap = getStorage(MOCK_COMMENT_MAP, {}) || {}
+  return commentMap[activityId] || []
+}
+
+function saveComments(activityId, list) {
+  const commentMap = getStorage(MOCK_COMMENT_MAP, {}) || {}
+  commentMap[activityId] = list
+  setStorage(MOCK_COMMENT_MAP, commentMap)
+}
+
 function memberOf(user) {
   return {
     openid: user.openid,
@@ -279,6 +293,7 @@ module.exports = {
   MOCK_JOIN_MAP,
   MOCK_STATUS_MAP,
   MOCK_AUDIT_MAP,
+  MOCK_COMMENT_MAP,
   DEFAULT_BANNERS,
   buildBaseActivities,
   allActivities,
@@ -289,6 +304,8 @@ module.exports = {
   saveStatus,
   saveAudit,
   saveJoin,
+  commentList,
+  saveComments,
   memberOf,
   cityFilter,
   normalizeCityName,

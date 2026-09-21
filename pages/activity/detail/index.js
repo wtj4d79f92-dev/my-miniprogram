@@ -18,25 +18,49 @@ const isSinglePageMode = scene.isSinglePageMode
 
 /**
  * 二维码弹窗文案按二维码类型分开：群邀请码是「扫码进群」，个人微信二维码是「扫码加发起人好友」，
- * 同一句「扫码加入活动群」放到个人码上会让人以为扫出来是个群。
+ * 同一句「扫码进群」放到个人码上会让人以为扫出来是个群。
+ *
+ * 口径上二维码是**选填的补充沟通渠道**，不是体验活动的前提：
+ * 报名、活动信息、同行成员、退出活动都在小程序内完成，所以文案里不出现「必须扫码」这类强制语气，
+ * 弹窗里也明确写清「不进群也能看到全部活动信息」。
  * kind 来自机审识别结论（machineCheck.qrcode.kind）；没这个结论的历史活动按群码展示。
  */
 const QR_COPY = {
   group: {
-    joinTitle: '报名成功，扫码加入活动群',
-    viewTitle: '扫码加入活动群',
+    viewTitle: '活动群二维码（可选）',
     placeholderTip: '长按或扫码进群',
+    modalTip: '活动时间、集合地点、同行成员在小程序内都能看到，进群只是为了临时沟通。',
   },
   personal: {
-    joinTitle: '报名成功，扫码添加发起人微信',
-    viewTitle: '扫码添加发起人微信',
+    viewTitle: '发起人微信二维码（可选）',
     placeholderTip: '长按或扫码加好友',
+    modalTip: '活动时间、集合地点、同行成员在小程序内都能看到，加微信只是为了临时沟通。',
   },
 }
 
 function qrCopyOf(activity) {
   const qrcode = (activity && activity.machineCheck && activity.machineCheck.qrcode) || null
   return qrcode && qrcode.kind === 'personal' ? QR_COPY.personal : QR_COPY.group
+}
+
+/**
+ * 留言时间：当天只显示时分，更早显示「月-日 时:分」。
+ * 列表按时间正序排列（越靠下越新），时间精确到分钟足够，不用到秒。
+ */
+function formatCommentTime(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const pad = (n) => (n < 10 ? `0${n}` : `${n}`)
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  const now = new Date()
+  const sameDay =
+    d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
+  return sameDay ? time : `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${time}`
+}
+
+/** 留言列表统一补上展示用的时间文案 */
+function decorateComments(list) {
+  return (list || []).map((item) => Object.assign({}, item, { timeLabel: formatCommentTime(item.createTime) }))
 }
 
 /**
@@ -88,14 +112,20 @@ Page({
     user: null,
     showSharePanel: false,
     showQrModal: false,
-    // 二维码弹窗文案随入口变化：报名成功时是结果提示，已报名用户主动查看时只是查二维码入口
-    qrFromJoin: false,
-    qrTitle: '报名成功，扫码加入活动群',
+    // 二维码弹窗是「已报名用户主动打开」的选填入口，不再有报名成功自动弹出的形态
+    qrTitle: '活动群二维码（可选）',
     qrPlaceholderTip: '长按或扫码进群',
+    qrTip: '活动时间、集合地点、同行成员在小程序内都能看到，进群只是为了临时沟通。',
     qrPlaceholder: false,
     statusText: '招募中',
     isOrganizer: false,
     mainBtn: { text: '我要报名', disabled: false, mode: 'join', style: '' },
+    // 活动留言：只有参与本活动的人（发起人 / 已报名）有入口，非参与者连卡片都不渲染
+    canComment: false,
+    comments: [],
+    commentsLoading: false,
+    commentInput: '',
+    commentSending: false,
   },
 
   onLoad(options) {
@@ -219,14 +249,20 @@ Page({
       mainBtn = { text: '退出活动', disabled: false, mode: 'quit', style: 'outline' }
     }
 
+    // 留言区门槛与报名一致：发起人 / 已报名的人才能看能发；退出活动后入口随之消失
+    const canComment = !this.data.singlePage && (joined || isOrganizer)
     this.setData({
       activity,
       statusText,
       isOrganizer,
       mainBtn,
+      canComment,
+      // 没有入口时顺手清掉上一次的留言，避免换活动或退出后残留在页面上
+      comments: canComment ? this.data.comments : [],
       loading: false,
       notFound: false,
     })
+    if (canComment) this.loadComments()
   },
 
   toggleAgree() {
@@ -429,7 +465,12 @@ Page({
     })
   },
 
-  /** 提交报名：成功后有活动二维码则直接展示 */
+  /**
+   * 提交报名：只提示报名结果，不再顺手弹出活动二维码。
+   * 报名是「在小程序内完成」的动作，二维码属于选填的补充沟通渠道，
+   * 报名当刻就弹码会把核心体验指向小程序外面的微信群（审核按「强制引流」判过）。
+   * 报名成功后详情页出现「行前信息 + 活动群（可选）」入口，用户想进群时自己点。
+   */
   submitJoin() {
     wx.showLoading({ title: '报名中', mask: true })
     api
@@ -437,18 +478,7 @@ Page({
       .then((updated) => {
         wx.hideLoading()
         this.applyActivity(updated)
-        if (updated.groupQrCode) {
-          const copy = qrCopyOf(updated)
-          this.setData({
-            showQrModal: true,
-            qrFromJoin: true,
-            qrTitle: copy.joinTitle,
-            qrPlaceholderTip: copy.placeholderTip,
-            qrPlaceholder: String(updated.groupQrCode).indexOf('mock://') === 0,
-          })
-        } else {
-          ui.toast('报名成功', 'success')
-        }
+        ui.toast('报名成功', 'success')
       })
       .catch((err) => {
         wx.hideLoading()
@@ -480,13 +510,10 @@ Page({
   },
 
   closeQrModal() {
-    const fromJoin = this.data.qrFromJoin
-    this.setData({ showQrModal: false, qrFromJoin: false })
-    // 只有报名成功那次收起弹窗才提示报名结果，主动查看二维码时不该再提示
-    if (fromJoin) ui.toast('报名成功', 'success')
+    this.setData({ showQrModal: false })
   },
 
-  /** 已报名用户从底部按钮重新查看活动二维码 */
+  /** 已报名用户主动查看活动二维码（详情页「活动群（可选）」入口） */
   openQrModal() {
     const activity = this.data.activity
     if (!activity) return
@@ -497,11 +524,131 @@ Page({
     const copy = qrCopyOf(activity)
     this.setData({
       showQrModal: true,
-      qrFromJoin: false,
       qrTitle: copy.viewTitle,
       qrPlaceholderTip: copy.placeholderTip,
+      qrTip: copy.modalTip,
       qrPlaceholder: String(activity.groupQrCode).indexOf('mock://') === 0,
     })
+  },
+
+  /* ------------------------------ 活动留言 ------------------------------ */
+  // 只有参与本活动的人（发起人 / 已报名）能看到这一块，接口侧同样会拦非参与者，
+  // 前端这一层只是不给入口：报名、行前信息、留言都在小程序内完成，不跳出去也能约上事。
+
+  loadComments() {
+    const activity = this.data.activity
+    if (!activity || this.data.singlePage) return Promise.resolve(null)
+    this.setData({ commentsLoading: true })
+    return api
+      .comments(activity.id)
+      .then((res) => {
+        const current = this.data.activity
+        // 页面已经换到别的活动 / 已经退出：丢弃这次结果
+        if (!current || current.id !== activity.id) return null
+        this.setData({ comments: decorateComments(res && res.list), commentsLoading: false })
+        return null
+      })
+      .catch((err) => {
+        const current = this.data.activity
+        if (current && current.id === activity.id) this.setData({ commentsLoading: false })
+        // 权限类失败不提示：留言区本来就只对参与者渲染，这里只是兜底
+        const code = (err && err.code) || ''
+        if (code !== 'FORBIDDEN' && code !== 'UNAUTHORIZED') {
+          ui.toast((err && err.message) || '留言加载失败，请稍后重试')
+        }
+        return null
+      })
+  },
+
+  onCommentInput(e) {
+    this.setData({ commentInput: e.detail.value })
+  },
+
+  /** 发留言：参与动作，先确保登录态，再交给服务端过内容安全 */
+  submitComment() {
+    const content = String(this.data.commentInput || '').trim()
+    if (!content) {
+      ui.toast('请输入留言内容')
+      return Promise.resolve(null)
+    }
+    if (this.data.commentSending) return Promise.resolve(null)
+    return this.ensureLogin('发表留言需要先登录，是否立即登录？').then((user) => {
+      if (!user) return null
+      this.handleLoginSuccess(user)
+      return this.sendComment(content)
+    })
+  },
+
+  /** 发送留言：返回 Promise，调用方（含自动化用例）能等它写完再断言 */
+  sendComment(content) {
+    this.setData({ commentSending: true })
+    return api
+      .comment(this.data.id, content)
+      .then((created) => {
+        if (!created) return null
+        this.setData({
+          comments: this.data.comments.concat(decorateComments([created])),
+          commentInput: '',
+          commentSending: false,
+        })
+        return created
+      })
+      .catch((err) => {
+        this.setData({ commentSending: false })
+        ui.toast((err && err.message) || '留言发送失败，请稍后重试')
+        return null
+      })
+  },
+
+  /** 删除留言：作者删自己的，发起人删活动里的任何一条（服务端同样按这两条判断） */
+  onCommentRemove(e) {
+    const commentId = e.currentTarget.dataset.commentId
+    const target = this.data.comments.filter((item) => item.id === commentId)[0]
+    if (!target) return
+    ui.confirm({
+      title: '删除这条留言？',
+      content: '删除后其他参与者看不到这条留言，我们会保留记录以便处理举报。',
+      confirmText: '删除',
+      confirmColor: '#E5484D',
+    }).then((ok) => {
+      if (!ok) return
+      api
+        .commentRemove(this.data.id, commentId)
+        .then(() => {
+          this.setData({ comments: this.data.comments.filter((item) => item.id !== commentId) })
+          ui.toast('已删除', 'success')
+        })
+        .catch((err) => ui.toast((err && err.message) || '删除失败，请稍后重试'))
+    })
+  },
+
+  /** 举报留言：和举报活动同一个入口，记录里带上留言 id，运营好定位 */
+  onCommentReport(e) {
+    const commentId = e.currentTarget.dataset.commentId
+    if (!commentId || this.data.singlePage) return
+    this.ensureLogin('举报留言需要先登录，是否立即登录？').then((user) => {
+      if (!user) return
+      this.handleLoginSuccess(user)
+      wx.showActionSheet({
+        itemList: REPORT_REASONS,
+        success: (res) => this.submitCommentReport(commentId, REPORT_REASONS[res.tapIndex]),
+      })
+    })
+  },
+
+  submitCommentReport(commentId, reason) {
+    if (!reason) return
+    wx.showLoading({ title: '提交中', mask: true })
+    api
+      .report(this.data.id, reason, commentId)
+      .then(() => {
+        wx.hideLoading()
+        ui.toast('举报已提交，我们会尽快核实', 'success')
+      })
+      .catch((err) => {
+        wx.hideLoading()
+        ui.toast((err && err.message) || '举报提交失败，请稍后重试')
+      })
   },
 
   /* ------------------------------ 分享 ------------------------------ */

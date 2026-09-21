@@ -5,12 +5,16 @@
 //
 // 调用方式（微信开发者工具 → 云开发控制台 → 云函数 → seed → 云端测试）：
 //   { "action": "seed",    "token": "<SEED_TOKEN>" }  写入 / 覆盖全部演示活动（时间字段重置为当前时间）
-//   { "action": "refresh", "token": "<SEED_TOKEN>" }  只平移时间字段，内容与封面 / 二维码保持不变
+//   { "action": "refresh", "token": "<SEED_TOKEN>" }  用当前时间重建这批演示活动（沿用已有封面 / 二维码）
 //   { "action": "status",  "token": "<SEED_TOKEN>" }  查看演示数据与真实数据的条数
 //   { "action": "clear",   "token": "<SEED_TOKEN>", "confirm": "DELETE_DEMO" }  删除全部演示活动
 //
 // 说明：
 // - 演示数据带 isDemo: true 与 demo_act_* 的 _id，清理只删这一批，不碰真实用户发布的活动；
+// - 演示活动是**公开数据**：首页 / 广场 / 详情 / 报名都不区分真假，线上真实用户点得进来、也会看到；
+//   isDemo 只给本云函数做写入与清理用。因此 seed / refresh 都是整篇 set() 覆盖，
+//   真实用户在演示活动上的报名会被覆盖掉，clear 更是直接把这批活动连同报名一起删除；
+//   提审期间如已有真实用户，尽量缩短窗口期，并在清理前先确认没有人报过名（见 README）；
 // - 活动有 7 天展示期（见 activity/lib/expire.js），审核拖久了就再跑一次 refresh 把展示期往后推；
 // - SEED_REFRESH=1 时，定时触发器会每天自动跑一次 refresh，审核期间数据不会中途「消失」。
 

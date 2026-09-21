@@ -82,6 +82,35 @@ const MOCK_QR_PERSONAL = 'personqr'
 /** 举报原因候选：与云端 activity 云函数的 REPORT_REASONS 保持一致 */
 const REPORT_REASONS = ['虚假信息或诈骗', '违法违规内容', '侵权或盗用他人内容', '广告骚扰', '其他']
 
+/** 留言长度上限与删除状态：与云端 lib/helper.js 的 LIMITS.comment、COMMENT_REMOVED 一致 */
+const MOCK_COMMENT_MAX = 200
+const MOCK_COMMENT_REMOVED = 'removed'
+
+/** 参与者判定：发起人或已报名的人，活动留言只对他们开放（与云端 isParticipant 同一口径） */
+function mockIsParticipant(activity, openid) {
+  if (!activity || !openid) return false
+  const organizer = activity.organizer || {}
+  if (organizer.openid === openid) return true
+  return (activity.joinedPeople || []).some((member) => member && member.openid === openid)
+}
+
+function mockIsOrganizer(activity, openid) {
+  return !!activity && !!activity.organizer && activity.organizer.openid === openid
+}
+
+/** 留言对外结构：抹掉 openid，只留 isMine / canRemove 两个判断（与云端 publicComment 一致） */
+function mockPublicComment(record, openid, canRemoveAll) {
+  const item = Object.assign({}, record)
+  delete item.openid
+  delete item.removedBy
+  delete item.removeTime
+  delete item.machineSuggest
+  delete item.status
+  item.isMine = !!openid && record.openid === openid
+  item.canRemove = !!(item.isMine || canRemoveAll)
+  return item
+}
+
 /** Mock 版文本送检：命中违规词视为不通，供昵称这类短文本复用 */
 function mockTextRisky(content) {
   const value = String(content || '')
@@ -106,7 +135,8 @@ function mockQrCodeCheck(file) {
   const value = String(file || '')
   const base = { kind: '', kindName: '', typeName: '', content: '', time: Date.now() }
   if (!value) {
-    return Object.assign(base, { status: 'failed', ok: false, message: '未上传活动二维码' })
+    // 选填：没上传给 skipped，既不是「识别失败」也不算识别通过（与云端 lib/contentCheck.js 同一套结论）
+    return Object.assign(base, { status: 'skipped', ok: false, message: '未上传活动二维码（选填，不影响发布）' })
   }
   if (value.indexOf(MOCK_QR_NO_CODE) > -1) {
     return Object.assign(base, { status: 'not-qrcode', ok: false, message: '这张图里没有识别到二维码' })
@@ -163,7 +193,9 @@ function mockMachineCheck(form) {
  * 文本疑似（review）留在待审队列交给人工；二维码识别出「不是微信二维码」时直接驳回，见 mockQrReject。
  */
 function mockAutoAudit(machine) {
-  if (machine.text.suggest !== 'pass' || machine.text.failed || !machine.qrcode.ok) {
+  // 活动二维码选填：没上传（skipped）不拦放行，上传了才要求是微信二维码
+  const qrcodeOk = machine.qrcode && (machine.qrcode.ok || machine.qrcode.status === 'skipped')
+  if (machine.text.suggest !== 'pass' || machine.text.failed || !qrcodeOk) {
     return { auditStatus: 'pending', auditRemark: '', auditTime: 0, auditBy: '' }
   }
   return { auditStatus: 'approved', auditRemark: '', auditTime: Date.now(), auditBy: '内容安全检测' }
@@ -613,7 +645,7 @@ const mockApi = {
    * 举报活动：Mock 与云端一样把记录写进反馈列表（`kind: 'report'`），
    * 本地也能看到入口产出的内容；注销账号时会随反馈一起清掉。
    */
-  report(activityId, reason) {
+  report(activityId, reason, commentId) {
     const user = mock.currentUser()
     if (!user) return fail('UNAUTHORIZED', '请先登录')
     const id = String(activityId || '')
@@ -621,12 +653,25 @@ const mockApi = {
     if (REPORT_REASONS.indexOf(String(reason || '')) === -1) return fail('INVALID_PARAM', '请选择举报原因')
     const activity = mock.findActivity(id)
     if (!activity) return fail('NOT_FOUND', '活动不存在或已下架')
+    // 传了 commentId 就是举报活动里的某条留言，记录里带上留言 id 与内容快照供运营复核
+    const targetCommentId = String(commentId || '')
+    let targetComment = null
+    if (targetCommentId) {
+      targetComment =
+        mock
+          .commentList(id)
+          .filter((item) => (item.id === targetCommentId || item._id === targetCommentId) && item.status !== MOCK_COMMENT_REMOVED)[0] || null
+      if (!targetComment) return fail('NOT_FOUND', '留言不存在或已删除')
+    }
     const record = {
       id: `mock_report_${Date.now()}`,
       kind: 'report',
+      target: targetComment ? 'comment' : 'activity',
       activityId: id,
       title: activity.title || '',
       organizerOpenid: (activity.organizer && activity.organizer.openid) || '',
+      commentId: targetComment ? targetCommentId : '',
+      commentContent: targetComment ? targetComment.content || '' : '',
       reason: String(reason),
       openid: user.openid,
       nickName: user.nickName || '',
@@ -637,6 +682,76 @@ const mockApi = {
     list.unshift(record)
     setStorage(KEYS.feedback, list)
     return withDelay({ id: record.id, status: record.status, createTime: record.createTime })
+  },
+
+  /* ------------------------- 活动留言（仅参与者可见） ------------------------- */
+  // 与云端 activity 云函数的 comments / comment / commentRemove 一一对应：
+  // 只有发起人与已报名的人能看能发，退出活动后失去访问，删除是保留原文的软删除。
+
+  comments(id) {
+    const user = mock.currentUser()
+    if (!user) return fail('UNAUTHORIZED', '请先登录')
+    const activity = mock.findActivity(id)
+    if (!activity) return fail('NOT_FOUND', '活动不存在或已下架')
+    if (!mockIsParticipant(activity, user.openid)) return fail('FORBIDDEN', '加入活动后才能查看留言')
+    const canRemoveAll = mockIsOrganizer(activity, user.openid)
+    const list = mock
+      .commentList(id)
+      .filter((item) => item.status !== MOCK_COMMENT_REMOVED)
+      .sort((a, b) => (a.createTime || 0) - (b.createTime || 0))
+      .map((item) => mockPublicComment(item, user.openid, canRemoveAll))
+    return withDelay({ list })
+  },
+
+  comment(id, content) {
+    const user = mock.currentUser()
+    if (!user) return fail('UNAUTHORIZED', '请先登录')
+    const activity = mock.findActivity(id)
+    if (!activity) return fail('NOT_FOUND', '活动不存在或已下架')
+    if (!mockIsParticipant(activity, user.openid)) return fail('FORBIDDEN', '加入活动后才能留言')
+    const value = String(content === undefined || content === null ? '' : content)
+      .trim()
+      .slice(0, MOCK_COMMENT_MAX)
+    if (!value) return fail('INVALID_PARAM', '请填写留言内容')
+    if (mockTextRisky(value)) return fail('CONTENT_RISKY', '留言包含违规内容，请修改后重试')
+
+    const record = Object.assign(mock.memberOf(user), {
+      id: `mock_comment_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      activityId: id,
+      content: value,
+      createTime: Date.now(),
+      status: 'visible',
+    })
+    const list = mock.commentList(id)
+    list.push(record)
+    mock.saveComments(id, list)
+    return withDelay(mockPublicComment(record, user.openid, false))
+  },
+
+  commentRemove(id, commentId) {
+    const user = mock.currentUser()
+    if (!user) return fail('UNAUTHORIZED', '请先登录')
+    const activity = mock.findActivity(id)
+    if (!activity) return fail('NOT_FOUND', '活动不存在或已下架')
+    const targetId = String(commentId || '')
+    if (!targetId) return fail('INVALID_PARAM', '请选择要删除的留言')
+    const list = mock.commentList(id)
+    const index = list.findIndex(
+      (item) => (item.id === targetId || item._id === targetId) && item.status !== MOCK_COMMENT_REMOVED
+    )
+    if (index === -1) return fail('NOT_FOUND', '留言不存在或已删除')
+    const target = list[index]
+    const isAuthor = target.openid === user.openid
+    const isOrganizer = mockIsOrganizer(activity, user.openid)
+    if (!isAuthor && !isOrganizer) return fail('FORBIDDEN', '只能删除自己的留言')
+
+    list[index] = Object.assign({}, target, {
+      status: MOCK_COMMENT_REMOVED,
+      removedBy: user.openid,
+      removeTime: Date.now(),
+    })
+    mock.saveComments(id, list)
+    return withDelay({ id: targetId, removed: true })
   },
 
   /** Mock 的封面 / 二维码是本机临时路径，没有云存储文件需要换临时链接 */
@@ -683,7 +798,22 @@ const mockApi = {
     })
     setStorage(mock.MOCK_JOIN_MAP, joinMap)
 
-    return withDelay({ ok: true, activities: published.length, joins })
+    // 留言同样是用户产生的内容：自己发的全删，自己在别人活动下的记录一并清掉，
+    // 自己发布的活动被删后，别人在那些活动里的留言也失去入口，跟着一起清
+    const commentMap = getStorage(mock.MOCK_COMMENT_MAP, {}) || {}
+    let commentsRemoved = 0
+    Object.keys(commentMap).forEach((activityId) => {
+      const before = commentMap[activityId] || []
+      const after = before.filter(
+        (item) => item.openid !== user.openid && publishedIds.indexOf(activityId) === -1
+      )
+      if (after.length === before.length) return
+      commentsRemoved += before.length - after.length
+      commentMap[activityId] = after
+    })
+    setStorage(mock.MOCK_COMMENT_MAP, commentMap)
+
+    return withDelay({ ok: true, activities: published.length, joins, comments: commentsRemoved })
   },
 
   /* ------------------------- 本地审核（仅 Mock 模式） ------------------------- */
@@ -816,8 +946,20 @@ const cloudApi = {
     return callCloud('feedback', payload)
   },
   /** 举报活动：云端与意见反馈同集合（kind: 'report'），供运营复核 */
-  report(id, reason) {
-    return callCloud('report', { id, reason })
+  report(id, reason, commentId) {
+    return callCloud('report', { id, reason, commentId: commentId || '' })
+  },
+
+  comments(id) {
+    return callCloud('comments', { id })
+  },
+
+  comment(id, content) {
+    return callCloud('comment', { id, content })
+  },
+
+  commentRemove(id, commentId) {
+    return callCloud('commentRemove', { id, commentId })
   },
   /** 注销账号：云端会删除账号、其发布的活动（含云存储文件）、报名记录与反馈 */
   deleteAccount() {

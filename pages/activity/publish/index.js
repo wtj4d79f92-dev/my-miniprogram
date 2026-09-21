@@ -466,7 +466,7 @@ Page({
     else if (form.feeMode === 'nonAA' && !String(form.feeNote || '').trim()) {
       errors.fee = '非 AA 制请填写费用说明，例如「门票自理」「人均约 80 元现场分摊」'
     }
-    if (!form.groupQrCode) errors.groupQrCode = '请上传活动二维码'
+    // 活动二维码选填：不传也能发布，审核通过的活动在小程序内就能看全信息、报名、看同行成员
     // 与表单从上到下的顺序保持一致，提示第一条
     const order = [
       'agreement',
@@ -477,7 +477,6 @@ Page({
       'distance',
       'elevationGain',
       'fee',
-      'groupQrCode',
     ]
     const key = order.find((name) => errors[name]) || ''
     return { key, first: key ? errors[key] : '', errors }

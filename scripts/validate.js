@@ -798,6 +798,93 @@ const flow = (async () => {
   const quit = await step('退出活动', api.quit(created.id))
   log(quit.joinedCount === 0, '退出活动：成员列表移除自己')
 
+  /* ---------- 活动留言：仅参与者可见的站内沟通 ---------- */
+  // 站内留言是「不跳去微信群也能约上事」的那条闭环，同时它本身是 UGC：
+  // 机审要拦违规词、没参加活动的人看不到、只有作者本人与发起人能删
+  const storageModule = require(path.join(ROOT, 'utils/storage'))
+  const outsiderActivity = page1.list.filter(
+    (item) => item.id !== created.id && item.status === 'recruiting' && item.joinedCount < item.maxPeople
+  )[0]
+  let commentOutsiderError = ''
+  try {
+    await api.comments(outsiderActivity.id)
+  } catch (e) {
+    commentOutsiderError = e.code
+  }
+  log(commentOutsiderError === 'FORBIDDEN', '留言：没参加活动的人看不到留言')
+
+  const myComment = await step('发留言', api.comment(created.id, '九点在地铁口集合，我带一个急救包'))
+  log(
+    myComment.content === '九点在地铁口集合，我带一个急救包' &&
+      myComment.nickName === user.nickName &&
+      myComment.openid === undefined,
+    '留言：参与者能发言，返回内容脱敏到只剩昵称'
+  )
+  log(myComment.isMine === true && myComment.canRemove === true, '留言：自己发的留言带删除标记')
+
+  let riskyCommentError = ''
+  try {
+    await api.comment(created.id, '违规内容测试')
+  } catch (e) {
+    riskyCommentError = e.code
+  }
+  log(riskyCommentError === 'CONTENT_RISKY', '留言：命中违规关键词直接拦截')
+
+  let emptyCommentError = ''
+  try {
+    await api.comment(created.id, '   ')
+  } catch (e) {
+    emptyCommentError = e.code
+  }
+  log(emptyCommentError === 'INVALID_PARAM', '留言：空内容不能提交')
+
+  const commentList = await step('留言列表', api.comments(created.id))
+  log(
+    commentList.list.length === 1 && commentList.list[0].id === myComment.id,
+    '留言：参与者能看到本活动的留言，违规与空内容没有写进去'
+  )
+  log(
+    commentList.list.every((item) => item.openid === undefined),
+    '留言：列表不下发任何 openid'
+  )
+
+  // 换一个本地用户：既不是作者也不是发起人，删不掉别人的留言
+  const ownerSnapshot = storageModule.getStorage(storageModule.KEYS.user, null)
+  storageModule.setStorage(storageModule.KEYS.user, {
+    openid: 'mock_openid_stranger',
+    userId: 999,
+    nickName: '围观群众',
+    avatarColor: '#4ECDC4',
+    avatarText: '围',
+  })
+  let strangerRemoveError = ''
+  try {
+    await api.commentRemove(created.id, myComment.id)
+  } catch (e) {
+    strangerRemoveError = e.code
+  }
+  log(strangerRemoveError === 'FORBIDDEN', '留言：非作者、非发起人不能删除别人的留言')
+  storageModule.setStorage(storageModule.KEYS.user, ownerSnapshot)
+
+  // 作者删除自己的留言：软删除，列表里不再出现
+  const removedComment = await step('删除留言', api.commentRemove(created.id, myComment.id))
+  log(removedComment.removed === true && removedComment.id === myComment.id, '留言：作者可以删除自己的留言')
+  const afterRemoveComments = await step('删除后留言列表', api.comments(created.id))
+  log(afterRemoveComments.list.length === 0, '留言：删除后不再出现在列表里')
+
+  // 退出活动后失去留言访问：报名是留言区的门槛
+  await step('加入别人的活动', api.join(outsiderActivity.id))
+  const joinedComments = await step('退出前留言列表', api.comments(outsiderActivity.id))
+  log(Array.isArray(joinedComments.list), '留言：报名后能进入活动留言区')
+  await step('退出别人的活动', api.quit(outsiderActivity.id))
+  let commentAfterQuitError = ''
+  try {
+    await api.comments(outsiderActivity.id)
+  } catch (e) {
+    commentAfterQuitError = e.code
+  }
+  log(commentAfterQuitError === 'FORBIDDEN', '留言：退出活动后不再能查看留言')
+
   // 满员限制
   const fullActivity = page1.list.find((item) => item.joinedCount >= item.maxPeople)
   if (fullActivity) {
@@ -911,6 +998,35 @@ const flow = (async () => {
   log(autoApproved.auditRemark === '', '机审放行：自动通过的活动没有驳回原因')
   const autoApprovedList = await step('机审放行后广场', api.list({ pageIndex: 0, pageSize: 100, sort: 'latest' }))
   log(autoApprovedList.list.some((item) => item.id === autoApproved.id), '机审放行：活动不经人工就能出现在广场')
+
+  // 活动二维码是选填：不建群、不传码的活动同样能发布并机审放行（报名后在小程序内看行前信息）
+  const noQrActivity = await step(
+    '不上传二维码',
+    api.create({
+      form: {
+        type: 'hiking',
+        title: '自动化测试 · 没有活动群',
+        location: '浙江省杭州市 九溪',
+        startTime: Date.now() + 86400000,
+        endTime: Date.now() + 2 * 86400000,
+        difficulty: 1,
+        distance: 5,
+        elevationGain: 80,
+        feeMode: 'aa',
+        maxPeople: 6,
+        tags: [],
+        groupQrCode: '',
+        desc: '没有建群的活动，信息都在小程序内看',
+      },
+    })
+  )
+  log(!!noQrActivity.id, '二维码选填：不上传活动二维码也能发布')
+  log(
+    noQrActivity.machineCheck.qrcode.status === 'skipped' && noQrActivity.auditStatus === 'approved',
+    '二维码选填：没上传记为 skipped 且不阻断机审放行'
+  )
+  const noQrDetail = api.decorate(await step('没有活动群的活动详情', api.detail(noQrActivity.id)))
+  log(!noQrDetail.groupQrCode && noQrDetail.joined === false, '二维码选填：活动详情照常可看、可报名')
 
   // 活动二维码不是微信群邀请码也不是个人微信二维码：内容再干净也直接驳回
   const qrForm = (groupQrCode) => ({
@@ -1915,14 +2031,17 @@ function checkDeleteAccount() {
       return target ? api.join(target.id) : null
     })
     .then(() => api.feedback({ content: '注销前的反馈内容' }))
+    .then(() => api.comment(target.id, '注销前在别人活动里留的言'))
     .then(() => {
       const joinMap = getStorage(mockModel.MOCK_JOIN_MAP, {}) || {}
+      const commentMap = getStorage(mockModel.MOCK_COMMENT_MAP, {}) || {}
       log(
         !!getStorage(KEYS.user, null) &&
           (getStorage(KEYS.published, []) || []).some((item) => item.id === own.id) &&
           (joinMap[target.id] || []).some((member) => member.openid === account.openid) &&
+          (commentMap[target.id] || []).some((item) => item.openid === account.openid) &&
           (getStorage(KEYS.feedback, []) || []).length > 0,
-        '注销：注销前账号、发布、报名与反馈四类数据都在'
+        '注销：注销前账号、发布、报名、留言与反馈几类数据都在'
       )
       return api.deleteAccount()
     })
@@ -1936,6 +2055,15 @@ function checkDeleteAccount() {
       log(
         (joinMap[target.id] || []).every((member) => member.openid !== account.openid),
         '注销：别人活动的报名名单里不再有自己'
+      )
+      const commentMap = getStorage(mockModel.MOCK_COMMENT_MAP, {}) || {}
+      const leftComments = Object.keys(commentMap).reduce(
+        (acc, id) => acc.concat(commentMap[id] || []),
+        []
+      )
+      log(
+        leftComments.every((item) => item.openid !== account.openid),
+        '注销：自己发过的留言一并删除，别人活动里不留痕'
       )
       log(
         !mockModel.visibleActivities().some((item) => item.organizer.openid === account.openid),
@@ -1971,7 +2099,10 @@ function checkDeleteAccount() {
       // 图片上传、相册（仅写入）、设备信息、剪切板（仅写入）四项之前漏写，注销途径也要指向自助入口
       const { PRIVACY_AGREEMENT } = require(path.join(ROOT, 'utils/agreements'))
       const policy = PRIVACY_AGREEMENT.paragraphs.join('\n')
-      log(policy.indexOf('封面图与活动二维码') > -1, '隐私政策：写明发布时选择的图片用途')
+      log(
+        policy.indexOf('封面图') > -1 && policy.indexOf('活动二维码') > -1 && policy.indexOf('不传二维码也可以发布活动') > -1,
+        '隐私政策：写明发布时选择的图片用途，并标明活动二维码为选填'
+      )
       log(policy.indexOf('相册（仅写入）权限') > -1, '隐私政策：写明相册仅写入权限')
       log(policy.indexOf('设备信息') > -1, '隐私政策：写明设备信息用途')
       log(policy.indexOf('剪切板（仅写入）') > -1, '隐私政策：写明剪切板仅写入且不读取')
@@ -2551,6 +2682,83 @@ function checkHardening() {
     read('pages/activity/detail/index.wxml').indexOf('平台不收取任何资金') > -1,
     '详情页：费用行同样标注「平台不收取任何资金」'
   )
+
+  /* 审核口径：活动二维码是选填的补充沟通渠道，不能变成「必须扫码才能体验」 */
+  // 这一版就是按「小程序内服务强制引流至其他渠道才能体验」被驳回的：
+  // 发布必须传二维码、报名成功当刻强弹二维码弹窗，审核员看到的链路就只剩「去微信群」
+  const detailJs = read('pages/activity/detail/index.js')
+  const detailWxml = read('pages/activity/detail/index.wxml')
+  log(
+    publishJs.indexOf('请上传活动二维码') === -1 && cloudJs.indexOf('请上传活动二维码') === -1,
+    '二维码选填：发布页与云函数都不再把活动二维码当必填项'
+  )
+  log(
+    publishWxml.indexOf('二维码只是参与者想临时沟通时的补充渠道') > -1 &&
+      publishWxss.indexOf('.qr-tip') > -1,
+    '二维码选填：发布页写明不上传也能发布（含独立样式，真机上不会被挤掉）'
+  )
+  log(
+    detailJs.indexOf('扫码加入活动群') === -1 && detailJs.indexOf('joinTitle') === -1,
+    '详情页：二维码文案不再写「扫码加入活动群」这类把进群当体验前提的说法'
+  )
+  // submitJoin 到 quitActivity 这两个函数之间就是报名成功后的处理：里面不该再出现弹窗
+  const submitJoinStart = detailJs.indexOf('  submitJoin() {')
+  const submitJoinBody = detailJs.slice(submitJoinStart, detailJs.indexOf('  quitActivity() {', submitJoinStart))
+  log(
+    submitJoinBody.indexOf('showQrModal') === -1 && submitJoinBody.indexOf('报名成功') > -1,
+    '详情页：报名成功只提示结果，不再自动弹出活动二维码'
+  )
+  log(
+    detailWxml.indexOf('行前信息') > -1 &&
+      detailWxml.indexOf('不需要额外渠道') > -1 &&
+      detailWxml.indexOf('bindtap="openQrModal"') > -1 &&
+      detailWxml.indexOf('class="qr-entry"') > -1,
+    '详情页：报名后在小程序内给出行前信息，活动二维码只保留「退出活动」旁的用户主动入口'
+  )
+
+  /* 活动留言：仅参与者可见的站内沟通，同时也是 UGC —— 三个口子一个都不能少 */
+  // 1. 只有参与者能看能发；2. 内容过机审；3. 可删除 + 可举报
+  log(
+    cloudJs.indexOf("const comments = db.collection('activity_comments')") > -1 &&
+      cloudJs.indexOf('function isParticipant(doc, openid)') > -1 &&
+      cloudJs.indexOf("fail('FORBIDDEN', '加入活动后才能查看留言')") > -1 &&
+      cloudJs.indexOf("fail('UNAUTHORIZED', '请先登录')") > -1,
+    '留言：云端只对参与者开放，非参与者连条数都拿不到'
+  )
+  log(
+    cloudJs.indexOf('const checked = await checkText(content, openid)') > -1 &&
+      cloudJs.indexOf("fail('CONTENT_RISKY', '留言包含违规内容，请修改后重试')") > -1,
+    '留言：内容与昵称、反馈、活动文案共用同一套文本内容安全'
+  )
+  log(
+    cloudJs.indexOf('COMMENT_REMOVED') > -1 &&
+      cloudJs.indexOf('removedBy: openid') > -1 &&
+      cloudJs.indexOf('data: { status: COMMENT_REMOVED, removedBy: openid, removeTime: Date.now() }') > -1,
+    '留言：删除是软删除，保留原文与操作人供运营复核'
+  )
+  log(
+    cloudJs.indexOf("target: commentDoc ? 'comment' : 'activity'") > -1 &&
+      cloudJs.indexOf('commentContent: commentDoc') > -1,
+    '举报：可以举报活动里的某条留言，记录带留言 id 与内容快照'
+  )
+  log(
+    detailWxml.indexOf('活动留言') > -1 &&
+      detailWxml.indexOf('仅参与本活动的人可见') > -1 &&
+      detailWxml.indexOf('bindtap="onCommentReport"') > -1 &&
+      detailWxml.indexOf('wx:if="{{canComment}}"') > -1,
+    '详情页：留言卡片只对参与者渲染，并带举报入口'
+  )
+  log(
+    detailJs.indexOf('const canComment = !this.data.singlePage && (joined || isOrganizer)') > -1 &&
+      detailJs.indexOf('onCommentRemove') > -1,
+    '详情页：留言入口与报名状态同源，退出活动后入口随之消失'
+  )
+  log(
+    read('services/api.js').indexOf('mockIsParticipant') > -1 &&
+      read('services/mock.js').indexOf('MOCK_COMMENT_MAP') > -1,
+    '留言：Mock 数据层与云端同一套权限与字段口径'
+  )
+
   log(
     cloudJs.indexOf("fail('INVALID_PARAM', '请选择费用方式") > -1 &&
       cloudJs.indexOf("fail('INVALID_PARAM', '非 AA 制活动需填写费用说明") > -1,
@@ -2750,12 +2958,120 @@ function checkSeedData() {
   )
 }
 
+/* -------------- 活动留言：详情页只给参与者渲染，发送 / 删除即时生效 -------------- */
+/**
+ * 数据层的权限在 Mock 链路与 scripts/cloud-validate.js 里覆盖，这里验证页面这一层的决策：
+ * 非参与者不渲染留言卡（canComment=false，并清掉上一次的留言），
+ * 参与者能加载、发送后立刻出现在列表里、删除后从列表消失。
+ */
+function checkDetailComments() {
+  const api = require(path.join(ROOT, 'services/api'))
+  const { KEYS, getStorage, setStorage } = require(path.join(ROOT, 'utils/storage'))
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  const pageOptions = []
+  global.Page = (options) => pageOptions.push(options)
+  const detailPagePath = path.join(ROOT, 'pages/activity/detail/index.js')
+  // 前面几组用例已经 require 过这个页面，清掉缓存保证重新拿到一份干净的配置
+  delete require.cache[require.resolve(detailPagePath)]
+  require(detailPagePath)
+  const page = pageOptions[0]
+
+  const originalToast = global.wx.showToast
+  const originalModal = global.wx.showModal
+  global.wx.showToast = () => {}
+  global.wx.showModal = (options) => options.success({ confirm: true })
+
+  const userSnapshot = getStorage(KEYS.user, null)
+  // 换一个全新的本地用户：既没参加过活动，也不是任何活动的发起人
+  const tester = {
+    openid: 'mock_openid_comment_tester',
+    userId: 77,
+    nickName: '留言测试员',
+    avatarColor: '#4ECDC4',
+    avatarText: '留',
+  }
+  setStorage(KEYS.user, tester)
+  globalData.user = tester
+
+  const createInstance = (activityId) => {
+    const ctx = Object.assign({}, page)
+    ctx.data = JSON.parse(JSON.stringify(page.data))
+    ctx.data.id = activityId
+    ctx.setData = function setData(patch) {
+      Object.assign(this.data, patch)
+    }
+    return ctx
+  }
+
+  const restore = () => {
+    setStorage(KEYS.user, userSnapshot)
+    globalData.user = userSnapshot
+    global.wx.showToast = originalToast
+    global.wx.showModal = originalModal
+  }
+
+  let targetId = ''
+  return api
+    .list({ pageIndex: 0, pageSize: 20, sort: 'latest' })
+    .then((res) => {
+      targetId = res.list[0].id
+      return api.detail(targetId)
+    })
+    .then((raw) => {
+      const outsider = createInstance(targetId)
+      outsider.applyActivity(raw)
+      log(
+        outsider.data.canComment === false && outsider.data.comments.length === 0,
+        '详情页：没参加活动时不渲染留言卡'
+      )
+      return api.join(targetId)
+    })
+    .then(() => api.detail(targetId))
+    .then((raw) => {
+      const ctx = createInstance(targetId)
+      ctx.applyActivity(raw)
+      log(ctx.data.canComment === true, '详情页：报名后出现留言入口')
+      return ctx
+        .loadComments()
+        .then(() => {
+          log(ctx.data.comments.length === 0, '详情页：刚报名时留言列表为空，不是一直卡在加载中')
+          return ctx.sendComment('九点在地铁口集合，我带了急救包')
+        })
+        .then(() => {
+          log(
+            ctx.data.comments.length === 1 && ctx.data.commentInput === '',
+            '详情页：发送后留言立刻出现在列表里并清空输入框'
+          )
+          log(
+            !!ctx.data.comments[0].timeLabel && ctx.data.comments[0].isMine === true,
+            '详情页：留言带展示用时间与「我发的」标记'
+          )
+          const commentId = ctx.data.comments[0].id
+          ctx.onCommentRemove({ currentTarget: { dataset: { commentId } } })
+          return wait(50).then(() => {
+            log(ctx.data.comments.length === 0, '详情页：删除后这条留言从列表里消失')
+          })
+        })
+    })
+    .then(() => api.quit(targetId))
+    .then(() => {
+      restore()
+      return null
+    })
+    .catch((e) => {
+      restore()
+      log(false, `详情页留言：执行异常 → ${e && e.message}`)
+    })
+}
+
 return checkDeleteAccount()
   .then(() => checkHardening())
   .then(() => checkExpireRule())
   .then(() => checkCloudShapeFixes())
   .then(() => checkSinglePageShare())
   .then(() => checkHomeShare())
+  .then(() => checkDetailComments())
   .then(() => checkSeedData())
 })
 .then(() => {

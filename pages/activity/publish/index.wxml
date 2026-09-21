@@ -153,7 +153,7 @@
 
       <!-- 活动二维码 -->
       <view class="card">
-        <view class="form-head"><text class="form-title">活动二维码 <text class="required">*</text></text><text class="form-sub">仅相册，需为微信群 / 个人微信二维码</text></view>
+        <view class="form-head"><text class="form-title">活动二维码 <text class="optional">选填</text></text><text class="form-sub">仅相册，需为微信群 / 个人微信二维码</text></view>
         <view class="qr-upload">
           <view wx:if="{{form.groupQrCode}}" class="qr-preview">
             <image class="qr-img" src="{{form.groupQrCode}}" mode="aspectFit"></image>
@@ -167,6 +167,7 @@
             <text class="cover-add-text">上传二维码</text>
           </view>
         </view>
+        <text class="form-sub qr-tip">不上传也能发布：活动时间、集合地点、同行成员、退出活动都在小程序内完成，二维码只是参与者想临时沟通时的补充渠道。</text>
         <text wx:if="{{errors.groupQrCode}}" class="form-error qr-error">{{errors.groupQrCode}}</text>
       </view>
 

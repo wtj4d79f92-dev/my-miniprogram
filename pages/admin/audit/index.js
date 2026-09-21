@@ -35,6 +35,8 @@ const MACHINE_LABEL = {
  */
 const QR_VERDICT = {
   ok: { label: '微信二维码', className: 'pass' },
+  // 选填项没上传：既不是失败也不用人工核对，按中性结论展示
+  skipped: { label: '未上传（选填）', className: 'pass' },
   'not-qrcode': { label: '未识别到二维码', className: 'review' },
   'not-wechat': { label: '不是微信二维码', className: 'review' },
   // 旧结论：改名前的历史数据仍按同一层含义展示，别让老活动在台面上显示成「未识别」
@@ -232,7 +234,8 @@ Page({
     const qrcode = (machine && machine.qrcode) || null
     const verdict = QR_VERDICT[(qrcode && qrcode.status) || 'unknown'] || QR_VERDICT.unknown
     item.machineQrcodeOk = !!(qrcode && qrcode.ok)
-    item.machineQrcodeFailed = !!(qrcode && qrcode.ok === false)
+    // skipped（选填没上传）不是失败：审核台不该把它挂成需要复核的旗子
+    item.machineQrcodeFailed = !!(qrcode && qrcode.ok === false && qrcode.status !== 'skipped')
     item.machineQrcodeLabel = (qrcode && qrcode.ok && QR_KIND_LABEL[qrcode.kind]) || verdict.label
     item.machineQrcodeClass = verdict.className
     item.machineQrcodeContent = (qrcode && qrcode.content) || ''

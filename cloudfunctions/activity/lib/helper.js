@@ -15,6 +15,8 @@ const LIMITS = {
   bio: 60,
   url: 500,
   feedback: 1000,
+  // 活动留言：站内沟通用的短文本，够说清集合地点 / 拼车 / 装备即可
+  comment: 200,
 }
 
 /** 无头像时的色块备选，与前端 services/api.js 的 AVATAR_COLORS 保持一致 */
@@ -134,6 +136,32 @@ function publicActivity(doc, openid) {
   return item
 }
 
+/**
+ * 留言对外输出：补 id、抹掉 openid，并带上前端渲染需要的两个判断。
+ *
+ * 留言的作者 openid 与活动报名者一样属于身份标识，不下发给客户端；
+ * 前端只认 isMine（是不是我发的）与 canRemove（我能不能删），
+ * 后者对发起人恒为 true —— 活动里的内容，发起人有权清理。
+ * @param {Object} doc 数据库里的留言文档
+ * @param {string} openid 当前请求方
+ * @param {boolean} canRemoveAll 当前用户是不是该活动的发起人
+ */
+function publicComment(doc, openid, canRemoveAll) {
+  const item = withId(doc)
+  const nickName = text(doc.nickName, LIMITS.nickName) || '微信用户'
+  // 身份标识、运营处理痕迹与机审结论都不对外下发：参与者只需要正文与「谁发的、我能不能删」
+  delete item.openid
+  delete item.removedBy
+  delete item.removeTime
+  delete item.machineSuggest
+  // 列表只会返回正常展示的留言，删除状态属于服务端内部口径
+  delete item.status
+  item.nickName = nickName
+  item.isMine = !!openid && doc.openid === openid
+  item.canRemove = !!(item.isMine || canRemoveAll)
+  return item
+}
+
 /** 事务内按 id 取文档：文档不存在时 get 会抛错，统一收敛成 null */
 async function txDoc(transaction, collectionName, id) {
   try {
@@ -155,6 +183,7 @@ module.exports = {
   escapeRegExp,
   memberOf,
   publicMember,
+  publicComment,
   publicActivity,
   withId,
   txDoc,

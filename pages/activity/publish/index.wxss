@@ -32,6 +32,14 @@
   color: #ff5a5a;
 }
 
+/* 选填项标记：与必填的红星区分开，别让人以为漏填就发不出去 */
+.optional {
+  margin-left: 8rpx;
+  font-size: 20rpx;
+  font-weight: 400;
+  color: var(--text-light);
+}
+
 /* 必填项校验未通过的红色提示 */
 .form-error {
   display: block;
@@ -275,6 +283,13 @@
 .fee-tip {
   display: block;
   margin: 4rpx 0 8rpx 190rpx;
+  line-height: 1.5;
+}
+
+/* 活动二维码选填说明：不传也能发布，避免发起人以为必须建群才能发活动 */
+.qr-tip {
+  display: block;
+  margin-top: 12rpx;
   line-height: 1.5;
 }
 

@@ -44,6 +44,7 @@ const {
   coord,
   escapeRegExp,
   memberOf,
+  publicComment,
   publicActivity,
   withId,
   txDoc,
@@ -54,6 +55,7 @@ const users = db.collection('users')
 const banners = db.collection('banners')
 const feedbacks = db.collection('feedback')
 const auditLogs = db.collection('activity_audits')
+const comments = db.collection('activity_comments')
 
 const RECRUITING = 'recruiting'
 const CLOSED = 'closed'
@@ -71,6 +73,11 @@ const MY_LIST_LIMIT = 100
 const CLOSE_BATCH = 100
 /** 默认横幅的历史动作：仅当后台仍保持该动作时，才按最新默认值升级 */
 const LEGACY_BANNER_ACTIONS = [{ _id: 'banner_default_3', action: { type: 'publish' } }]
+/** 留言状态：visible 正常展示 / removed 已删除（软删除，原内容留痕给运营复核） */
+const COMMENT_VISIBLE = 'visible'
+const COMMENT_REMOVED = 'removed'
+/** 一次返回的留言条数上限：站内沟通是轻量的，不做分页，只取最近的一批 */
+const COMMENT_LIMIT = 100
 /**
  * 公开可见条件（审核中 / 未通过不可见）。
  * 每次调用都返回新的指令对象，避免同一个 db.command 实例在多条查询之间复用。
@@ -390,7 +397,8 @@ function normalizeForm(form) {
   if (!location) return { error: fail('INVALID_PARAM', '请填写集合地点') }
   if (!startTime || !endTime) return { error: fail('INVALID_PARAM', '请选择活动时间') }
   if (endTime < startTime) return { error: fail('INVALID_PARAM', '返程时间不能早于集合时间') }
-  if (!groupQrCode) return { error: fail('INVALID_PARAM', '请上传活动二维码') }
+  // 活动二维码是选填：报名、活动信息、同行成员、退出活动都在小程序内完成，
+  // 二维码只是「想和发起人临时沟通」时的补充渠道，不强制发起人建群，也不卡发布。
 
   // 费用方式必须由发起人主动选择：AA 制 / 非 AA 制。
   // 平台不收取任何资金，非 AA 制只接受一段文字说明（如「门票自理」「人均约 80 元现场分摊」），
@@ -487,7 +495,8 @@ async function writeLog(data) {
  * 机器初审：文本同步检测 + 图片异步发起 + 活动二维码同步识别。
  * - 文本命中违规：直接拦下，不写库（避免违规内容进库），由发起人改完重发；
  * - 图片只有 traceId，结果由消息推送回调补写，这里先记 pending；
- * - 活动二维码只认微信群邀请码与个人微信二维码，识别不出 / 不是微信二维码直接驳回
+ * - 活动二维码是选填：没上传时结论是 skipped，不参与放行判定也不驳回；
+ *   上传了则只认微信群邀请码与个人微信二维码，识别不出 / 不是微信二维码直接驳回
  *   （详见 qrRejectPatch 与 lib/contentCheck.js）；
  * - 检测接口本身失败：降级为纯人工审核（待审队列），既不阻塞发布也不误驳。
  */
@@ -950,6 +959,9 @@ const REPORT_PENDING = 'pending'
  * 举报记录跟反馈一样带着 openid 与昵称，复用同一个集合既能天然继承权限，
  * 也能在注销账号时跟着 feedback 一起清掉，不会留下孤儿个人信息。
  * 举报不参与机审放行，也不改活动状态 —— 是否下架由运营判断，避免被恶意举报当成下架工具。
+ *
+ * 传了 commentId 就是举报活动里的某条留言（target: 'comment'）：把留言 id 与
+ * 内容快照一起写进记录，运营在后台不用再去数据里翻是哪一条。
  */
 async function report(event, openid) {
   if (!openid) return fail('UNAUTHORIZED', '请先登录')
@@ -961,12 +973,25 @@ async function report(event, openid) {
   const doc = await getActivity(id)
   if (!doc) return fail('NOT_FOUND', '活动不存在或已下架')
 
+  const commentId = String((event && event.commentId) || '')
+  let commentDoc = null
+  if (commentId) {
+    commentDoc = await findComment(commentId)
+    if (!commentDoc || commentDoc.activityId !== id || commentDoc.status === COMMENT_REMOVED) {
+      return fail('NOT_FOUND', '留言不存在或已删除')
+    }
+  }
+
   const userDoc = await findUser(openid)
   const record = {
     kind: 'report',
+    // 举报对象：activity 整条活动 / comment 活动里的某条留言
+    target: commentDoc ? 'comment' : 'activity',
     activityId: id,
     title: doc.title || '',
     organizerOpenid: (doc.organizer && doc.organizer.openid) || '',
+    commentId: commentDoc ? commentId : '',
+    commentContent: commentDoc ? commentDoc.content || '' : '',
     reason,
     openid,
     nickName: (userDoc && userDoc.nickName) || '',
@@ -980,6 +1005,114 @@ async function report(event, openid) {
     console.error('[activity] 举报写入失败', e)
     return fail('SERVER_ERROR', '举报提交失败，请稍后重试')
   }
+}
+
+/* ------------------------------ 活动留言 ------------------------------ */
+
+/**
+ * 活动留言：报名的人与发起人在活动里对集合细节、拼车、装备这些事，让
+ * 「不用跳去微信群也能约上事」这条闭环落在小程序内（二维码因此可以只是补充渠道）。
+ *
+ * 三条口径：
+ * 1. **只有参与者能看能发**：发起人与已报名的人，退出活动后随即失去访问 —— 留言不是公开社区；
+ * 2. **内容照样过机审**：与昵称 / 反馈 / 活动文案共用同一套 checkText，命中违规直接拒绝写库；
+ * 3. **删除是软删除**：作者本人与发起人都能删，原内容与操作人留痕，运营复核与举报处理时有据可查。
+ */
+function isParticipant(doc, openid) {
+  if (!openid || !doc) return false
+  const organizer = doc.organizer || {}
+  if (organizer.openid === openid) return true
+  return (doc.joinedPeople || []).some((member) => member && member.openid === openid)
+}
+
+/** 按 id 取留言：文档不存在时 get 会抛错，统一收敛成 null */
+async function findComment(commentId) {
+  try {
+    const res = await comments.doc(String(commentId)).get()
+    return (res && res.data) || null
+  } catch (e) {
+    return null
+  }
+}
+
+/**
+ * 取某个活动的留言列表。
+ *
+ * 只按 activityId 单字段查询后内存里过滤 / 排序：云数据库对多字段组合查询要求建复合索引，
+ * 留言是跟活动绑定的轻量数据，单字段查询足够，也省掉一个必须手工创建的索引。
+ */
+async function listComments(doc, openid) {
+  const res = await comments.where({ activityId: doc._id }).limit(COMMENT_LIMIT).get()
+  const canRemoveAll = !!doc.organizer && doc.organizer.openid === openid
+  return ((res && res.data) || [])
+    .filter((item) => item.status !== COMMENT_REMOVED)
+    .sort((a, b) => (a.createTime || 0) - (b.createTime || 0))
+    .map((item) => publicComment(item, openid, canRemoveAll))
+}
+
+/** 查看活动留言：只有参与者能看，非参与者按无权限处理（连条数都不暴露） */
+async function commentsOf(event, openid) {
+  if (!openid) return fail('UNAUTHORIZED', '请先登录')
+  const id = String((event && event.id) || '')
+  if (!id) return fail('NOT_FOUND', '活动不存在或已下架')
+  const doc = await getActivity(id)
+  if (!doc) return fail('NOT_FOUND', '活动不存在或已下架')
+  if (!isParticipant(doc, openid)) return fail('FORBIDDEN', '加入活动后才能查看留言')
+  return { list: await listComments(doc, openid) }
+}
+
+/** 发留言：参与者才能发，内容先过文本内容安全再写库 */
+async function addComment(event, openid) {
+  if (!openid) return fail('UNAUTHORIZED', '请先登录')
+  const id = String((event && event.id) || '')
+  if (!id) return fail('NOT_FOUND', '活动不存在或已下架')
+  const doc = await getActivity(id)
+  if (!doc) return fail('NOT_FOUND', '活动不存在或已下架')
+  if (!isParticipant(doc, openid)) return fail('FORBIDDEN', '加入活动后才能留言')
+
+  const content = text(event && event.content, LIMITS.comment)
+  if (!content) return fail('INVALID_PARAM', '请填写留言内容')
+  const checked = await checkText(content, openid)
+  if (checked.suggest === RISKY) return fail('CONTENT_RISKY', '留言包含违规内容，请修改后重试')
+
+  const user = await findUser(openid)
+  if (!user) return fail('UNAUTHORIZED', '请先登录')
+  const record = Object.assign(memberOf(user), {
+    activityId: id,
+    content,
+    createTime: Date.now(),
+    status: COMMENT_VISIBLE,
+    // 机器给的是「疑似」时不拦用户，但把结论留下来，运营按这个标记复核
+    machineSuggest: checked.suggest || '',
+  })
+  const res = await comments.add({ data: record })
+  return publicComment(Object.assign({ _id: res._id }, record), openid, false)
+}
+
+/**
+ * 删除留言：作者本人与活动发起人都能删（活动里的骚扰内容，发起人得有处置手段）。
+ * 软删除而不是物理删除：举报处理与运营复核都需要看到原文与操作人。
+ */
+async function removeComment(event, openid) {
+  if (!openid) return fail('UNAUTHORIZED', '请先登录')
+  const id = String((event && event.id) || '')
+  const commentId = String((event && event.commentId) || '')
+  if (!id || !commentId) return fail('INVALID_PARAM', '请选择要删除的留言')
+  const doc = await getActivity(id)
+  if (!doc) return fail('NOT_FOUND', '活动不存在或已下架')
+
+  const commentDoc = await findComment(commentId)
+  if (!commentDoc || commentDoc.activityId !== id || commentDoc.status === COMMENT_REMOVED) {
+    return fail('NOT_FOUND', '留言不存在或已删除')
+  }
+  const isAuthor = commentDoc.openid === openid
+  const isOrganizer = !!doc.organizer && doc.organizer.openid === openid
+  if (!isAuthor && !isOrganizer) return fail('FORBIDDEN', '只能删除自己的留言')
+
+  await comments.doc(commentId).update({
+    data: { status: COMMENT_REMOVED, removedBy: openid, removeTime: Date.now() },
+  })
+  return { id: commentId, removed: true }
 }
 
 /* ------------------------------ 注销账号 ------------------------------ */
@@ -997,6 +1130,7 @@ const ACTIVITY_FILES = ['cover', 'groupQrCode', 'miniQrCode']
  */
 async function removeOwnActivities(openid) {
   const fileIDs = []
+  const activityIds = []
   let removed = 0
   for (;;) {
     const res = await activities.where({ 'organizer.openid': openid }).limit(DELETE_BATCH).get()
@@ -1008,12 +1142,50 @@ async function removeOwnActivities(openid) {
         const fileID = String(doc[key] || '')
         if (fileID.indexOf('cloud://') === 0 && fileIDs.indexOf(fileID) === -1) fileIDs.push(fileID)
       })
+      activityIds.push(doc._id)
       await activities.doc(doc._id).remove()
       removed += 1
     }
     if (rows.length < DELETE_BATCH) break
   }
-  return { removed, fileIDs }
+  return { removed, fileIDs, activityIds }
+}
+
+/**
+ * 删除该用户发过的所有留言，以及被删活动下面别人留下的留言。
+ *
+ * 注销的承诺是「你的账号信息、报名记录、发布的活动都会被永久删除」，
+ * 留言同样是用户产生的内容，留着就等于注销没做干净。
+ * @param {string} openid 注销用户
+ * @param {string[]} activityIds 被一并删除的活动 id
+ * @returns {Promise<number>} 删除的留言条数
+ */
+async function removeComments(openid, activityIds) {
+  let removed = 0
+  for (;;) {
+    const res = await comments.where({ openid }).limit(DELETE_BATCH).get()
+    const rows = res.data || []
+    if (!rows.length) break
+    for (let i = 0; i < rows.length; i += 1) {
+      await comments.doc(rows[i]._id).remove()
+      removed += 1
+    }
+    if (rows.length < DELETE_BATCH) break
+  }
+  // 活动被删掉后，别人在这条活动下的留言也就没有入口了，跟着一起清
+  for (let i = 0; i < (activityIds || []).length; i += 1) {
+    for (;;) {
+      const res = await comments.where({ activityId: activityIds[i] }).limit(DELETE_BATCH).get()
+      const rows = res.data || []
+      if (!rows.length) break
+      for (let j = 0; j < rows.length; j += 1) {
+        await comments.doc(rows[j]._id).remove()
+        removed += 1
+      }
+      if (rows.length < DELETE_BATCH) break
+    }
+  }
+  return removed
 }
 
 /**
@@ -1080,6 +1252,7 @@ async function deleteAccount(event, openid) {
   const published = await removeOwnActivities(openid)
   const files = await removeCloudFiles(published.fileIDs)
   const joins = await removeJoinRecords(openid)
+  const commentsRemoved = await removeComments(openid, published.activityIds)
   // 反馈与举报（kind: 'report'）存在同一个集合里，按 openid 一次清掉
   const fb = await feedbacks.where({ openid }).remove()
   const feedbacksRemoved = (fb && fb.stats && fb.stats.removed) || 0
@@ -1090,6 +1263,7 @@ async function deleteAccount(event, openid) {
     activities: published.removed,
     files,
     joins,
+    comments: commentsRemoved,
     feedbacks: feedbacksRemoved,
   }
 }
@@ -1220,6 +1394,9 @@ const ACTIONS = {
   qrcode,
   feedback,
   report,
+  comments: commentsOf,
+  comment: addComment,
+  commentRemove: removeComment,
   deleteAccount,
 }
 

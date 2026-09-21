@@ -172,8 +172,177 @@
   color: var(--text-light);
 }
 
+/* 行前信息卡：报名后看时间 / 地点 / 费用 / 同行成员，全部在小程序内完成 */
+.prep-sub {
+  display: block;
+  margin-bottom: 6rpx;
+  font-size: 22rpx;
+  color: var(--text-light);
+  line-height: 1.5;
+}
+
+.prep-row {
+  display: flex;
+  align-items: center;
+  padding: 16rpx 0;
+  border-bottom: 2rpx solid var(--line);
+}
+
+/* 可点的两行（导航 / 活动群）：值用主色，和纯展示行区分开 */
+.prep-row-tap .prep-value {
+  color: var(--brand);
+}
+
+.prep-label {
+  flex: 0 0 140rpx;
+  font-size: 26rpx;
+  color: var(--text-sub);
+}
+
+.prep-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 26rpx;
+  color: var(--text);
+}
+
+.prep-nav {
+  margin-left: 12rpx;
+  font-size: 24rpx;
+  color: var(--brand);
+}
+
+.prep-note {
+  display: block;
+  margin-top: 16rpx;
+  font-size: 20rpx;
+  color: var(--text-light);
+  line-height: 1.5;
+}
+
 .card + .card {
   margin-top: 24rpx;
+}
+
+/* ------------------------------ 活动留言 ------------------------------ */
+
+.comment-sub {
+  font-size: 20rpx;
+  color: var(--text-light);
+}
+
+.comment-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.comment-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 18rpx 0;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.comment-main {
+  flex: 1;
+  min-width: 0;
+  margin-left: 16rpx;
+}
+
+.comment-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.comment-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 26rpx;
+  color: var(--text);
+}
+
+.comment-time {
+  flex: 0 0 auto;
+  margin-left: 12rpx;
+  font-size: 20rpx;
+  color: var(--text-light);
+}
+
+.comment-text {
+  display: block;
+  margin-top: 8rpx;
+  /* 留言是用户输入的短文本，保留换行但不撑破卡片 */
+  word-break: break-word;
+  white-space: pre-wrap;
+  font-size: 27rpx;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.comment-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6rpx;
+}
+
+.comment-action {
+  margin-left: 28rpx;
+  padding: 4rpx 0;
+  font-size: 22rpx;
+  color: var(--text-sub);
+}
+
+.comment-empty {
+  display: block;
+  padding: 20rpx 0;
+  font-size: 24rpx;
+  color: var(--text-light);
+  line-height: 1.6;
+}
+
+.comment-input-row {
+  display: flex;
+  align-items: center;
+  margin-top: 20rpx;
+}
+
+.comment-input {
+  flex: 1;
+  min-width: 0;
+  height: 76rpx;
+  padding: 0 24rpx;
+  border-radius: 999rpx;
+  background: var(--bg);
+  font-size: 26rpx;
+  color: var(--text);
+}
+
+.comment-send {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 132rpx;
+  height: 76rpx;
+  margin-left: 16rpx;
+  border-radius: 999rpx;
+  background: var(--brand);
+  color: #ffffff;
+  font-size: 26rpx;
+}
+
+.comment-send.disabled {
+  background: #e4eaea;
+  color: #a9b3b3;
+}
+
+.comment-tip {
+  display: block;
+  margin-top: 14rpx;
+  font-size: 20rpx;
+  color: var(--text-light);
+  line-height: 1.5;
 }
 
 .inner-head {
@@ -288,7 +457,8 @@
   color: var(--brand);
 }
 
-/* 已报名用户的「查看二维码」入口：与退出活动同尺寸同字体，主色实底反白字并排展示 */
+/* 已报名用户的「查看二维码」入口：与退出活动同尺寸同字体，主色实底反白字并排展示。
+   注意这是用户主动点的入口，报名成功时不会再自动弹码（审核按「强制引流至其他渠道」驳回过） */
 .qr-entry {
   flex: 1;
   display: flex;
@@ -451,8 +621,23 @@
 }
 
 .qr-tip {
+  /* 弹窗是 align-items: center 的纵向 flex：不撑满宽度的话 text 节点会按内容撑开，
+     长文案（例如「活动时间、集合地点、同行成员在小程序内都能看到…」）就会一行顶出弹窗、左右被裁掉 */
+  align-self: stretch;
+  padding: 0 40rpx;
   font-size: 22rpx;
   color: var(--text-light);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.qr-sub-tip {
+  align-self: stretch;
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: var(--text-light);
+  line-height: 1.5;
+  text-align: center;
 }
 
 .qr-btn {

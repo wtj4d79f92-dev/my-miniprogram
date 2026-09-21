@@ -18,12 +18,14 @@ const PENDING = 'pending'
 
 /**
  * 活动二维码识别结论：
- * ok 识别到微信二维码 / not-qrcode 没识别到码 / not-wechat 不是微信二维码 / failed 没结论。
+ * ok 识别到微信二维码 / not-qrcode 没识别到码 / not-wechat 不是微信二维码 / failed 没结论 /
+ * skipped 没上传（活动二维码是选填，没上传不影响发布，也不参与机审放行判定）。
  */
 const QR_OK = 'ok'
 const QR_NOT_QRCODE = 'not-qrcode'
 const QR_NOT_WECHAT = 'not-wechat'
 const QR_FAILED = 'failed'
+const QR_SKIPPED = 'skipped'
 /** 识别到的不是微信二维码时的驳回原因：发起人在详情页与「我的发布」里都会看到 */
 const QR_REJECT_REMARK = '活动二维码上传有误，请重新上传微信群二维码或个人微信二维码'
 
@@ -138,6 +140,9 @@ async function dispatchEach(targets, openid) {
  * 其中「没识别到码」「识别到的不是微信二维码」这两种有明确结论的，调用方（cloudfunctions/activity）
  * 会直接驳回发布（见 isQrRejected）；拿不到结论的异常情况留在待审队列交给人工。
  *
+ * 活动二维码是选填：压根没上传时给 skipped 结论（既不是「识别失败」也不算机审通过），
+ * 不参与自动放行判定，也不会被 isQrRejected 驳回——发起人不上传活动群，活动照样能发布上线。
+ *
  * @param {string} fileID 活动二维码（cloud:// 文件 ID 或 https 地址）
  * @returns {Promise<Object>} { status, ok, kind, kindName, typeName, content, message, time }
  */
@@ -153,7 +158,20 @@ async function checkQrCode(fileID) {
     message,
     time: now(),
   })
-  if (!source) return failed('未上传活动二维码')
+  // 活动二维码是选填：没上传不算「识别失败」，单独给一个 skipped 结论，
+  // 审核台按「未上传（选填）」展示，机审放行也不因为它被卡住。
+  if (!source) {
+    return {
+      status: QR_SKIPPED,
+      ok: false,
+      kind: '',
+      kindName: '',
+      typeName: '',
+      content: '',
+      message: '未上传活动二维码（选填，不影响发布）',
+      time: now(),
+    }
+  }
 
   return withBudget(
     async () => {
@@ -233,6 +251,7 @@ module.exports = {
   QR_NOT_QRCODE,
   QR_NOT_WECHAT,
   QR_FAILED,
+  QR_SKIPPED,
   QR_REJECT_REMARK,
   QR_KINDS,
   checkText,

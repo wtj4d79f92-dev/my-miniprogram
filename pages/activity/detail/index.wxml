@@ -116,6 +116,29 @@
           </view>
         </view>
 
+        <!-- 行前信息：报名后在小程序内闭环。地点导航 / 集合时间 / 同行伙伴都在这儿看，
+             活动群是选填的补充沟通渠道，入口在底部操作区的「查看二维码」（用户主动点） -->
+        <view wx:if="{{!isOrganizer && activity.joined && !singlePage}}" class="card">
+          <view class="section-head inner-head">
+            <text class="section-title">行前信息</text>
+          </view>
+          <text class="prep-sub">你的报名已生效，以下信息在小程序内就能看到</text>
+          <view class="prep-row prep-row-tap" bindtap="onLocationTap">
+            <text class="prep-label">集合地点</text>
+            <text class="prep-value ellipsis">{{activity.location}}</text>
+            <text class="prep-nav">导航 ›</text>
+          </view>
+          <view class="prep-row">
+            <text class="prep-label">集合时间</text>
+            <text class="prep-value">{{activity.startLabel}}</text>
+          </view>
+          <view class="prep-row">
+            <text class="prep-label">同行伙伴</text>
+            <text class="prep-value">{{activity.joinedCount}} 人已报名，名单见下方</text>
+          </view>
+          <text class="prep-note">{{activity.groupQrCode ? '退出活动、查看同行成员都在本页完成；想进活动群时，点底部「查看二维码」。' : '退出活动、查看同行成员都在本页完成，不需要额外渠道。'}}</text>
+        </view>
+
         <!-- 已报名 -->
         <view class="card">
           <view class="section-head inner-head">
@@ -136,6 +159,66 @@
             <text class="section-title">活动介绍</text>
           </view>
           <text class="desc-text">{{activity.descText}}</text>
+        </view>
+
+        <!-- 活动留言：只有参与本活动的人（发起人 / 已报名）能看到，非参与者连卡片都不渲染。
+             这是「不跳去微信群也能约上事」的站内闭环，也是 UGC —— 发言过内容安全，可删可举报 -->
+        <view wx:if="{{canComment}}" class="card">
+          <view class="section-head inner-head">
+            <text class="section-title">活动留言</text>
+            <text class="comment-sub">仅参与本活动的人可见</text>
+          </view>
+
+          <view wx:if="{{comments.length}}" class="comment-list">
+            <view class="comment-item" wx:for="{{comments}}" wx:key="id">
+              <avatar
+                url="{{item.avatarUrl}}"
+                color="{{item.avatarColor}}"
+                text="{{item.avatarText}}"
+                size="sm"
+              ></avatar>
+              <view class="comment-main">
+                <view class="comment-head">
+                  <text class="comment-name ellipsis">{{item.nickName}}</text>
+                  <text class="comment-time">{{item.timeLabel}}</text>
+                </view>
+                <text class="comment-text">{{item.content}}</text>
+                <view class="comment-actions">
+                  <text
+                    wx:if="{{item.canRemove}}"
+                    class="comment-action"
+                    data-comment-id="{{item.id}}"
+                    bindtap="onCommentRemove"
+                  >删除</text>
+                  <text
+                    wx:if="{{!item.isMine}}"
+                    class="comment-action"
+                    data-comment-id="{{item.id}}"
+                    bindtap="onCommentReport"
+                  >举报</text>
+                </view>
+              </view>
+            </view>
+          </view>
+          <text wx:elif="{{commentsLoading}}" class="comment-empty">留言加载中…</text>
+          <text wx:else class="comment-empty">还没有留言，说说集合安排、拼车或装备吧</text>
+
+          <view class="comment-input-row">
+            <input
+              class="comment-input"
+              value="{{commentInput}}"
+              maxlength="200"
+              placeholder="说点什么，只有参与活动的人能看到"
+              confirm-type="send"
+              bindinput="onCommentInput"
+              bindconfirm="submitComment"
+            />
+            <view
+              class="comment-send {{commentSending || !commentInput ? 'disabled' : ''}}"
+              bindtap="submitComment"
+            ><text>{{commentSending ? '发送中' : '发送'}}</text></view>
+          </view>
+          <text class="comment-tip">留言只对本活动参与者可见；涉及手机号、微信号等联系方式，请自行判断风险。</text>
         </view>
 
         <!-- 举报：UGC 内容需要公开的投诉入口，自己的活动不展示 -->
@@ -165,7 +248,7 @@
           <text class="share-icon">↗</text>
           <text>分享</text>
         </view>
-        <!-- 报名后才出现：重新查看活动二维码，无需先退出活动 -->
+        <!-- 已报名用户（非发起人）的主动入口：想看活动群的时候自己点，报名成功时不会自动弹出来 -->
         <view
           wx:if="{{!isOrganizer && activity.joined && activity.groupQrCode}}"
           class="qr-entry"
@@ -207,7 +290,7 @@
     </view>
   </view>
 
-  <!-- 报名成功后的活动二维码 -->
+  <!-- 活动群二维码（选填）：已报名用户主动点开，不再是报名成功后的强制步骤 -->
   <view wx:if="{{showQrModal}}">
     <view class="mask" bindtap="closeQrModal"></view>
     <view class="dialog qr-dialog">
@@ -226,7 +309,8 @@
           <text class="qr-placeholder-tip">{{qrPlaceholderTip}}</text>
         </view>
       </view>
-      <text class="qr-tip">长按二维码识别，或保存后分享给同行伙伴</text>
+      <text class="qr-tip">{{qrTip}}</text>
+      <text class="qr-sub-tip">需要时可直接长按识别，或保存后分享给同行伙伴</text>
       <view class="btn-primary qr-btn" bindtap="closeQrModal"><text>完成</text></view>
     </view>
   </view>

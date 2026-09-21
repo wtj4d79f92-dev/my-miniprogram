@@ -17,6 +17,7 @@ const store = {
   users: [],
   banners: [],
   feedback: [],
+  activity_comments: [],
   admins: [],
   activity_audits: [],
 }
@@ -1358,6 +1359,33 @@ async function run() {
   const noCheckableReview = await callActivity('create', { form: noCheckableForm }, ORGANIZER)
   log(noCheckableReview.auditStatus === 'pending', '内容安全：没有可送检图片但文本疑似时仍留给人工')
 
+  /* ---------- 机审：活动二维码选填（不上传也能发布，且不阻断自动放行） ---------- */
+  // 报名、活动信息、同行成员、退出活动都在小程序内完成，二维码只是补充沟通渠道：
+  // 审核按「强制引流至其他渠道」驳回过，这里的断言防止有人又把二维码改回必填或卡住机审放行
+  resetSecurity()
+  const noQrForm = Object.assign({}, form, { groupQrCode: '' })
+  const noQrAtCreate = await callActivity(
+    'create',
+    { form: Object.assign({}, noQrForm, { title: '没有活动群的活动' }) },
+    ORGANIZER
+  )
+  log(!!noQrAtCreate.id, '二维码选填：不上传活动二维码也能发布')
+  log(
+    noQrAtCreate.machineCheck.qrcode.status === 'skipped' && noQrAtCreate.machineCheck.qrcode.ok === false,
+    '二维码选填：没上传时记为 skipped，不算识别失败也不算识别通过'
+  )
+  log(
+    noQrAtCreate.auditStatus === 'approved' && noQrAtCreate.auditBy === '内容安全检测',
+    '二维码选填：文本检测通过时照样机审直接放行，不因为没有活动群卡在待审'
+  )
+  log(qrCalls.length === 0, '二维码选填：没上传二维码时不调用识别接口')
+  const noQrEdit = await callActivity(
+    'update',
+    { id: noQrAtCreate.id, form: Object.assign({}, noQrForm, { title: '没有活动群的活动（改过标题）' }) },
+    ORGANIZER
+  )
+  log(noQrEdit.auditStatus === 'approved', '二维码选填：编辑重提时删掉二维码同样能通过')
+
   /* ---------- 机审：活动二维码识别（只认微信群邀请码与个人微信二维码） ---------- */
   resetSecurity()
   const groupQr = await callActivity(
@@ -1768,6 +1796,110 @@ async function run() {
     '举报：落在 feedback 集合（kind=report），字段完整可供运营复核'
   )
 
+  /* ---------- 活动留言：只有参与者能看能发，退出后失去访问 ---------- */
+  // 站内留言是「不用跳去微信群也能约上事」的那条闭环，同时它本身是 UGC：
+  // 机审要拦违规词、非参与者不可见、只有作者本人与发起人能删（删除留痕给运营）
+  resetSecurity()
+  const commentGuest = await callActivity('comments', { id: 'act_privacy' }, '')
+  log(commentGuest.code === 'UNAUTHORIZED', '留言：未登录不能查看留言')
+  const commentStranger = await callActivity('comments', { id: 'act_privacy' }, 'openid_stranger')
+  log(commentStranger.code === 'FORBIDDEN', '留言：没参加活动的人看不到留言')
+  const commentMissing = await callActivity('comments', { id: 'act_not_exist' }, OTHER)
+  log(commentMissing.code === 'NOT_FOUND', '留言：活动不存在时按不存在处理')
+
+  const commentByOrganizer = await callActivity(
+    'comment',
+    { id: 'act_privacy', content: '集合点有停车场，开车的同学导航到东门' },
+    ORGANIZER
+  )
+  log(
+    !!commentByOrganizer.id && commentByOrganizer.content.indexOf('停车场') > -1,
+    '留言：发起人可以在自己的活动里留言'
+  )
+  const commentByMember = await callActivity('comment', { id: 'act_privacy', content: '我在地铁口等大家' }, OTHER)
+  log(
+    !!commentByMember.id && commentByMember.isMine === true && commentByMember.canRemove === true,
+    '留言：已报名的人能留言，自己的留言带删除标记'
+  )
+  const strangerComment = await callActivity('comment', { id: 'act_privacy', content: '我也来一条' }, 'openid_stranger')
+  log(strangerComment.code === 'FORBIDDEN', '留言：没报名的人不能发言')
+  const emptyComment = await callActivity('comment', { id: 'act_privacy', content: '   ' }, OTHER)
+  log(emptyComment.code === 'INVALID_PARAM', '留言：空内容被拒绝')
+  resetSecurity({ text: 'risky' })
+  const riskyComment = await callActivity('comment', { id: 'act_privacy', content: '违规留言' }, OTHER)
+  log(riskyComment.code === 'CONTENT_RISKY', '留言：命中违规内容时拒绝写入')
+  resetSecurity()
+
+  const commentList = await callActivity('comments', { id: 'act_privacy' }, OTHER)
+  log(commentList.list.length === 2, '留言：参与者能看到本活动的留言，违规与空内容没写进去')
+  log(
+    commentList.list.every((item) => item.openid === undefined) &&
+      commentList.list.every((item) => !!item.nickName),
+    '留言：列表不下发 openid，昵称头像照常展示'
+  )
+  log(
+    commentList.list.every((item) => item.machineSuggest === undefined && item.status === undefined),
+    '留言：机审结论与内部状态不下发给客户端'
+  )
+  log(
+    commentList.list.filter((item) => item.isMine).length === 1 &&
+      commentList.list.filter((item) => item.canRemove).length === 1,
+    '留言：只把自己的留言标成可删除'
+  )
+  const organizerView = await callActivity('comments', { id: 'act_privacy' }, ORGANIZER)
+  log(
+    organizerView.list.every((item) => item.canRemove === true) &&
+      organizerView.list.filter((item) => item.isMine).length === 1,
+    '留言：发起人可以看到全部留言并都有删除权'
+  )
+
+  const removeByStranger = await callActivity(
+    'commentRemove',
+    { id: 'act_privacy', commentId: commentByOrganizer.id },
+    OTHER
+  )
+  log(removeByStranger.code === 'FORBIDDEN', '留言：非作者、非发起人不能删除别人的留言')
+  const removeOwn = await callActivity('commentRemove', { id: 'act_privacy', commentId: commentByMember.id }, OTHER)
+  log(removeOwn.removed === true && removeOwn.id === commentByMember.id, '留言：作者可以删除自己的留言')
+  const afterRemove = await callActivity('comments', { id: 'act_privacy' }, OTHER)
+  log(afterRemove.list.length === 1, '留言：删除后不再出现在列表里')
+  const removedCommentDoc = store.activity_comments.filter((item) => item._id === commentByMember.id)[0]
+  log(
+    !!removedCommentDoc &&
+      removedCommentDoc.status === 'removed' &&
+      removedCommentDoc.removedBy === OTHER &&
+      !!removedCommentDoc.content,
+    '留言：删除是软删除，原内容与操作人留给运营复核'
+  )
+  const removeMissing = await callActivity(
+    'commentRemove',
+    { id: 'act_privacy', commentId: 'comment_not_exist' },
+    ORGANIZER
+  )
+  log(removeMissing.code === 'NOT_FOUND', '留言：删除不存在的留言按不存在处理')
+
+  // 举报留言：复用同一个举报入口，记录里带上留言 id 与内容快照，运营才好定位
+  const commentReport = await callActivity(
+    'report',
+    { id: 'act_privacy', reason: '广告骚扰', commentId: commentByOrganizer.id },
+    OTHER
+  )
+  log(!!commentReport.id, '举报：可以举报活动里的某条留言')
+  const commentReportDoc = store.feedback.filter((item) => item.kind === 'report' && item.commentId === commentByOrganizer.id)[0]
+  log(
+    !!commentReportDoc &&
+      commentReportDoc.target === 'comment' &&
+      !!commentReportDoc.commentContent &&
+      commentReportDoc.activityId === 'act_privacy',
+    '举报：留言举报记录带留言 id 与内容快照，运营可复核'
+  )
+
+  // 退出活动后失去留言访问：报名是留言区的门槛，退了就不再是参与者
+  await callActivity('quit', { id: 'act_privacy' }, OTHER)
+  const commentAfterQuit = await callActivity('comments', { id: 'act_privacy' }, OTHER)
+  log(commentAfterQuit.code === 'FORBIDDEN', '留言：退出活动后不再能查看留言')
+  await callActivity('join', { id: 'act_privacy' }, OTHER)
+
   /* ---------- 注销账号：账号、发布、报名、反馈与云存储文件一次清干净 ---------- */
   resetStore()
   seedUser(ORGANIZER, '发起人')
@@ -1794,6 +1926,33 @@ async function run() {
     status: 'pending',
   })
   store.feedback.push({ _id: 'fb_other', openid: ORGANIZER, content: '别人的反馈', createTime: Date.now(), status: 'pending' })
+  store.activity_comments.push({
+    _id: 'cm_mine',
+    activityId: sharedActivity._id,
+    openid: OTHER,
+    nickName: '路人',
+    content: '注销前在别人活动里的留言',
+    createTime: Date.now(),
+    status: 'visible',
+  })
+  store.activity_comments.push({
+    _id: 'cm_on_own',
+    activityId: ownActivity._id,
+    openid: OTHER,
+    nickName: '路人',
+    content: '注销前自己活动下的留言',
+    createTime: Date.now(),
+    status: 'visible',
+  })
+  store.activity_comments.push({
+    _id: 'cm_other',
+    activityId: sharedActivity._id,
+    openid: ORGANIZER,
+    nickName: '发起人',
+    content: '别人的留言',
+    createTime: Date.now(),
+    status: 'visible',
+  })
 
   const deleted = await callActivity('deleteAccount', {}, OTHER)
   log(!!deleted && deleted.ok === true, '注销：云函数返回成功')
@@ -1816,6 +1975,11 @@ async function run() {
     store.feedback.every((item) => item.openid !== OTHER) &&
       store.feedback.some((item) => item.openid === ORGANIZER),
     '注销：自己的反馈与举报一并删除，别人的反馈保持不动'
+  )
+  log(
+    store.activity_comments.every((item) => item.openid !== OTHER) &&
+      store.activity_comments.some((item) => item._id === 'cm_other'),
+    '注销：自己发过的留言（含别人活动里的）一并删除，别人的留言保持不动'
   )
   log(
     deletedFiles.indexOf('cloud://env/cover.png') > -1 &&
