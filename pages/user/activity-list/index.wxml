@@ -42,6 +42,9 @@
         <view slot="footer" wx:elif="{{item.expired && tab === 'published'}}" class="audit-box">
           <text class="audit-pending-text">活动发布已超过 7 天，已自动关闭；需要继续组队请重新发布</text>
         </view>
+        <view slot="footer" wx:elif="{{item.startPassed && tab === 'published'}}" class="audit-box">
+          <text class="audit-pending-text">活动集合时间已过，已自动关闭；要改期请编辑活动时间，否则请重新发布</text>
+        </view>
       </activity-card>
 
       <empty-state

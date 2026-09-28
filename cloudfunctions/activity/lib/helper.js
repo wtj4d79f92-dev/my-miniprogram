@@ -1,6 +1,6 @@
 // 云函数通用工具：字段清洗、成员快照、事务读取、错误结构
 
-const { applyExpiry } = require('./expire')
+const { applyAutoClose } = require('./expire')
 
 /** 各文本字段长度上限（与前端表单校验保持一致） */
 const LIMITS = {
@@ -131,8 +131,8 @@ function publicActivity(doc, openid) {
   item.isOrganizer = !!openid && !!organizer.openid && organizer.openid === openid
   item.joinedPeople = joinedPeople.map(publicMember)
   item.organizer = publicMember(organizer)
-  // 展示期届满（发布满 7 天）的活动对外一律按「已关闭」处理，见 lib/expire.js
-  applyExpiry(item)
+  // 过了展示期（发布满 7 天）/ 集合时间的活动对外一律按「已关闭」处理，见 lib/expire.js
+  applyAutoClose(item)
   return item
 }
 

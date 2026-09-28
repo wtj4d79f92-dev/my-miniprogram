@@ -5,6 +5,7 @@ const loginBehavior = require('../../../behaviors/login-behavior')
 const ui = require('../../../utils/ui')
 const location = require('../../../utils/location')
 const scene = require('../../../utils/scene')
+const expire = require('../../../utils/expire')
 
 /** 举报原因候选：与云端 activity 云函数的 REPORT_REASONS 保持一致 */
 const REPORT_REASONS = ['虚假信息或诈骗', '违法违规内容', '侵权或盗用他人内容', '广告骚扰', '其他']
@@ -192,8 +193,10 @@ Page({
     activity.avatarList = activity.joinedPeople.map((member, index) =>
       Object.assign({}, member, { key: `member_${index}` })
     )
-    // 展示期届满的活动由服务端标记 expired，对外一律按已关闭处理
-    activity.isClosed = raw.status === 'closed' || !!activity.expired
+    // 展示期届满 / 集合时间已过的活动由服务端标记（expired / startPassed），对外一律按已关闭处理。
+    // 本地再兜一次：云函数还没更新到最新版时也不会把过期活动当成还在招募。
+    activity.startPassed = !!raw.startPassed || expire.isPastStart(raw)
+    activity.isClosed = raw.status === 'closed' || !!activity.expired || activity.startPassed
     activity.isFull = raw.joinedCount >= raw.maxPeople
     activity.descText = raw.desc || '暂无活动介绍，报名前可与发起人沟通确认细节。'
 
@@ -231,6 +234,9 @@ Page({
     } else if (activity.expired) {
       // 展示期届满（发布满 7 天）：已自动关闭，谁都不能再报名，发起人也不能重开或重提
       mainBtn = { text: '活动已到期', disabled: true, mode: 'expired', style: 'manage' }
+    } else if (activity.startPassed) {
+      // 集合时间已过：同样不能报名、不能重开（要改期请走编辑，改完重新送审）
+      mainBtn = { text: '活动已结束招募', disabled: true, mode: 'closed', style: 'manage' }
     } else if (isOrganizer) {
       if (activity.auditPending) {
         mainBtn = { text: '审核中，暂不可操作', disabled: true, mode: 'audit', style: 'manage' }
@@ -352,8 +358,14 @@ Page({
         .catch((err) => {
           wx.hideLoading()
           ui.toast((err && err.message) || '操作失败，请重试')
-          // 活动已到期（展示期届满自动关闭）时，刷新一次拿回服务端的真实状态
-          if (err && (err.code === 'FORBIDDEN' || err.code === 'NOT_FOUND' || err.code === 'ACTIVITY_EXPIRED')) {
+          // 活动已到期 / 集合时间已过（自动关闭）时，刷新一次拿回服务端的真实状态
+          if (
+            err &&
+            (err.code === 'FORBIDDEN' ||
+              err.code === 'NOT_FOUND' ||
+              err.code === 'ACTIVITY_EXPIRED' ||
+              err.code === 'ACTIVITY_STARTED')
+          ) {
             this.loadDetail()
           }
         })
@@ -483,8 +495,13 @@ Page({
       .catch((err) => {
         wx.hideLoading()
         ui.toast((err && err.message) || '报名失败，请重试')
-        // 关闭 / 已到期都刷新一次，把按钮与状态位切到最新
-        if (err && (err.code === 'ACTIVITY_CLOSED' || err.code === 'ACTIVITY_EXPIRED')) {
+        // 关闭 / 已到期 / 集合时间已过都刷新一次，把按钮与状态位切到最新
+        if (
+          err &&
+          (err.code === 'ACTIVITY_CLOSED' ||
+            err.code === 'ACTIVITY_EXPIRED' ||
+            err.code === 'ACTIVITY_STARTED')
+        ) {
           this.loadDetail()
         }
       })

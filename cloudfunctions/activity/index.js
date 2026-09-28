@@ -32,8 +32,8 @@ const {
   summarize,
 } = require('./lib/contentCheck')
 const { MISSING, inspectFiles, collectFileIDs, resolveMedia } = require('./lib/media')
-// 展示期：发布满 7 天的活动自动关闭，首页 / 广场不再展示（见 lib/expire.js）
-const { TTL_MS, isExpired, expireTimeOf } = require('./lib/expire')
+// 自动关闭：展示期届满（发布满 7 天）、集合时间已过，首页 / 广场不再展示（见 lib/expire.js）
+const { TTL_MS, DAY_MS, startOfDay, isExpired, expireTimeOf, isPastStart } = require('./lib/expire')
 const {
   LIMITS,
   AVATAR_COLORS,
@@ -63,10 +63,14 @@ const CLOSED = 'closed'
 const EXPIRE_JOIN_TEXT = '活动发布已超过 7 天，已自动关闭，无法报名'
 const EXPIRE_TOGGLE_TEXT = '活动发布已超过 7 天，已自动关闭，无法重新打开'
 const EXPIRE_EDIT_TEXT = '活动发布已超过 7 天，已自动关闭，无法修改，请重新发布'
+/** 集合时间已过（集合时间早于今天 00:00）后的统一提示，见 lib/expire.js */
+// 编辑不设这条守卫：改期是正常诉求，把集合时间改到未来就又是一场可报名的活动（改完重新送审）
+const START_JOIN_TEXT = '活动集合时间已过，已自动关闭，无法报名'
+const START_TOGGLE_TEXT = '活动集合时间已过，已自动关闭，无法重新打开'
 const DEFAULT_PAGE_SIZE = 10
 const MAX_PAGE_SIZE = 100
-/** 一天的毫秒数：广场按「具体日期」筛选时用来把当天 00:00 换算成次日 00:00 */
-const DAY_MS = 86400000
+// 一天的毫秒数（DAY_MS）与当天 00:00（startOfDay）都取自 lib/expire.js：广场的日期筛选、
+// 「关闭当天可见」与两条自动关闭规则必须共用同一口径
 /** 我的活动一次最多返回的条数（云函数端单次查询上限 100） */
 const MY_LIST_LIMIT = 100
 /** 定时关闭一次处理的活动条数（分批处理，与云数据库单次查询上限一致） */
@@ -101,13 +105,25 @@ function notExpiredWhere() {
 }
 
 /**
- * 当天 00:00 的时间戳（传时间戳则取那一天，不传取现在）。
- * 两处用到：广场判断已关闭的活动是否还在「关闭当天」；集合时间是否已经早于今天。
+ * 未过集合时间的条件：集合时间早于今天 00:00 的活动不再进首页 / 广场。
+ * 与「集合时间已过自动关闭」共用同一口径（见 lib/expire.js），所以定时任务没跑时也不会露出来。
+ * 取不到集合时间的脏数据（0 / 缺失）同样落在这条条件之外 —— 与展示期用 createTime 过滤同一处理。
  */
-function startOfDay(at) {
-  const d = new Date(at === undefined ? Date.now() : at)
-  d.setHours(0, 0, 0, 0)
-  return d.getTime()
+function notPastStartWhere() {
+  return { startTime: _.gte(startOfDay()) }
+}
+
+/**
+ * 昨天集合、库里还没关闭的活动：读侧按「今天刚关闭」处理，效果与定时任务跑过一次一致 ——
+ * 广场沉底展示当天这一天，次日消失；更早的历史数据不在这个窗口里，不会被重新捞出来。
+ * 关闭时刻与 lib/expire.js 的 pastStartTimeOf 一致（集合那天的次日 00:00）。
+ */
+function pastStartTodayWhere() {
+  const dayStart = startOfDay()
+  return {
+    status: _.nin([CLOSED]),
+    startTime: _.gte(dayStart - DAY_MS).and(_.lt(dayStart)),
+  }
 }
 
 /** 已关闭且仍在「关闭当天」的条件：广场只保留关闭当天，次日不再展示 */
@@ -192,7 +208,7 @@ function applySort(query, sort) {
  * 首页是推荐位，已关闭的活动不进热门 / 最新（关闭后只在广场保留关闭当天）。
  */
 function cityWhere(city) {
-  const conditions = [auditVisibleWhere(), notClosedWhere(), notExpiredWhere()]
+  const conditions = [auditVisibleWhere(), notClosedWhere(), notExpiredWhere(), notPastStartWhere()]
   const target = cityCondition(city)
   if (target) conditions.push(target)
   return whereFrom(conditions)
@@ -329,8 +345,10 @@ async function list(event, openid) {
   const start = pageIndex * pageSize
   const conditions = buildConditions(query)
 
-  const openedWhere = whereFrom(conditions.concat([notClosedWhere()]))
-  const closedWhere = whereFrom(conditions.concat([closedTodayWhere()]))
+  // 未关闭桶额外排除「集合时间已过」的活动：定时任务没跑时它们也不会被当成还在招募
+  const openedWhere = whereFrom(conditions.concat([notClosedWhere(), notPastStartWhere()]))
+  // 已关闭桶除了「关闭当天」，还收纳「昨天集合、库里还没关闭」的活动 —— 与定时任务跑过的效果一致
+  const closedWhere = whereFrom(conditions.concat([_.or([closedTodayWhere(), pastStartTodayWhere()])]))
 
   const [openedCountRes, closedCountRes] = await Promise.all([
     whereToQuery(openedWhere).count(),
@@ -669,6 +687,7 @@ async function join(event, openid) {
     if (!doc) return fail('NOT_FOUND', '活动不存在或已下架')
     if (!isApproved(doc)) return fail('AUDIT_PENDING', '活动审核通过后才能报名')
     if (isExpired(doc)) return fail('ACTIVITY_EXPIRED', EXPIRE_JOIN_TEXT)
+    if (isPastStart(doc)) return fail('ACTIVITY_STARTED', START_JOIN_TEXT)
     if (doc.status === CLOSED) return fail('ACTIVITY_CLOSED', '活动已关闭，无法报名')
 
     const joinedPeople = doc.joinedPeople || []
@@ -718,6 +737,8 @@ async function toggle(event, openid) {
   if (!isApproved(doc)) return fail('AUDIT_PENDING', '活动审核通过后才能开启或关闭')
   // 过了展示期的活动不能重新打开：展示期是按发布时间算的，重开也不会再出现在广场
   if (isExpired(doc)) return fail('ACTIVITY_EXPIRED', EXPIRE_TOGGLE_TEXT)
+  // 集合时间已过的活动同理：重开等于让一场已经开始的活动重新招募，拦掉（要改期请直接编辑）
+  if (isPastStart(doc)) return fail('ACTIVITY_STARTED', START_TOGGLE_TEXT)
 
   const closing = doc.status !== CLOSED
   const status = closing ? CLOSED : RECRUITING

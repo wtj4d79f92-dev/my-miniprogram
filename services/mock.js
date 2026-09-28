@@ -3,8 +3,8 @@ const { KEYS, getStorage, setStorage } = require('../utils/storage')
 const { getType, DEFAULT_BANNERS, tagName } = require('../utils/dict')
 const { createRandom, pickInt, deepClone, startOfDay } = require('../utils/util')
 const { filterCityKeys } = require('../utils/cities')
-// 展示期：发布满 7 天的活动从首页 / 广场消失（与云函数 lib/expire.js 同一口径）
-const { isExpired } = require('../utils/expire')
+// 自动关闭：展示期届满（发布满 7 天）、集合时间已过的活动从首页 / 广场消失（与云函数 lib/expire.js 同一口径）
+const { isExpired, isPastStart, pastStartTimeOf } = require('../utils/expire')
 
 const MOCK_JOIN_MAP = 'mock_join_map'
 const MOCK_STATUS_MAP = 'mock_status_map'
@@ -210,22 +210,38 @@ function findActivity(id) {
 /**
  * 广场可见性：已关闭的活动只在关闭当天展示，第二天起不再展示。
  * 关闭时间缺失（上线前的旧缓存 / 旧数据）视为已过期，避免已关闭活动长期挂在广场。
- * 另外，发布满 7 天的活动一律不再展示（展示期届满，见 utils/expire.js）。
+ * 另外两条自动关闭规则（展示期届满、集合时间已过）都按已关闭处理，见 utils/expire.js：
+ * 集合时间刚过、本地还没关闭的活动，关闭时刻取「集合那天的次日 00:00」，
+ * 所以同样只在当天沉底展示一次，与线上定时任务跑过的效果一致。
  */
 function squareVisible(item, now) {
   if (!item) return true
-  if (isExpired(item, now)) return false
-  if (item.status !== 'closed') return true
   const at = now === undefined ? Date.now() : now
+  if (isExpired(item, at)) return false
+  if (item.status !== 'closed') {
+    // 取不到集合时间的脏数据不进广场：云端 notPastStartWhere 同样把它们挡在查询之外
+    if (!(Number(item.startTime) || 0)) return false
+    if (!isPastStart(item, at)) return true
+    const autoClosedAt = pastStartTimeOf(item)
+    const today = startOfDay(at)
+    return autoClosedAt >= today && autoClosedAt < today + DAY_MS
+  }
   const closedAt = Number(item.closeTime) || 0
   if (!closedAt) return false
   const today = startOfDay(at)
   return closedAt >= today && closedAt < today + DAY_MS
 }
 
-/** 首页推荐位可见：已关闭的活动只在广场保留关闭当天，不进首页热门 / 最新；过展示期的也不进 */
+/** 首页推荐位可见：已关闭的活动只在广场保留关闭当天，不进首页热门 / 最新；两条自动关闭规则命中的也不进 */
 function homeVisibleActivities() {
-  return visibleActivities().filter((item) => item.status !== 'closed' && !isExpired(item))
+  return visibleActivities().filter(
+    (item) =>
+      item.status !== 'closed' &&
+      !isExpired(item) &&
+      !isPastStart(item) &&
+      // 取不到集合时间的脏数据与云端一致，不进首页推荐
+      (Number(item.startTime) || 0) > 0
+  )
 }
 
 /** 本地状态覆盖：记录业务状态与关闭时间，重新打开时关闭时间归零 */

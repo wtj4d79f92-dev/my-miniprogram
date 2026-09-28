@@ -300,7 +300,11 @@ const mockApi = {
 
     // 公开列表：审核中 / 未通过的活动不出现在广场；
     // 已关闭的活动只在关闭当天展示，第二天起从广场消失
-    let list = mock.visibleActivities().filter((item) => mock.squareVisible(item))
+    // 对外归一后再排序：集合时间已过、库里还没关闭的活动按「已关闭」处理，和云端一样沉底
+    let list = mock
+      .visibleActivities()
+      .filter((item) => mock.squareVisible(item))
+      .map((item) => expire.applyAutoClose(item))
     if (query.city) {
       list = mock.cityFilter(list, query.city)
     }
@@ -354,8 +358,8 @@ const mockApi = {
     // 审核中 / 未通过的活动只有发起人自己能预览，其他人按「不存在」处理
     if (!audit.isApproved(activity) && !isOrganizer) return withDelay(null)
     const result = deepClone(activity)
-    // 展示期届满的活动对外按「已关闭」下发（与云函数 publicActivity 同口径）
-    expire.applyExpiry(result)
+    // 过了展示期 / 集合时间的活动对外按「已关闭」下发（与云函数 publicActivity 同口径）
+    expire.applyAutoClose(result)
     result.joined = !!user && result.joinedPeople.some((item) => item.openid === user.openid)
     result.isOrganizer = isOrganizer
     result.full = result.joinedCount >= result.maxPeople
@@ -437,6 +441,9 @@ const mockApi = {
     if (expire.isExpired(activity)) {
       return fail('ACTIVITY_EXPIRED', '活动发布已超过 7 天，已自动关闭，无法报名')
     }
+    if (expire.isPastStart(activity)) {
+      return fail('ACTIVITY_STARTED', '活动集合时间已过，已自动关闭，无法报名')
+    }
     if (activity.status === 'closed') return fail('ACTIVITY_CLOSED', '活动已关闭，无法报名')
     const already = activity.joinedPeople.some((item) => item.openid === user.openid)
     if (already) return withDelay(deepClone(activity))
@@ -493,6 +500,9 @@ const mockApi = {
     if (expire.isExpired(activity)) {
       return fail('ACTIVITY_EXPIRED', '活动发布已超过 7 天，已自动关闭，无法重新打开')
     }
+    if (expire.isPastStart(activity)) {
+      return fail('ACTIVITY_STARTED', '活动集合时间已过，已自动关闭，无法重新打开')
+    }
     const nextStatus = activity.status === 'closed' ? 'recruiting' : 'closed'
     // 关闭时记录关闭时间，广场据此只保留关闭当天；重新打开时归零
     const nextCloseTime = nextStatus === 'closed' ? Date.now() : 0
@@ -520,14 +530,14 @@ const mockApi = {
         .allActivities()
         .filter((item) => item.organizer.openid === user.openid)
         .sort((a, b) => b.createTime - a.createTime)
-      return withDelay(list.map((item) => expire.applyExpiry(item)))
+      return withDelay(list.map((item) => expire.applyAutoClose(item)))
     }
     const joinedIds = getStorage(KEYS.joined, []) || []
     const list = mock
       .allActivities()
       .filter((item) => joinedIds.indexOf(item.id) > -1)
       .sort((a, b) => a.startTime - b.startTime)
-    return withDelay(list.map((item) => expire.applyExpiry(item)))
+    return withDelay(list.map((item) => expire.applyAutoClose(item)))
   },
 
   user() {
@@ -1028,9 +1038,11 @@ function decorate(activity) {
   item.avatarList = (item.joinedPeople || [])
     .slice(0, 5)
     .map((member, index) => Object.assign({}, member, { key: `avatar_${index}` }))
-  // 展示期届满（发布满 7 天）的活动按已关闭展示；expired 让文案能区分「已到期」与发起人主动关闭
+  // 展示期届满（发布满 7 天）/ 集合时间已过的活动按已关闭展示；
+  // expired / startPassed 让文案能区分「已到期」「已过集合时间」与发起人主动关闭
   item.expired = !!item.expired || expire.isExpired(item)
-  item.isClosed = item.status === 'closed' || item.expired
+  item.startPassed = !!item.startPassed || expire.isPastStart(item)
+  item.isClosed = item.status === 'closed' || item.expired || item.startPassed
   item.isFull = item.joinedCount >= item.maxPeople
   item.showMetrics = supportsMetrics(item.type)
   // 全程长度 / 累计爬升为非必填，未填写（0）时详情页不展示对应行

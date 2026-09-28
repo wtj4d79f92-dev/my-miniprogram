@@ -2140,6 +2140,18 @@ function checkExpireRule() {
     })
     global.wx.storage[KEYS.published] = list
   }
+
+  /** 把本地缓存里某条活动的集合时间改成指定时刻，模拟「集合时间已过 / 今天集合」 */
+  const setStart = (id, timestamp) => {
+    const list = global.wx.storage[KEYS.published] || []
+    list.forEach((item) => {
+      if (item.id === id) {
+        item.startTime = timestamp
+        item.endTime = timestamp + 3 * 3600 * 1000
+      }
+    })
+    global.wx.storage[KEYS.published] = list
+  }
   const formOf = (title) => ({
     type: 'hiking',
     title,
@@ -2157,6 +2169,8 @@ function checkExpireRule() {
 
   let aged = null
   let fresh = null
+  let started = null
+  let todayStart = null
 
   return api
     .login({ phone: '13800005555' })
@@ -2217,6 +2231,93 @@ function checkExpireRule() {
       log(!!res[1] && res[1].code === 'ACTIVITY_EXPIRED', '展示期：到期后不能重新打开')
       log(!!res[2] && res[2].code === 'ACTIVITY_EXPIRED', '展示期：到期后不能编辑重提')
       log(res[3] === 'joined', '展示期：展示期内的活动仍可正常报名')
+    })
+    .then(() => {
+      // 集合时间已过：与展示期同一套兜底（查询过滤 + 输出归一 + 写操作守卫），
+      // 所以定时任务不跑（Mock 里本来也没有定时任务）也不会把过期活动当成还在招募
+      const dayStart = new Date().setHours(0, 0, 0, 0)
+      return api
+        .create({ form: formOf('集合时间已过用例') })
+        .then((created) => {
+          started = created
+          // 昨天中午集合：已过集合时间，但发布时间在 7 天展示期内
+          setStart(started.id, dayStart - 12 * 3600 * 1000)
+          return api.create({ form: formOf('今天集合用例') })
+        })
+        .then((created) => {
+          todayStart = created
+          // 今天中午集合：当天仍算可报名（边界），次日才关
+          setStart(todayStart.id, dayStart + 12 * 3600 * 1000)
+          return Promise.all([
+            api.list({ pageIndex: 0, pageSize: 100, sort: 'latest' }),
+            api.home({ city: '' }),
+            api.detail(started.id),
+            api.mine('published'),
+          ])
+        })
+        .then((res) => {
+          const square = res[0]
+          const home = res[1]
+          const detail = res[2]
+          const mine = res[3]
+          const startedIndex = square.list.findIndex((item) => item.id === started.id)
+          const startedDecorated = api.decorate(square.list[startedIndex] || null)
+          const todayDecorated = api.decorate(
+            square.list.filter((item) => item.id === todayStart.id)[0] || null
+          )
+          const detailDecorated = detail ? api.decorate(detail) : null
+          const mineDecorated = api.decorate(
+            (mine || []).filter((item) => item.id === started.id)[0] || null
+          )
+
+          log(expire.isPastStart({ startTime: dayStart }, dayStart) === false, '集合时间：今天 00:00 集合不算过')
+          log(expire.isPastStart({ startTime: dayStart - 1 }, dayStart) === true, '集合时间：早于今天 00:00 即算过')
+          log(expire.isPastStart({}, dayStart) === false, '集合时间：取不到集合时间时不算过，不会误关历史数据')
+
+          log(
+            !!startedDecorated && startedDecorated.isClosed === true && startedDecorated.startPassed === true,
+            '集合时间：过了集合时间的活动卡片按已关闭展示'
+          )
+          log(
+            startedIndex > -1 &&
+              square.list.slice(0, startedIndex).every((item) => item.status !== 'closed'),
+            '集合时间：这类活动排在未关闭活动之后（沉底）'
+          )
+          log(
+            !!todayDecorated && todayDecorated.isClosed === false,
+            '集合时间：今天集合的活动当天照常展示（边界）'
+          )
+          log(
+            visibleIn((home.hotList || []).concat(home.newestList || []), started.id) === false,
+            '集合时间：过集合时间的活动不进首页推荐'
+          )
+          log(
+            !!detail && detail.status === 'closed' && detail.startPassed === true && !!detailDecorated,
+            '集合时间：详情按「已关闭 + 已过集合时间」下发，分享链接仍可打开'
+          )
+          log(
+            !!mineDecorated && mineDecorated.isClosed === true && mineDecorated.startPassed === true,
+            '集合时间：我的发布里按已关闭展示'
+          )
+
+          return Promise.all([
+            api.join(started.id).then(() => null, (err) => err),
+            api.toggle(started.id).then(() => null, (err) => err),
+            // 改期是正常诉求：编辑把集合时间改到未来后不拦（改完重新送审）
+            api.update({ id: started.id, form: formOf('集合时间已过用例（改期）') }),
+            api.join(todayStart.id).then(() => 'joined', (err) => err),
+          ])
+        })
+        .then((res) => {
+          const rescheduled = res[2]
+          log(!!res[0] && res[0].code === 'ACTIVITY_STARTED', '集合时间：过了集合时间拒绝报名')
+          log(!!res[1] && res[1].code === 'ACTIVITY_STARTED', '集合时间：过了集合时间不能重新打开')
+          log(
+            !!rescheduled && expire.isPastStart(rescheduled) === false,
+            '集合时间：改期（把集合时间改到未来）不被拦截'
+          )
+          log(res[3] === 'joined', '集合时间：今天集合的活动当天仍可报名（边界）')
+        })
     })
 }
 
@@ -2451,6 +2552,34 @@ function checkSinglePageShare() {
   )
   detailPage.openSharePanel.call(actCtx)
   log(actCtx.data.showSharePanel === false, '朋友圈单页模式：点不到被禁用的分享面板')
+
+  // 集合时间已过：服务端下发 status: closed + startPassed，页面不能再引导发起人「重新打开活动」
+  const originalComments = api.comments
+  api.comments = () => Promise.resolve({ list: [] })
+  const startedCtx = makeCtx({ id: 'act_started' })
+  detailPage.applyActivity.call(startedCtx, {
+    id: 'act_started',
+    title: '集合时间已过的活动',
+    type: 'hiking',
+    tags: [],
+    startTime: Date.now() - 2 * 86400000,
+    endTime: Date.now() - 86400000,
+    location: '浙江省杭州市 九溪',
+    maxPeople: 10,
+    joinedPeople: [],
+    joinedCount: 0,
+    status: 'closed',
+    startPassed: true,
+    auditStatus: 'approved',
+    isOrganizer: true,
+    organizer: { nickName: '发起人', avatarColor: '#4ECDC4', avatarUrl: '', avatarText: '发' },
+  })
+  log(startedCtx.data.statusText === '已关闭', `集合时间已过：状态位按已关闭展示（${startedCtx.data.statusText}）`)
+  log(
+    startedCtx.data.mainBtn.disabled === true && startedCtx.data.mainBtn.mode === 'closed',
+    `集合时间已过：主按钮不可点，不再引导「重新打开活动」（${startedCtx.data.mainBtn.text}）`
+  )
+  api.comments = originalComments
 
   // 接口失败要说「加载失败」并能重试，不能说成「活动不存在或已下架」
   const failCtx = makeCtx({ id: 'act_single_page', singlePage: true })

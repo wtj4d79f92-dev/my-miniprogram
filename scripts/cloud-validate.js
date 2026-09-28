@@ -2078,6 +2078,48 @@ async function run() {
     endTime: 0,
   })
 
+  // 读侧兜底：定时任务还没跑时，过期的活动也不能再当成「还在招募」露出来 ——
+  // 展示期靠 notExpiredWhere，集合时间这条靠 notPastStartWhere + 输出归一（见 lib/expire.js）
+  const startedList = await callActivity('list', { pageIndex: 0, pageSize: 50, sort: 'latest' }, OTHER)
+  const startedIndex = startedList.list.findIndex((item) => item.id === 'act_past_start')
+  log(
+    startedIndex > -1 &&
+      startedList.list[startedIndex].status === 'closed' &&
+      startedList.list[startedIndex].startPassed === true,
+    '集合时间：昨天集合、库里还没关闭的活动按已关闭下发（不依赖定时任务）'
+  )
+  log(
+    startedIndex > -1 &&
+      startedList.list.slice(0, startedIndex).every((item) => item.status !== 'closed'),
+    '集合时间：这类活动排在未关闭活动之后（沉底）'
+  )
+  log(
+    startedList.list.some((item) => item.id === 'act_today_start'),
+    '集合时间：今天集合的活动仍留在广场（边界）'
+  )
+  log(
+    startedList.list.every((item) => item.id !== 'act_no_start'),
+    '集合时间：取不到集合时间的历史数据不进广场（与展示期的 createTime 条件同一处理）'
+  )
+
+  const startedHome = await callActivity('home', { city: '' }, OTHER)
+  const startedHomeIds = startedHome.hotList.concat(startedHome.newestList).map((item) => item.id)
+  log(startedHomeIds.indexOf('act_past_start') === -1, '集合时间：过集合时间的活动不进首页推荐')
+
+  const startedDetail = await callActivity('detail', { id: 'act_past_start' }, OTHER)
+  log(
+    !!startedDetail && startedDetail.status === 'closed' && startedDetail.startPassed === true,
+    '集合时间：详情按「已关闭 + 已过集合时间」下发，分享链接仍可打开'
+  )
+
+  const startedJoin = await callActivity('join', { id: 'act_past_start' }, OTHER)
+  log(startedJoin.code === 'ACTIVITY_STARTED', '集合时间：过了集合时间拒绝报名')
+  const startedToggle = await callActivity('toggle', { id: 'act_past_start' }, ORGANIZER)
+  log(startedToggle.code === 'ACTIVITY_STARTED', '集合时间：过了集合时间不能重新打开')
+
+  const todayJoin = await callActivity('join', { id: 'act_today_start' }, OTHER)
+  log(!!todayJoin && !todayJoin.code, '集合时间：今天集合的活动当天仍可报名（边界）')
+
   const expireJob = await activityFn.main({ Type: 'Timer', TriggerName: 'expireActivities' })
   log(
     !!expireJob && expireJob.ok === true && expireJob.closed === 2,
@@ -2127,6 +2169,21 @@ async function run() {
   log(
     !!expireJobAgain && expireJobAgain.closed === 0 && expireJobAgain.closedPast === 0,
     '展示期：定时任务可重复执行，已经关闭的活动不会被重复处理'
+  )
+
+  // 改期是正常诉求：被自动关闭之后，发起人仍能把集合时间改到未来（改完重新送审，不用重新发布）
+  const rescheduled = await callActivity('update', { id: 'act_past_start', form }, ORGANIZER)
+  const rescheduledDoc = store.activities.filter((item) => item._id === 'act_past_start')[0]
+  log(
+    !!rescheduled &&
+      !rescheduled.code &&
+      rescheduled.auditStatus === 'pending' &&
+      rescheduled.startPassed !== true,
+    '集合时间：改期（把集合时间改到未来）不被拦截，重新进入待审'
+  )
+  log(
+    !!rescheduledDoc && rescheduledDoc.startTime === form.startTime,
+    '集合时间：改期后落库的是新的集合时间'
   )
 
   /* ---------- 提审演示数据：造的数据必须真的能被审核员看到 ---------- */
