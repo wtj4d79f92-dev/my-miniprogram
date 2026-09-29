@@ -50,6 +50,14 @@ Component({
       type: Number,
       value: 1
     },
+    // 页面栈里没有上一页时的落点：
+    // 从分享卡片（会话 / 群聊）或海报小程序码直达详情页时，详情页就是栈里的第一页，
+    // navigateBack 会静默失败，左上角返回箭头点了原地不动。这类入口页要把落点写在这里，
+    // tabBar 页面走 switchTab，普通页面由 switchTab 的 fail 兜底走 reLaunch。
+    backFallback: {
+      type: String,
+      value: ''
+    },
   },
   /**
    * 组件的初始数据
@@ -91,9 +99,19 @@ Component({
     },
     back() {
       const data = this.data
-      if (data.delta) {
+      const delta = data.delta || 1
+      const pages = typeof getCurrentPages === 'function' ? getCurrentPages() : []
+      if (pages.length > delta) {
         wx.navigateBack({
-          delta: data.delta
+          delta
+        })
+      } else if (data.backFallback) {
+        // 入口页没有上一页：回落到约定页面，否则用户点返回不会有任何反应，被卡在当前页
+        wx.switchTab({
+          url: data.backFallback,
+          fail: () => {
+            wx.reLaunch({ url: data.backFallback })
+          }
         })
       }
       this.triggerEvent('back', { delta: data.delta }, {})

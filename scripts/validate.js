@@ -2450,7 +2450,7 @@ function checkSinglePageShare() {
   /* ② 页面结构：禁用能力对应的入口在单页模式下不渲染，加载失败要有独立的重试态 */
   const wxml = read('pages/activity/detail/index.wxml')
   log(
-    /<navigation-bar wx:if="\{\{!singlePage\}\}"/.test(wxml),
+    /<navigation-bar[\s\S]*?wx:if="\{\{!singlePage\}\}"/.test(wxml),
     '朋友圈单页模式：不再渲染被禁用的 navigation-bar 组件'
   )
   log(
@@ -2608,6 +2608,98 @@ function checkSinglePageShare() {
     })
 }
 
+/* -------------- 分享 / 小程序码直达详情：入口页没有上一页，返回要能落到广场 -------------- */
+/**
+ * 从分享卡片（会话 1007 / 群聊 1008 / 朋友圈单页 1154）或海报小程序码直达详情时，
+ * 详情页就是页面栈里的第一页：自定义导航栏的返回箭头调 navigateBack 会静默失败，
+ * 用户被卡在详情页，只能杀掉小程序重进。
+ * 这里钉住组件的判断（按页面栈深度决定返回还是回落）以及详情页约定的落点（广场）。
+ */
+function checkDetailBackFallback() {
+  const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
+  const wxml = read('pages/activity/detail/index.wxml')
+  log(
+    /<navigation-bar[\s\S]*?back-fallback="\/pages\/square\/index"/.test(wxml),
+    '活动详情：分享 / 扫码直达（入口页）时返回箭头回落到广场'
+  )
+
+  const components = []
+  const originComponent = global.Component
+  global.Component = (options) => components.push(options)
+  try {
+    delete require.cache[path.join(ROOT, 'components/navigation-bar/navigation-bar.js')]
+    require(path.join(ROOT, 'components/navigation-bar/navigation-bar.js'))
+  } finally {
+    global.Component = originComponent
+  }
+  const component = components[components.length - 1]
+  log(
+    !!(component && component.methods && typeof component.methods.back === 'function'),
+    '导航栏：能取到组件配置'
+  )
+  if (!component) return
+
+  const originGetCurrentPages = global.getCurrentPages
+  const originNavigateBack = global.wx.navigateBack
+  const originSwitchTab = global.wx.switchTab
+  const originReLaunch = global.wx.reLaunch
+  const calls = []
+  global.wx.navigateBack = (options) => calls.push(`navigateBack:${options.delta}`)
+  global.wx.switchTab = (options) => calls.push(`switchTab:${options.url}`)
+  global.wx.reLaunch = (options) => calls.push(`reLaunch:${options.url}`)
+
+  const restore = () => {
+    if (originGetCurrentPages === undefined) delete global.getCurrentPages
+    else global.getCurrentPages = originGetCurrentPages
+    global.wx.navigateBack = originNavigateBack
+    global.wx.switchTab = originSwitchTab
+    global.wx.reLaunch = originReLaunch
+  }
+
+  /** 造一个「当前页面栈是 routes」的组件上下文，和页面里一样把 delta / backFallback 传进来 */
+  const makeCtx = (routes, backFallback) => {
+    global.getCurrentPages = () => routes.map((route) => ({ route }))
+    return {
+      data: Object.assign({}, component.data, { delta: 1, backFallback }),
+      setData(patch) {
+        Object.assign(this.data, patch)
+      },
+      triggerEvent() {},
+    }
+  }
+
+  try {
+    // 入口页：栈里只有详情页自己，返回箭头必须落到广场，不能点了没反应
+    calls.length = 0
+    component.methods.back.call(makeCtx(['pages/activity/detail/index'], '/pages/square/index'))
+    log(
+      calls.join('|') === 'switchTab:/pages/square/index',
+      '导航栏：栈里没有上一页时，返回箭头回落到 backFallback'
+    )
+
+    // 从广场 / 首页 / 我的活动点进来的正常返回：栈里有上一页，照旧 navigateBack
+    calls.length = 0
+    component.methods.back.call(
+      makeCtx(['pages/square/index', 'pages/activity/detail/index'], '/pages/square/index')
+    )
+    log(calls.join('|') === 'navigateBack:1', '导航栏：栈里有上一页时仍走 navigateBack')
+
+    // 落点不是 tabBar 页面时 switchTab 会失败，必须退回 reLaunch，同样不能点了没反应
+    calls.length = 0
+    global.wx.switchTab = (options) => {
+      calls.push(`switchTab:${options.url}`)
+      if (options.fail) options.fail()
+    }
+    component.methods.back.call(makeCtx(['pages/activity/detail/index'], '/pages/home/home'))
+    log(
+      calls.join('|') === 'switchTab:/pages/home/home|reLaunch:/pages/home/home',
+      '导航栏：backFallback 不是 tabBar 页面时回落到 reLaunch'
+    )
+  } finally {
+    restore()
+  }
+}
+
 /* -------------- 首页分享：发送给朋友 / 分享到朋友圈 -------------- */
 /**
  * 首页以前没实现 onShareAppMessage / onShareTimeline，右上角菜单里「转发」和「分享到朋友圈」
@@ -2628,7 +2720,7 @@ function checkHomeShare() {
   /* ② 页面结构：被禁用的入口（自定义导航栏、发布按钮）在单页模式下不渲染 */
   const wxml = read('pages/home/home.wxml')
   log(
-    /<navigation-bar wx:if="\{\{!singlePage\}\}"/.test(wxml),
+    /<navigation-bar[\s\S]*?wx:if="\{\{!singlePage\}\}"/.test(wxml),
     '首页分享：单页模式下不再渲染自定义 navigation-bar'
   )
   log(/class="fab"[^>]*wx:if="\{\{!singlePage\}\}"/.test(wxml), '首页分享：单页模式下不再渲染「发布」悬浮按钮')
@@ -3199,6 +3291,7 @@ return checkDeleteAccount()
   .then(() => checkExpireRule())
   .then(() => checkCloudShapeFixes())
   .then(() => checkSinglePageShare())
+  .then(() => checkDetailBackFallback())
   .then(() => checkHomeShare())
   .then(() => checkDetailComments())
   .then(() => checkSeedData())

@@ -1,6 +1,14 @@
 <view class="page detail-page {{singlePage ? 'single-page' : ''}}">
   <!-- 单页模式下微信自带固定顶部导航栏，页面里的 navigation-bar 属于被禁用组件，这里不再渲染 -->
-  <navigation-bar wx:if="{{!singlePage}}" title="活动详情" color="#2D3748" background="#FFFFFF"></navigation-bar>
+  <!-- back-fallback：分享卡片 / 海报小程序码直达详情时，详情页是页面栈里的第一页，
+       返回箭头按 back 调 navigateBack 会静默失败，这里约定回落到广场 -->
+  <navigation-bar
+    wx:if="{{!singlePage}}"
+    title="活动详情"
+    back-fallback="/pages/square/index"
+    color="#2D3748"
+    background="#FFFFFF"
+  ></navigation-bar>
 
   <!-- 活动不存在：接口正常返回，但活动确实不可见（未过审 / 已删除 / 被下架） -->
   <view wx:if="{{notFound && !loading}}" class="not-found">
