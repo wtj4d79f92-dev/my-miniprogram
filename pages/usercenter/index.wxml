@@ -7,7 +7,7 @@
       <view class="user-card card">
         <view class="user-main" bindtap="onUserCardTap">
           <avatar
-            url="{{user.avatarUrl}}"
+            url="{{userAvatar}}"
             color="{{user ? user.avatarColor : '#CBD5D5'}}"
             text="{{user ? user.avatarText : '友'}}"
             size="lg"

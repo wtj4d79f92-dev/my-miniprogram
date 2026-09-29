@@ -375,7 +375,94 @@
   text-align: center;
 }
 
-/* ③ 协议正文 */
+/* ③ 完善头像昵称 */
+.login-main-profile {
+  align-items: center;
+  padding-top: 60rpx;
+}
+
+.profile-title {
+  font-size: 44rpx;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.profile-sub {
+  margin-top: 16rpx;
+  font-size: 26rpx;
+  color: var(--text-light);
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* 还原 button 默认外观，样式交给内层头像与文案 */
+.profile-avatar-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 56rpx;
+  padding: 0;
+  border: none;
+  background: transparent;
+  line-height: 1.4;
+}
+
+.profile-avatar-btn::after {
+  border: none;
+}
+
+.profile-avatar-tip {
+  margin-top: 16rpx;
+  font-size: 24rpx;
+  color: var(--brand);
+}
+
+.profile-nick-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  margin-top: 48rpx;
+  padding: 22rpx 26rpx;
+  border-radius: 16rpx;
+  background: #f6f8f8;
+  box-sizing: border-box;
+}
+
+.profile-nick-label {
+  width: 96rpx;
+  flex: none;
+  font-size: 28rpx;
+  color: var(--text-sub);
+}
+
+.profile-nick-input {
+  flex: 1;
+  height: 48rpx;
+  font-size: 30rpx;
+  color: var(--text);
+}
+
+.profile-nick-placeholder {
+  color: #c3cdcd;
+}
+
+.profile-save {
+  margin-top: 48rpx;
+}
+
+.profile-skip {
+  margin-top: 24rpx;
+}
+
+.profile-tips {
+  margin-top: 32rpx;
+  font-size: 22rpx;
+  color: var(--text-light);
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* ④ 协议正文 */
 .login-main-agreement {
   align-items: stretch;
   padding-top: 24rpx;

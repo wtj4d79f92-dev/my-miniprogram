@@ -526,6 +526,18 @@ const adminFn = require(path.join(ROOT, 'cloudfunctions/admin/index.js'))
 const contentCheckFn = require(path.join(ROOT, 'cloudfunctions/contentCheck/index.js'))
 const seedFn = require(path.join(ROOT, 'cloudfunctions/seed/index.js'))
 const seedData = require(path.join(ROOT, 'cloudfunctions/seed/lib/data'))
+// 默认昵称词库：注册时的随机昵称必须取自这份词库（与前端 utils/nickname.js 同一份）
+const { NICK_PREFIX, NICK_SUFFIX } = require(path.join(ROOT, 'cloudfunctions/activity/lib/nickname'))
+
+/** 判断昵称是不是「词库随机生成」的默认昵称，如「山野阿狼」 */
+function isPoolNickName(nickName) {
+  const value = String(nickName || '')
+  return (
+    value.length >= 4 &&
+    NICK_PREFIX.indexOf(value.slice(0, 2)) > -1 &&
+    NICK_SUFFIX.indexOf(value.slice(2)) > -1
+  )
+}
 
 /** 演示数据云函数的口令：正常来自云函数环境变量，测试里固定一个 */
 const SEED_TOKEN = 'seed-token-for-test'
@@ -1755,6 +1767,21 @@ async function run() {
   await callActivity('updateUser', { userInfo: { phone: '13900002222' } }, OTHER)
   log(userByName().phone !== '13900002222', '手机号：资料编辑不接受 phone 字段')
 
+  /* ---------- 新注册：默认昵称与默认头像随机生成，不是「微信用户」+ 灰色默认图 ---------- */
+  const freshRegister = await callActivity('login', {}, 'openid_fresh_default')
+  log(
+    isPoolNickName(freshRegister.nickName),
+    `注册：默认昵称从词库随机生成（本次：${freshRegister.nickName}）`
+  )
+  log(
+    /^#[0-9A-Fa-f]{6}$/.test(freshRegister.avatarColor || ''),
+    '注册：默认头像给出配色，而不是灰色默认图'
+  )
+  log(
+    freshRegister.avatarText === freshRegister.nickName.slice(0, 1) && freshRegister.avatarUrl === '',
+    '注册：默认头像用随机昵称的首字，等用户自己点选微信头像'
+  )
+
   /* ---------- 历史昵称：手机号掩码在登录时就地纠正，并同步公开快照 ---------- */
   const legacyNicknameUser = userByName()
   legacyNicknameUser.nickName = '138****8888'
@@ -1763,10 +1790,26 @@ async function run() {
   )[0]
   if (legacyOrganizer) legacyOrganizer.organizer.nickName = '138****8888'
   const migratedUser = await callActivity('login', {}, OTHER)
-  log(/^微信用户\d+$/.test(migratedUser.nickName || ''), '昵称：历史手机号掩码昵称在登录时改成默认昵称')
+  log(
+    isPoolNickName(migratedUser.nickName) && migratedUser.nickName !== '138****8888',
+    `昵称：历史手机号掩码昵称在登录时改成随机默认昵称（${migratedUser.nickName}）`
+  )
   log(
     !legacyOrganizer || legacyOrganizer.organizer.nickName === migratedUser.nickName,
     '昵称：纠正后同步刷新已发布活动的发起人快照，公开列表不再残留手机号'
+  )
+
+  /* ---------- 历史默认昵称：微信默认的「微信用户 + 编号」也在登录时换成随机昵称 ---------- */
+  legacyNicknameUser.nickName = '微信用户3'
+  legacyNicknameUser.avatarText = '微'
+  const migratedDefault = await callActivity('login', {}, OTHER)
+  log(
+    isPoolNickName(migratedDefault.nickName) && migratedDefault.avatarText === migratedDefault.nickName.slice(0, 1),
+    `昵称：历史默认昵称「微信用户3」在登录时换成随机昵称（${migratedDefault.nickName}）`
+  )
+  log(
+    legacyOrganizer ? legacyOrganizer.organizer.nickName !== '微信用户3' : true,
+    '昵称：换名后同步刷新已发布活动的发起人快照，公开列表不再出现「微信用户3」'
   )
 
   /* ---------- 反馈：文本同样过内容安全 ---------- */
@@ -1997,7 +2040,7 @@ async function run() {
   log(
     !!reRegister &&
       reRegister.openid === OTHER &&
-      /^微信用户\d+$/.test(reRegister.nickName || '') &&
+      isPoolNickName(reRegister.nickName) &&
       reRegister.userId > 1,
     '注销：同一微信再次登录按新账号注册，注销前的数据不会回来'
   )

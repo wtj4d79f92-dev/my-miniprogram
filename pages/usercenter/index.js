@@ -3,6 +3,7 @@ const { TEXTS } = require('../../utils/dict')
 const config = require('../../services/config')
 const loginBehavior = require('../../behaviors/login-behavior')
 const ui = require('../../utils/ui')
+const { needProfileSetup, uploadAvatar, usableAvatar } = require('../../utils/profile')
 
 Page({
   behaviors: [loginBehavior],
@@ -12,6 +13,8 @@ Page({
     aboutText: TEXTS.about,
     useMock: config.useMock,
     user: null,
+    // 顶部头像：历史版本把本机临时路径存成过头像，那种地址加载不出来，这里按「没有头像」退回首字色块
+    userAvatar: '',
     joinedCount: 0,
     publishedCount: 0,
     needProfile: false,
@@ -69,14 +72,14 @@ Page({
     const user = app.globalData.user
     this.setData({
       user,
+      userAvatar: usableAvatar(user && user.avatarUrl),
       needProfile: this.needProfileOf(user),
     })
   },
 
   /** 头像或昵称未完善时需要引导（已登录、但缺少头像或仍是默认昵称） */
   needProfileOf(user) {
-    if (!user) return false
-    return !user.avatarUrl || !user.nickName || user.nickName === '微信用户'
+    return needProfileSetup(user)
   },
 
   loadStats() {
@@ -113,7 +116,11 @@ Page({
 
   onUserChanged(user) {
     // 资料保存 / 登录后 user 已更新，需同步重算引导提示，否则会一直显示
-    this.setData({ needProfile: this.needProfileOf(user || this.data.user) })
+    const next = user || this.data.user
+    this.setData({
+      needProfile: this.needProfileOf(next),
+      userAvatar: usableAvatar(next && next.avatarUrl),
+    })
     this.loadStats()
   },
 
@@ -124,7 +131,8 @@ Page({
     if (!user) return
     this.setData({
       showProfile: true,
-      editAvatar: user.avatarUrl || '',
+      // 历史脏数据（本机临时路径）不预填：弹窗里显示色块而不是破图，保存时也就顺手把它冲掉了
+      editAvatar: usableAvatar(user.avatarUrl),
       editNickName: user.nickName || '',
     })
   },
@@ -150,22 +158,27 @@ Page({
       return
     }
     this.setData({ saving: true })
-    api
-      .updateUser({
-        userInfo: {
-          nickName,
-          avatarUrl: this.data.editAvatar,
-          avatarText: nickName.slice(0, 1),
-        },
-      })
+    // chooseAvatar 给到的是本机临时路径，先上传云存储换 fileID 再落库，
+    // 否则别人打开活动只看得到空白头像（云模式才会上传，Mock 模式原样透传）
+    uploadAvatar(this.data.editAvatar)
+      .then((avatarUrl) =>
+        api.updateUser({
+          userInfo: {
+            nickName,
+            avatarUrl,
+            avatarText: nickName.slice(0, 1),
+          },
+        })
+      )
       .then((user) => {
         this.setData({ saving: false, showProfile: false })
         this.handleLoginSuccess(user)
         ui.toast('保存成功', 'success')
       })
-      .catch(() => {
+      .catch((err) => {
         this.setData({ saving: false })
-        ui.toast('保存失败，请重试')
+        // 昵称触发内容安全、头像上传失败等都会带具体原因，透传给用户比统一「保存失败」有用
+        ui.toast((err && err.message) || '保存失败，请重试')
       })
   },
 

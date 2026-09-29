@@ -19,18 +19,8 @@ const LIMITS = {
   comment: 200,
 }
 
-/** 无头像时的色块备选，与前端 services/api.js 的 AVATAR_COLORS 保持一致 */
-const AVATAR_COLORS = [
-  '#4ECDC4',
-  '#45B7D1',
-  '#FF8E72',
-  '#F6D365',
-  '#00CDAC',
-  '#FA709A',
-  '#44A08D',
-  '#A8DADC',
-  '#FF7D00',
-]
+/** 无头像时的色块备选，与前端 utils/nickname.js 的 AVATAR_COLORS 同一份口径 */
+const { AVATAR_COLORS } = require('./nickname')
 
 /** 失败结构：前端 callCloud 见到 code 字段即判定为失败 */
 function fail(code, message) {

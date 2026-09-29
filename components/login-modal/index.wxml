@@ -103,7 +103,37 @@
     <text class="phone-tips">演示模式下不会发送短信，登录信息仅保存在本机</text>
   </view>
 
-  <!-- ③ 协议正文 -->
+  <!-- ③ 完善头像昵称：新用户登录成功后引导一次，可选 -->
+  <view class="login-main login-main-profile" wx:elif="{{step === 'profile'}}">
+    <text class="profile-title">完善头像昵称</text>
+    <text class="profile-sub">微信头像昵称需本人点选，两下即可带上</text>
+
+    <button class="profile-avatar-btn" open-type="chooseAvatar" bindchooseavatar="onProfileAvatar">
+      <avatar url="{{profileAvatar}}" color="#8FCFBA" text="{{profileNick ? profileNick : '友'}}" size="lg"></avatar>
+      <text class="profile-avatar-tip">点击选择微信头像</text>
+    </button>
+
+    <view class="profile-nick-row">
+      <text class="profile-nick-label">昵称</text>
+      <input
+        class="profile-nick-input"
+        type="nickname"
+        value="{{profileNick}}"
+        maxlength="20"
+        placeholder="点击可选用微信昵称"
+        placeholder-class="profile-nick-placeholder"
+        bindinput="onProfileNick"
+      />
+    </view>
+
+    <view class="login-btn login-btn-main login-btn-single profile-save" bindtap="saveProfile">
+      <text class="login-btn-title">{{profileSaving ? '保存中…' : '保存'}}</text>
+    </view>
+    <view class="login-btn login-btn-ghost profile-skip" bindtap="skipProfile"><text>暂不完善</text></view>
+    <text class="profile-tips">头像昵称会展示在活动卡片与报名名单里，之后可在「我的」里随时修改</text>
+  </view>
+
+  <!-- ④ 协议正文 -->
   <view class="login-main login-main-agreement" wx:else>
     <text class="agreement-meta">更新日期：{{agreement.updatedAt}}</text>
     <scroll-view class="agreement-body" scroll-y type="list">

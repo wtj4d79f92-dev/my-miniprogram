@@ -2,11 +2,14 @@
 // - 协议勾选后才允许登录，未勾选点击登录会提示并抖动协议行
 // - 登录过的手机号展示为「登录此账号 + 脱敏手机号」，可一键复用
 // - 「手机号快捷登录」「切换手机号」进入手机号输入；「暂不登录」取消并返回原操作
+// - 新用户登录成功后进「完善头像昵称」步骤：微信不允许静默获取昵称头像，这里用官方
+//   chooseAvatar / nickname 能力让用户点两下带上微信资料，也可「暂不完善」直接进小程序
 const api = require('../../services/api')
 const config = require('../../services/config')
 const { AGREEMENTS } = require('../../utils/agreements')
 const { KEYS, getStorage, setStorage } = require('../../utils/storage')
 const { parseBold } = require('../../utils/util')
+const { needProfileSetup, uploadAvatar, isFreshUser, usableAvatar } = require('../../utils/profile')
 
 const DEFAULT_APP_NAME = '旷行吖'
 const PHONE_REG = /^1\d{10}$/
@@ -31,7 +34,7 @@ Component({
 
   data: {
     visible: false,
-    // main：登录首页 | phone：输入手机号 | agreement：协议正文
+    // main：登录首页 | phone：输入手机号 | profile：完善头像昵称 | agreement：协议正文
     step: 'main',
     appName: DEFAULT_APP_NAME,
     navTitle: DEFAULT_APP_NAME,
@@ -45,6 +48,11 @@ Component({
     knownPhone: '',
     maskedPhone: '',
     submitting: false,
+    // 完善头像昵称（新用户登录成功后的一步）：待补资料的账号 + 编辑中的头像昵称
+    profileUser: null,
+    profileAvatar: '',
+    profileNick: '',
+    profileSaving: false,
     useMock: config.useMock,
     agreement: { title: '', updatedAt: '', blocks: [] },
   },
@@ -102,6 +110,10 @@ Component({
           phone: '',
           phoneValid: false,
           submitting: false,
+          profileUser: null,
+          profileAvatar: '',
+          profileNick: '',
+          profileSaving: false,
           knownPhone: lastPhone,
           maskedPhone: maskPhone(lastPhone),
         })
@@ -132,6 +144,10 @@ Component({
         submitting: false,
         phone: '',
         phoneValid: false,
+        profileUser: null,
+        profileAvatar: '',
+        profileNick: '',
+        profileSaving: false,
         agreement: { title: '', updatedAt: '', blocks: [] },
       })
       if (resolve) resolve(user || null)
@@ -150,6 +166,11 @@ Component({
     },
 
     onNavBack() {
+      // 已经登录成功、停在完善资料这一步：返回等同于「暂不完善」，不能再退回登录首页
+      if (this.data.step === 'profile') {
+        this.skipProfile()
+        return
+      }
       if (this.data.step !== 'main') {
         this.backToMain()
         return
@@ -276,12 +297,89 @@ Component({
           // 记住本次登录手机号，下次可「登录此账号」一键复用
           if (phone) setStorage(KEYS.lastPhone, phone)
           this.setData({ submitting: false })
+          // 新用户头像昵称还是默认值：先引导一次，拿到微信头像昵称再进小程序
+          if (isFreshUser(user) && needProfileSetup(user)) {
+            this.gotoProfileStep(user)
+            return
+          }
           this.finish(user)
         })
         .catch(() => {
           wx.hideLoading()
           this.setData({ submitting: false })
           wx.showToast({ title: '登录失败，请重试', icon: 'none' })
+        })
+    },
+
+    /* ------------------------ 完善头像昵称（新用户） ------------------------ */
+
+    /**
+     * 进入完善资料步骤
+     *
+     * 微信自 2022-10-25 起回收了 wx.getUserProfile 的真实昵称头像，小程序没有静默获取的
+     * 接口，只能由用户点一下（头像走 chooseAvatar，昵称走 nickname 输入框的微信昵称提示）。
+     * 所以这里不做「跳过就登录不了」的硬拦截，两个入口都允许「暂不完善」。
+     */
+    gotoProfileStep(user) {
+      this.setData({
+        step: 'profile',
+        // 导航标题短一些，避免和正文大标题完全重复
+        navTitle: '完善资料',
+        profileUser: user,
+        // 历史脏数据（本机临时路径）不预填，同上
+        profileAvatar: usableAvatar(user && user.avatarUrl),
+        // 随机生成的默认昵称不预填：预填了反而要用户先删掉才能选微信昵称
+        profileNick: '',
+        profileSaving: false,
+      })
+    },
+
+    onProfileAvatar(e) {
+      const url = e.detail && e.detail.avatarUrl
+      if (url) this.setData({ profileAvatar: url })
+    },
+
+    onProfileNick(e) {
+      this.setData({ profileNick: String(e.detail.value || '').slice(0, 20) })
+    },
+
+    /** 暂不完善：保留默认昵称头像，按登录成功继续原操作 */
+    skipProfile() {
+      if (this.data.profileSaving) return
+      this.finish(this.data.profileUser)
+    },
+
+    saveProfile() {
+      if (this.data.profileSaving) return
+      const user = this.data.profileUser
+      if (!user) return
+      const nickName = String(this.data.profileNick || '').trim()
+      if (!nickName) {
+        wx.showToast({ title: '请填写昵称', icon: 'none' })
+        return
+      }
+      this.setData({ profileSaving: true })
+      wx.showLoading({ title: '保存中', mask: true })
+      uploadAvatar(this.data.profileAvatar)
+        .then((avatarUrl) =>
+          api.updateUser({
+            userInfo: {
+              nickName,
+              avatarUrl,
+              avatarText: nickName.slice(0, 1),
+            },
+          })
+        )
+        .then((updated) => {
+          wx.hideLoading()
+          this.setData({ profileSaving: false })
+          this.finish(updated || user)
+        })
+        .catch((err) => {
+          wx.hideLoading()
+          this.setData({ profileSaving: false })
+          // 资料没保存成功不算登录失败：停在当前步骤，用户可重试或「暂不完善」
+          wx.showToast({ title: (err && err.message) || '保存失败，请重试', icon: 'none' })
         })
     },
 

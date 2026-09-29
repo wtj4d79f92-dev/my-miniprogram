@@ -6,14 +6,26 @@ const { matchCity, normalizeCity, singleCityKey } = require('../utils/cities')
 const { delay, deepClone, formatCardDate, WEEKDAY_TEXT } = require('../utils/util')
 const { LOCATION_MAX, ADDRESS_MAX } = require('../utils/location')
 const audit = require('../utils/audit')
+// 默认昵称 / 默认头像配色：与云端 cloudfunctions/activity/lib/nickname.js 同一份口径
+const { randomNickName, avatarColorOf, isDefaultNick } = require('../utils/nickname')
 // 展示期：发布满 7 天的活动对外按「已关闭」处理（与云函数 lib/expire.js 同一口径）
 const expire = require('../utils/expire')
 const mock = require('./mock')
 
-const AVATAR_COLORS = ['#4ECDC4', '#45B7D1', '#FF8E72', '#F6D365', '#00CDAC', '#FA709A', '#44A08D', '#A8DADC', '#FF7D00']
-
 function fail(code, message) {
   return Promise.reject(mock.error(code, message))
+}
+
+/**
+ * Mock 记录 ID：前缀 + 时间戳 + 自增序号。
+ *
+ * 只用 `Date.now()` 时，同一毫秒里连着建两条记录会撞成同一个 id（Mock 延迟是 0，机器忙时尤其容易），
+ * 之后按 id 改期 / 报名 / 编辑会串到另一条记录上——`scripts/validate.js` 的展示期用例就是这么偶发红的。
+ */
+let mockIdSeq = 0
+function mockId(prefix) {
+  mockIdSeq += 1
+  return `${prefix}_${Date.now()}_${mockIdSeq}`
 }
 
 function withDelay(data) {
@@ -116,15 +128,6 @@ function mockTextRisky(content) {
   const value = String(content || '')
   if (!value) return false
   return MOCK_RISKY_WORDS.some((word) => value.indexOf(word) > -1)
-}
-
-/**
- * Mock 版默认昵称，与云端 activity 云函数的 defaultNickName 保持一致：
- * 昵称对外可见，不能用手机号（哪怕是掩码），统一「微信用户 + 用户编号」。
- */
-function mockDefaultNickName(userId) {
-  const id = Math.floor(Number(userId) || 0)
-  return id > 0 ? `微信用户${id}` : '微信用户'
 }
 
 /**
@@ -374,7 +377,7 @@ const mockApi = {
     if (machine.blocked) return fail('CONTENT_RISKY', '内容未通过安全检测，请修改后重新提交')
     const audit = mockAutoAudit(machine)
     const reject = mockQrReject(machine)
-    const id = `mock_act_${Date.now()}`
+    const id = mockId('mock_act')
     const activity = Object.assign(mockFormFields(form), {
       id,
       _id: id,
@@ -548,13 +551,15 @@ const mockApi = {
     const params = payload || {}
     const existed = getStorage(KEYS.user, null)
     if (existed && existed.openid) {
-      // 历史版本用手机号掩码当默认昵称，等于把手机号前后各 4 位公开给其他用户，这里就地纠正
-      const legacyNick = !existed.nickName || /^\d{3}\*{4}\d{4}$/.test(existed.nickName)
+      // 历史版本用手机号掩码当默认昵称（等于把手机号前后各 4 位公开给其他用户），
+      // 更早的版本用微信默认的「微信用户 / 微信用户 + 编号」，两类都不是用户自己起的名字，这里就地纠正
+      const legacyNick =
+        /^\d{3}\*{4}\d{4}$/.test(existed.nickName || '') || isDefaultNick(existed.nickName)
       const merged = Object.assign({}, existed, {
         phone: params.phone || existed.phone || '',
       })
       if (legacyNick) {
-        merged.nickName = mockDefaultNickName(merged.userId)
+        merged.nickName = randomNickName()
         merged.avatarText = merged.nickName.slice(0, 1)
       }
       setStorage(KEYS.user, merged)
@@ -564,14 +569,15 @@ const mockApi = {
     setStorage(KEYS.userCounter, counter)
     const phone = params.phone || ''
     const guest = !phone
-    // 昵称对外可见（活动卡片、报名名单），不能放手机号（哪怕是掩码），统一「微信用户 + 编号」
-    const nickName = mockDefaultNickName(counter)
+    // 昵称对外可见（活动卡片、报名名单），不能放手机号（哪怕是掩码），
+    // 随机生成一个户外调性的昵称（与云端 login 同一份口径，见 utils/nickname.js）
+    const nickName = randomNickName()
     const user = {
       openid: `mock_openid_${counter}`,
       userId: counter,
       nickName,
       avatarUrl: '',
-      avatarColor: AVATAR_COLORS[counter % AVATAR_COLORS.length],
+      avatarColor: avatarColorOf(counter),
       avatarText: nickName.slice(0, 1),
       phone,
       bio: '',
@@ -636,7 +642,7 @@ const mockApi = {
     if (mockTextRisky(content)) return fail('CONTENT_RISKY', '反馈内容包含违规内容，请修改后重试')
     const user = mock.currentUser()
     const record = {
-      id: `mock_fb_${Date.now()}`,
+      id: mockId('mock_fb'),
       kind: 'feedback',
       openid: (user && user.openid) || '',
       nickName: (user && user.nickName) || '未登录用户',
@@ -674,7 +680,7 @@ const mockApi = {
       if (!targetComment) return fail('NOT_FOUND', '留言不存在或已删除')
     }
     const record = {
-      id: `mock_report_${Date.now()}`,
+      id: mockId('mock_report'),
       kind: 'report',
       target: targetComment ? 'comment' : 'activity',
       activityId: id,
@@ -726,7 +732,7 @@ const mockApi = {
     if (mockTextRisky(value)) return fail('CONTENT_RISKY', '留言包含违规内容，请修改后重试')
 
     const record = Object.assign(mock.memberOf(user), {
-      id: `mock_comment_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      id: mockId('mock_comment'),
       activityId: id,
       content: value,
       createTime: Date.now(),

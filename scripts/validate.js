@@ -283,6 +283,8 @@ function logicLines(relative) {
   ['文本检测', 'cloudfunctions/activity/lib/textCheck.js', 'cloudfunctions/contentCheck/lib/textCheck.js'],
   // 展示期：前端 Mock 与云函数必须同口径，否则本地看着还在招募、线上已经自动关闭
   ['活动展示期', 'utils/expire.js', 'cloudfunctions/activity/lib/expire.js'],
+  // 默认昵称词库与默认头像配色：随机生成的昵称必须两边一致，否则本地演示与线上长相不同
+  ['默认昵称与头像配色', 'utils/nickname.js', 'cloudfunctions/activity/lib/nickname.js'],
 ].forEach((pair) => {
   const [name, left, right] = pair
   const bothExist = exists(left) && exists(right)
@@ -517,6 +519,8 @@ config.useMock = true
 config.mockDelay = 0
 
 const api = require(path.join(ROOT, 'services/api'))
+// 默认昵称词库：与云端 lib/nickname.js 同一份，断言生成结果确实来自词库
+const { NICK_PREFIX, NICK_SUFFIX } = require(path.join(ROOT, 'utils/nickname'))
 const steps = []
 
 function step(name, promise) {
@@ -542,9 +546,20 @@ const flow = (async () => {
   // 昵称对外可见（活动卡片、报名名单），不能用手机号（哪怕是掩码）
   log(
     !/^\d{3}\*{4}\d{4}$/.test(user.nickName) && user.nickName.indexOf('138') === -1,
-    '登录：默认昵称不含手机号，改用「微信用户 + 编号」'
+    '登录：默认昵称不含手机号'
   )
-  log(user.nickName === `微信用户${user.userId}`, '登录：默认昵称带用户编号，报名名单里仍可区分')
+  log(
+    NICK_PREFIX.indexOf(user.nickName.slice(0, 2)) > -1 && NICK_SUFFIX.indexOf(user.nickName.slice(2)) > -1,
+    `登录：默认昵称从词库随机生成（本次：${user.nickName}）`
+  )
+  log(
+    !/^微信用户\d*$/.test(user.nickName),
+    '登录：不再用微信默认的「微信用户」当默认昵称'
+  )
+  log(
+    /^#[0-9A-Fa-f]{6}$/.test(user.avatarColor || '') && user.avatarText === user.nickName.slice(0, 1),
+    '登录：默认头像给随机配色 + 昵称首字，不是灰色默认图'
+  )
   globalData.user = user
 
   // 首页
@@ -1134,7 +1149,162 @@ function checkPublishUpload() {
     })
 }
 
-return checkPublishUpload()
+  return checkPublishUpload()
+})
+.then(() => {
+/* ---------- 5.1 头像：登录页 / 资料弹窗选的头像同样必须先转存云存储 ---------- */
+/**
+ * chooseAvatar 给到的是本机临时路径（真机 wxfile://、开发者工具 http://tmp/...），
+ * 直接落库别人看到的是空白头像，所以云模式必须先 uploadFile 换云文件 ID。
+ * 顺带钉住「微信不提供静默获取昵称头像，只能用户点选」这条口径的落地方式。
+ */
+function checkAvatarUpload() {
+  const profile = require(path.join(ROOT, 'utils/profile.js'))
+  const uploaded = []
+  const setCloud = (fail) => {
+    global.wx.cloud = {
+      uploadFile({ cloudPath, filePath, success, fail: onFail }) {
+        if (fail) {
+          onFail({ errMsg: 'uploadFile:fail' })
+          return
+        }
+        uploaded.push({ cloudPath, filePath })
+        success({ fileID: `cloud://test-env.${cloudPath}` })
+      },
+    }
+  }
+
+  // 默认昵称判定：老版本「微信用户」与新版本「微信用户 + 编号」都算没填
+  log(
+    profile.needProfileSetup({ openid: 'o1', userId: 1, nickName: '微信用户1', avatarUrl: '' }) === true,
+    '头像昵称：默认昵称（微信用户1）算未完善'
+  )
+  log(
+    profile.needProfileSetup({ openid: 'o1', nickName: '微信用户' }) === true,
+    '头像昵称：老默认昵称（微信用户）算未完善'
+  )
+  log(
+    profile.needProfileSetup({ openid: 'o1', nickName: '山野阿宽', avatarUrl: 'cloud://x/a.png' }) === false,
+    '头像昵称：已填昵称与头像不再算未完善'
+  )
+  log(profile.needProfileSetup(null) === false, '头像昵称：未登录不引导完善')
+
+  // 历史脏数据兜底：早期版本把本机临时路径直接落了库，那些头像别人根本看不到
+  log(
+    profile.isTempAvatar('wxfile://tmp_a.jpg') && profile.isTempAvatar('http://tmp/a.jpg'),
+    '头像兜底：本机临时路径（wxfile:// / http://tmp/）能被识别出来'
+  )
+  log(
+    profile.usableAvatar('wxfile://tmp_a.jpg') === '' &&
+      profile.usableAvatar('cloud://x/avatar/a.png') === 'cloud://x/avatar/a.png' &&
+      profile.usableAvatar('') === '',
+    '头像兜底：临时路径按「没有头像」处理，云文件原样保留'
+  )
+  log(
+    profile.needProfileSetup({ openid: 'o1', nickName: 'Rise.ZX', avatarUrl: 'wxfile://tmp_a.jpg' }) === true,
+    '头像兜底：头像存的是本机临时路径时重新引导完善（用户重选一次即可修好）'
+  )
+  log(
+    profile.needProfileSetup({ openid: 'o1', nickName: 'Rise.ZX', avatarUrl: 'cloud://x/avatar/a.png' }) === false,
+    '头像兜底：正常的云文件头像不会误报成未完善'
+  )
+
+  // 只有刚注册的新用户才自动进「完善头像昵称」步骤，老用户登录不再打扰
+  log(profile.isFreshUser({ createTime: Date.now() }) === true, '头像昵称：刚注册的新用户会进完善步骤')
+  log(
+    profile.isFreshUser({ createTime: Date.now() - 10 * 60 * 1000 }) === false,
+    '头像昵称：老用户登录不再自动进完善步骤'
+  )
+
+  setCloud(false)
+  config.useMock = false
+  return profile
+    .uploadAvatar('http://tmp/tmp_avatar.png')
+    .then((url) => {
+      log(String(url).indexOf('cloud://test-env.avatar/') === 0, '头像上传：本机临时头像转存云存储后才落库')
+      log(uploaded.length === 1, `头像上传：临时头像触发一次上传（实际 ${uploaded.length} 次）`)
+      return profile.uploadAvatar('cloud://test-env/avatar/old.png')
+    })
+    .then((url) => {
+      log(url === 'cloud://test-env/avatar/old.png' && uploaded.length === 1, '头像上传：已是云文件时不重复上传')
+      return profile.uploadAvatar('')
+    })
+    .then((url) => {
+      log(url === '' && uploaded.length === 1, '头像上传：没选头像时保持空串')
+      setCloud(true)
+      return profile.uploadAvatar('wxfile://tmp_avatar.png').then(
+        () => {
+          log(false, '头像上传：上传失败时应 reject，而不是把本机路径写进资料')
+        },
+        (err) => {
+          log(!!(err && err.message), `头像上传：上传失败给出可读原因 → ${err && err.message}`)
+        }
+      )
+    })
+    .then(() => {
+      // Mock 模式没有云存储，保持本机路径（演示用，不做转存）
+      config.useMock = true
+      return profile.uploadAvatar('http://tmp/tmp_avatar.png')
+    })
+    .then((url) => {
+      log(url === 'http://tmp/tmp_avatar.png', '头像上传：Mock 模式原样透传，不调云存储')
+      config.useMock = false
+      return null
+    })
+    .catch((e) => {
+      config.useMock = true
+      log(false, `头像上传：执行异常 → ${e && e.message}`)
+    })
+}
+
+/* ---------- 5.2 登录页的完善头像昵称步骤（静态口径） ---------- */
+function checkLoginProfileStep() {
+  const loginJs = fs.readFileSync(path.join(ROOT, 'components/login-modal/index.js'), 'utf8')
+  const loginWxml = fs.readFileSync(path.join(ROOT, 'components/login-modal/index.wxml'), 'utf8')
+  const usercenterJs = fs.readFileSync(path.join(ROOT, 'pages/usercenter/index.js'), 'utf8')
+  const avatarJson = readJSON(path.join(ROOT, 'components/login-modal/index.json'))
+
+  log(
+    !!(avatarJson.usingComponents && avatarJson.usingComponents.avatar),
+    '登录页完善资料：头像组件已注册（否则步骤渲染不出来）'
+  )
+  log(
+    loginWxml.indexOf('open-type="chooseAvatar"') > -1 && loginWxml.indexOf('type="nickname"') > -1,
+    '登录页完善资料：头像走 chooseAvatar、昵称走 nickname 输入（微信唯一可用的官方能力）'
+  )
+  log(
+    loginWxml.indexOf('bindtap="skipProfile"') > -1,
+    '登录页完善资料：保留「暂不完善」，不阻断登录'
+  )
+  log(
+    loginJs.indexOf('isFreshUser(user) && needProfileSetup(user)') > -1,
+    '登录页完善资料：仅新注册且昵称头像没填时自动进入该步骤'
+  )
+  log(
+    loginJs.indexOf('uploadAvatar(this.data.profileAvatar)') > -1,
+    '登录页完善资料：保存前先上传头像'
+  )
+  log(
+    usercenterJs.indexOf('uploadAvatar(this.data.editAvatar)') > -1,
+    '资料编辑弹窗：保存前先上传头像'
+  )
+  log(
+    usercenterJs.indexOf('usableAvatar(user.avatarUrl)') > -1 &&
+      fs.readFileSync(path.join(ROOT, 'components/login-modal/index.js'), 'utf8').indexOf('usableAvatar(user && user.avatarUrl)') > -1,
+    '头像兜底：两个资料弹窗都不预填历史临时头像，保存时顺手冲掉脏数据'
+  )
+  log(
+    loginJs.indexOf('wx.getUserProfile(') === -1 && usercenterJs.indexOf('wx.getUserProfile(') === -1,
+    '头像昵称：不再调用已被微信回收的 wx.getUserProfile'
+  )
+}
+
+  return checkAvatarUpload()
+    .then(() => {
+      checkLoginProfileStep()
+      config.useMock = true
+      return null
+    })
 })
 .then(() => {
 /* ---------- 6. 审核台封面展示：桌面端审核人读不到发起人的云存储文件时要给出正确结论 ---------- */
@@ -2185,6 +2355,9 @@ function checkExpireRule() {
     })
     .then((created) => {
       fresh = created
+      // Mock 的 id 只是时间戳时，同一毫秒内连着建两条会撞成同一个 id，
+      // 之后按 id 改期 / 报名 / 编辑就串到另一条记录上（这条用例以前就会偶发红）
+      log(aged.id !== fresh.id, 'Mock：连续创建的活动 id 不重复')
       // 一条改到 8 天前（已过展示期），一条改到 6 天前（仍在展示期内）
       backdate(aged.id, 8)
       backdate(fresh.id, 6)
@@ -2872,8 +3045,12 @@ function checkHardening() {
     '手机号：updateUser 不接受 phone 字段，无法绕过微信校验写号'
   )
   log(
-    cloudJs.indexOf('MASKED_PHONE_NICK') > -1 && cloudJs.indexOf('function defaultNickName') > -1,
-    '昵称：默认昵称用「微信用户 + 编号」，登录时纠正历史手机号掩码昵称'
+    cloudJs.indexOf('MASKED_PHONE_NICK') > -1 && cloudJs.indexOf('randomNickName()') > -1,
+    '昵称：默认昵称随机生成（lib/nickname.js），登录时纠正历史手机号掩码昵称'
+  )
+  log(
+    cloudJs.indexOf("require('./lib/nickname')") > -1,
+    '昵称：默认昵称 / 头像配色走 lib/nickname.js，不在云函数里另写一份'
   )
   log(
     PRIVACY_AGREEMENT.paragraphs.join('\n').indexOf('不会展示给其他用户') > -1,

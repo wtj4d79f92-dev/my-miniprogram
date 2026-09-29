@@ -34,9 +34,10 @@ const {
 const { MISSING, inspectFiles, collectFileIDs, resolveMedia } = require('./lib/media')
 // 自动关闭：展示期届满（发布满 7 天）、集合时间已过，首页 / 广场不再展示（见 lib/expire.js）
 const { TTL_MS, DAY_MS, startOfDay, isExpired, expireTimeOf, isPastStart } = require('./lib/expire')
+// 默认昵称与默认头像配色：注册时随机生成，见 lib/nickname.js
+const { randomNickName, avatarColorOf, isDefaultNick } = require('./lib/nickname')
 const {
   LIMITS,
-  AVATAR_COLORS,
   fail,
   text,
   num,
@@ -800,14 +801,11 @@ async function phoneFromCode(code) {
 const MASKED_PHONE_NICK = /^\d{3}\*{4}\d{4}$/
 
 /**
- * 默认昵称：昵称会展示在活动卡片、详情页与本活动的报名名单里（对外可见），
- * 因此不能使用手机号（哪怕是掩码），统一用「微信用户 + 用户编号」，既能区分又不含个人信息。
+ * 登录 / 注册。
+ * 默认昵称与默认头像配色见 lib/nickname.js：昵称会展示在活动卡片、详情页与本活动的报名名单里
+ * （对外可见），所以注册时随机生成一个户外调性的昵称（如「山野阿狼」），既不用手机号（哪怕是
+ * 掩码），也不会像微信默认的「微信用户」那样所有人一个样、在报名名单里分不出谁是谁。
  */
-function defaultNickName(userId) {
-  const id = Math.floor(num(userId, 0))
-  return id > 0 ? `微信用户${id}` : '微信用户'
-}
-
 async function login(event, openid) {
   if (!openid) return fail('UNAUTHORIZED', '登录失败，请重试')
   const payload = event || {}
@@ -826,9 +824,10 @@ async function login(event, openid) {
   if (existed) {
     const patch = {}
     if (phone && phone !== existed.phone) patch.phone = phone
-    // 没填昵称、或昵称还是历史遗留的手机号掩码时，就地改成默认昵称
-    if (!existed.nickName || MASKED_PHONE_NICK.test(existed.nickName)) {
-      patch.nickName = defaultNickName(existed.userId)
+    // 没填昵称、昵称还是历史遗留的手机号掩码、或还是微信默认的「微信用户 / 微信用户 + 编号」时，
+    // 就地换成随机默认昵称：这三类都不是用户自己起的名字，留着的话公开列表上人人一个样、认不出谁是谁
+    if (MASKED_PHONE_NICK.test(existed.nickName || '') || isDefaultNick(existed.nickName)) {
+      patch.nickName = randomNickName()
       patch.avatarText = patch.nickName.slice(0, 1)
     }
     if (!Object.keys(patch).length) return withId(existed)
@@ -842,13 +841,13 @@ async function login(event, openid) {
   // 注册序号：openid 唯一索引才是真正的唯一约束，这里只用于展示，重复由并发概率决定
   const countRes = await users.count()
   const userId = countRes.total + 1
-  const nickName = profileNick || defaultNickName(userId)
+  const nickName = profileNick || randomNickName()
   const doc = {
     openid,
     userId,
     nickName,
     avatarUrl: text(profile.avatarUrl, LIMITS.url),
-    avatarColor: AVATAR_COLORS[userId % AVATAR_COLORS.length],
+    avatarColor: avatarColorOf(userId),
     avatarText: nickName.slice(0, 1),
     phone,
     bio: '',
