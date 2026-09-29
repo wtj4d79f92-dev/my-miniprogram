@@ -1040,6 +1040,45 @@ async function run() {
   log(mediaGone.media['cloud://gone-again.png'].ok === false, '媒体接口：文件不存在时返回 ok=false，不抛错')
   missingFileIDs.delete('cloud://gone-again.png')
 
+  /* ---------- 首页横幅：后台配图 ---------- */
+  // 横幅图片是运营在云数据库里填的：填云存储 fileID 时由云函数换临时链接，和自己传封面同一套口径
+  store.banners.length = 0
+  store.banners.push({
+    _id: 'banner_img',
+    title: '带图横幅',
+    subtitle: '后台配了图',
+    emoji: '🏕️',
+    bg: 'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)',
+    action: { type: 'square', value: 'hiking' },
+    sort: 9,
+    image: 'cloud://banner-ok.png',
+  })
+  store.banners.push({
+    _id: 'banner_img_gone',
+    title: '图片丢了的横幅',
+    subtitle: '文件被删了',
+    emoji: '🌊',
+    bg: 'linear-gradient(135deg, #89F7FE 0%, #66A6FF 100%)',
+    action: { type: 'square', value: 'driving' },
+    sort: 10,
+    image: 'cloud://banner-gone.png',
+  })
+  missingFileIDs.add('cloud://banner-gone.png')
+  const bannerHome = await callActivity('home', { city: '' }, OTHER)
+  missingFileIDs.delete('cloud://banner-gone.png')
+  const bannerWithImage = bannerHome.banners.filter((item) => item._id === 'banner_img')[0]
+  log(
+    !!bannerWithImage &&
+      /^https:\/\//.test(bannerWithImage.imageUrl || '') &&
+      bannerWithImage.image === 'cloud://banner-ok.png',
+    '首页横幅：配了云存储图片时下发临时链接，原始 fileID 保留供失效后重取'
+  )
+  const bannerLostImage = bannerHome.banners.filter((item) => item._id === 'banner_img_gone')[0]
+  log(
+    !!bannerLostImage && !bannerLostImage.imageUrl && bannerLostImage.image === 'cloud://banner-gone.png',
+    '首页横幅：图片文件不存在时不下发链接，前端按没配图回退渐变背景'
+  )
+
   /* ---------- admin 云函数：审核动作 ---------- */
   const emptyRemark = await callAdmin('reject', { id: 'act_pending', remark: '   ' }, ADMIN)
   log(emptyRemark.code === 'INVALID_PARAM', '审核台：驳回必须填写原因')

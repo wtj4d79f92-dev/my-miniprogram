@@ -3356,6 +3356,99 @@ function checkSeedData() {
   )
 }
 
+/* -------------- 首页横幅：后台配图，没配图回退渐变 -------------- */
+/**
+ * 首页横幅配图：运营直接在云数据库的 banners 集合里填一条 image（云存储 fileID 或 https 直链）。
+ * 没配图的横幅必须还是原来的渐变 + emoji + 文案，不能因为加了图片能力把默认横幅渲染成空白。
+ */
+function checkBannerImage() {
+  const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
+  const homeWxml = read('pages/home/home.wxml')
+  const homeWxss = read('pages/home/home.wxss')
+  const cloudJs = read('cloudfunctions/activity/index.js')
+  const clientDict = require(path.join(ROOT, 'utils/dict'))
+  const cloudDict = require(path.join(ROOT, 'cloudfunctions/activity/lib/dict'))
+
+  // ① 数据契约：两端默认横幅都带 image 字段（空串 = 没配图），照抄默认数据时不会漏字段
+  log(
+    clientDict.DEFAULT_BANNERS.every((item) => typeof item.image === 'string') &&
+      cloudDict.DEFAULT_BANNERS.every((item) => typeof item.image === 'string'),
+    '横幅：前端与云函数的默认数据都带 image 字段'
+  )
+
+  // ② 渲染：有图用图（临时链接优先，退回原始 fileID），标题 / 副标题照旧压在图片上
+  log(
+    /<image[^>]*class="banner-image"[^>]*src="\{\{item\.imageUrl \|\| item\.image\}\}"/.test(homeWxml),
+    '横幅：配图时渲染图片，优先用临时链接、退回原始 fileID'
+  )
+  log(
+    /class="banner-item"[^>]*style="background: \{\{item\.bg\}\};"/.test(homeWxml),
+    '横幅：没配图的横幅保留渐变背景兜底，不会渲染成空白'
+  )
+  log(
+    homeWxml.indexOf('banner-title') > -1 && homeWxml.indexOf('banner-sub') > -1,
+    '横幅：标题 / 副标题的排版与原来一致'
+  )
+  // 图片是照片时 emoji 会像贴上去的贴纸，有图就不叠加
+  log(
+    /class="banner-emoji"[^>]*wx:if="\{\{!\(item\.imageUrl \|\| item\.image\)\}\}"/.test(homeWxml),
+    '横幅：有配图时不再叠加 emoji'
+  )
+  log(
+    ['.banner-image', '.banner-mask'].every((name) => homeWxss.indexOf(`${name} {`) > -1),
+    '横幅：图片层与压暗蒙层都有独立样式，文字压在照片上也读得清'
+  )
+
+  // ③ 云函数：后台填云存储 fileID 时换成 https 临时链接再下发（客户端读别人传的图不受存储权限限制）
+  log(
+    /function attachBannerImageUrls/.test(cloudJs) && /collectFileIDs\(list, \['image'\]\)/.test(cloudJs),
+    '横幅：云函数把横幅图片的云存储 fileID 换成临时链接'
+  )
+
+  // ④ 本地快照：横幅图片链接与封面临时链接同样是 2 小时过期。
+  // 快照仍在 24 小时缓存窗口内、但已经比临时链接更陈时，首帧必须先摘掉横幅图片（退回渐变），
+  // 否则整条横幅要白加载一次失败的图；接口返回后图片自然补上。
+  const { KEYS, getStorage, setStorage, removeStorage } = require(path.join(ROOT, 'utils/storage'))
+  const originPage = global.Page
+  const pageOptions = []
+  global.Page = (options) => pageOptions.push(options)
+  delete require.cache[path.join(ROOT, 'pages/home/home.js')]
+  require(path.join(ROOT, 'pages/home/home.js'))
+  global.Page = originPage
+  const homePage = pageOptions[0]
+  const ctx = Object.assign({}, homePage)
+  ctx.data = JSON.parse(JSON.stringify(homePage.data))
+  ctx.setData = function setData(patch) {
+    Object.assign(this.data, patch)
+  }
+  const cachedBefore = getStorage(KEYS.homeCache, null)
+  setStorage(KEYS.homeCache, {
+    city: globalData.city || '',
+    // 3 小时前：比 2 小时的图片临时链接更陈，但还在 24 小时的快照窗口里
+    time: Date.now() - 3 * 60 * 60 * 1000,
+    banners: [
+      {
+        _id: 'banner_cache',
+        title: '缓存里的横幅',
+        subtitle: '副标题',
+        emoji: '🏕️',
+        bg: 'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)',
+        image: 'cloud://banner-cache.png',
+        imageUrl: 'https://tmp.test/cloud%3A%2F%2Fbanner-cache.png',
+      },
+    ],
+    hotList: [],
+    newestList: [],
+  })
+  const usedCache = ctx.renderCache()
+  log(
+    usedCache === true && ctx.data.banners[0].imageUrl === '' && ctx.data.banners[0].image === '',
+    '横幅：过陈快照先摘掉横幅图片（退回渐变），接口返回后再补图'
+  )
+  if (cachedBefore === null) removeStorage(KEYS.homeCache)
+  else setStorage(KEYS.homeCache, cachedBefore)
+}
+
 /* -------------- 活动留言：详情页只给参与者渲染，发送 / 删除即时生效 -------------- */
 /**
  * 数据层的权限在 Mock 链路与 scripts/cloud-validate.js 里覆盖，这里验证页面这一层的决策：
@@ -3470,6 +3563,7 @@ return checkDeleteAccount()
   .then(() => checkSinglePageShare())
   .then(() => checkDetailBackFallback())
   .then(() => checkHomeShare())
+  .then(() => checkBannerImage())
   .then(() => checkDetailComments())
   .then(() => checkSeedData())
 })

@@ -49,8 +49,11 @@
         indicator-active-color="#00B578"
       >
         <swiper-item wx:for="{{banners}}" wx:key="_id">
+          <!-- 有配图时整条横幅铺图（imageUrl 是云函数换来的临时链接，image 是后台填的原值），没配图就是原来的渐变 -->
           <view class="banner-item" style="background: {{item.bg}};" data-action="{{item.action}}" bindtap="onBannerTap">
-            <text class="banner-emoji">{{item.emoji}}</text>
+            <image class="banner-image" wx:if="{{item.imageUrl || item.image}}" src="{{item.imageUrl || item.image}}" mode="aspectFill" />
+            <view class="banner-mask" wx:if="{{item.imageUrl || item.image}}"></view>
+            <text class="banner-emoji" wx:if="{{!(item.imageUrl || item.image)}}">{{item.emoji}}</text>
             <text class="banner-title">{{item.title}}</text>
             <text class="banner-sub">{{item.subtitle}}</text>
           </view>

@@ -34,11 +34,15 @@ const HOME_CACHE_TTL = 24 * 60 * 60 * 1000
  */
 const HOME_COVER_TTL = 2 * 60 * 60 * 1000
 
-/** 摘掉快照里的封面（列表其余字段照常渲染），用于快照比封面临时链接更陈的情况 */
+/**
+ * 摘掉快照里的封面与横幅配图（其余字段照常渲染），用于快照比临时链接更陈的情况。
+ * 横幅图片和活动封面一样是 2 小时过期的临时链接，复用只会让整条横幅先加载失败一次。
+ */
 function stripStaleCovers(snapshot) {
   const blank = (item) => Object.assign({}, item, { cover: '', coverUrl: '' })
+  const blankBanner = (item) => Object.assign({}, item, { image: '', imageUrl: '' })
   return {
-    banners: snapshot.banners,
+    banners: (snapshot.banners || []).map(blankBanner),
     hotList: (snapshot.hotList || []).map(blank),
     newestList: (snapshot.newestList || []).map(blank),
   }

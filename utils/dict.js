@@ -49,13 +49,17 @@ const SORT_OPTIONS = [
   { value: 'hot', label: '最热门' },
 ]
 
-/** 默认横幅（后台无数据时使用，与云函数默认数据保持一致） */
+/**
+ * 默认横幅（后台无数据时使用，与云函数默认数据保持一致）。
+ * image：可选配图，填云存储 fileID（cloud://...）或 https 直链；留空则用 bg 渐变 + emoji。
+ */
 const DEFAULT_BANNERS = [
   {
     _id: 'banner_default_1',
     title: '周末去山里走走吧',
     subtitle: '徒步 / 爬山 / 露营 一起出发',
     emoji: '🏕️',
+    image: '',
     bg: 'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)',
     action: { type: 'square', value: 'hiking' },
     sort: 1,
@@ -65,6 +69,7 @@ const DEFAULT_BANNERS = [
     title: '组局打球不孤单',
     subtitle: '篮球 / 足球 / 羽毛球 在线约战',
     emoji: '🏀',
+    image: '',
     bg: 'linear-gradient(135deg, #FFB88C 0%, #FF8E72 100%)',
     action: { type: 'square', value: 'ball' },
     sort: 2,
@@ -74,6 +79,7 @@ const DEFAULT_BANNERS = [
     title: '想去看海呀',
     subtitle: '自驾拼车 说走就走',
     emoji: '🌊',
+    image: '',
     bg: 'linear-gradient(135deg, #89F7FE 0%, #66A6FF 100%)',
     action: { type: 'square', value: 'driving' },
     sort: 3,

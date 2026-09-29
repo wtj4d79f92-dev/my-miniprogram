@@ -250,6 +250,23 @@ function attachCoverUrls(rows) {
   })
 }
 
+/**
+ * 横幅配图：后台在 banners 集合里填的是云存储 fileID 时，用管理员身份换临时链接再下发
+ * （客户端读别人上传的图受云存储读取权限约束）。填 https 直链的横幅原样交给前端用。
+ * 没配图、文件已被删除时不下发 imageUrl，前端按「没配图」回退渐变背景，不会出现空白横幅。
+ */
+function attachBannerImageUrls(rows) {
+  const list = rows || []
+  if (!list.length) return Promise.resolve(list)
+  return resolveMedia(collectFileIDs(list, ['image'])).then((media) => {
+    list.forEach((item) => {
+      const entry = media[item.image]
+      if (entry && entry.url) item.imageUrl = entry.url
+    })
+    return list
+  })
+}
+
 /* ------------------------------ 首页 / 列表 ------------------------------ */
 
 /**
@@ -319,9 +336,10 @@ async function home(event, openid) {
 
   const hotList = hotRes.data.map((doc) => publicActivity(doc, openid))
   const newestList = newestRes.data.map((doc) => publicActivity(doc, openid))
-  // 热门 + 最新的封面一次换完，少一次云存储往返；历史默认横幅的纠正也并进这一批，不占串行时间
+  // 热门 + 最新的封面、横幅配图一次换完，少一次云存储往返；历史默认横幅的纠正也并进这一批，不占串行时间
   await Promise.all([
     attachCoverUrls(hotList.concat(newestList)),
+    attachBannerImageUrls(bannerRows),
     upgradeDefaultBannerActions(bannerRows),
   ])
 
