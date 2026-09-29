@@ -1395,6 +1395,13 @@ async function runExpireJob() {
   return { ok: expired.ok && past.ok, closed: expired.count, closedPast: past.count }
 }
 
+/**
+ * 保活触发器的名字（见 config.json 的 keepWarm）。
+ * 云函数实例闲置几分钟就会被回收，下一个用户打开小程序时要等一次冷启动（同环境实测 1.5–4.8 秒，
+ * 见 README「首屏加载」）；这条两分钟一次的触发器只负责把实例占热，让首屏那次 home 请求落在热实例上。
+ */
+const KEEP_WARM_TRIGGER = 'keepWarm'
+
 /* ------------------------------ 路由 ------------------------------ */
 
 const ACTIONS = {
@@ -1423,7 +1430,11 @@ const ACTIONS = {
 exports.main = async (event) => {
   const payload = event || {}
   // 定时触发器（cloudfunctions/activity/config.json 的 triggers）不带 action，先于业务路由处理
-  if (payload.Type === 'Timer' || payload.type === 'timer') return runExpireJob()
+  if (payload.Type === 'Timer' || payload.type === 'timer') {
+    // 必须按触发器名分流：保活是几分钟一次的，让它跟着跑一遍到期关闭等于每两分钟全表扫一轮
+    if (payload.TriggerName === KEEP_WARM_TRIGGER) return { ok: true, warm: true, time: Date.now() }
+    return runExpireJob()
+  }
   const action = payload.action || ''
   // 用户身份一律取自云函数上下文，不信任前端传入的 openid
   const { OPENID } = cloud.getWXContext()

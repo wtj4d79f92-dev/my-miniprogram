@@ -16,11 +16,33 @@ const SHARE_TITLE = `${TEXTS.appName} · 同城找搭子，一起出发`
 
 /**
  * 首页列表本地快照的有效期。冷启动时先用快照把活动渲染出来，接口返回后再覆盖，
- * 用户看到的是「打开就有内容」而不是一块空白；超过有效期就退回骨架屏等接口。
- * 取 2 小时与封面临时链接的有效期一致，快照里的封面在这个窗口内仍然能显示
- * （真过期了卡片会按 fileID 自动重取一次，见 components/activity-card）。
+ * 用户看到的是「打开就有内容」而不是一块空白；超过有效期才退回骨架屏等接口。
+ *
+ * 这个窗口要够长才兜得住「打开小程序时的云函数冷启动」：`activity` 闲置几分钟后
+ * 第一个请求要 1.5–4.8 秒（同环境实测，见 README「首屏加载」），
+ * 快照只留 2 小时的话，隔天再打开的用户正好没有快照可用，就会盯着骨架屏等这一次冷启动。
+ * 快照里存的是接口原始数据，展示用的派生字段（已关闭 / 已到期 / 日期文案）
+ * 在渲染时按当前时间重算，所以快照陈一点也不会误导。
  */
-const HOME_CACHE_TTL = 2 * 60 * 60 * 1000
+const HOME_CACHE_TTL = 24 * 60 * 60 * 1000
+
+/**
+ * 快照里封面的可用窗口：封面临时链接默认 2 小时过期（见 utils/storage.js 的注释与本文件 renderHome）。
+ * 比这个更陈的快照不再复用 coverUrl —— 复用只会让每张卡片都加载失败一次，再各自去云函数换一次链接
+ * （components/activity-card 的 onCoverError），既闪一下又白打几个云函数；先不带封面渲染默认海报，
+ * 接口返回后封面自然就补上了。
+ */
+const HOME_COVER_TTL = 2 * 60 * 60 * 1000
+
+/** 摘掉快照里的封面（列表其余字段照常渲染），用于快照比封面临时链接更陈的情况 */
+function stripStaleCovers(snapshot) {
+  const blank = (item) => Object.assign({}, item, { cover: '', coverUrl: '' })
+  return {
+    banners: snapshot.banners,
+    hotList: (snapshot.hotList || []).map(blank),
+    newestList: (snapshot.newestList || []).map(blank),
+  }
+}
 
 Page({
   behaviors: [loginBehavior],
@@ -134,14 +156,16 @@ Page({
   /**
    * 首帧渲染上次的快照：只负责「先给内容」，onShow 里的 loadData 照常请求并覆盖。
    * 只在城市没变且快照没过期时使用——城市变了还拿旧快照，会看到别的城市的活动。
+   * 快照比封面临时链接更陈时摘掉封面再渲染（见 stripStaleCovers），活动本身照常先显示出来。
    */
   renderCache() {
     const cached = getStorage(KEYS.homeCache, null)
     if (!cached || !cached.time) return false
     const app = getApp()
     if ((cached.city || '') !== ((app && app.globalData.city) || '')) return false
-    if (Date.now() - cached.time > HOME_CACHE_TTL) return false
-    this.renderHome(cached, cached.fallbackTip || '')
+    const age = Date.now() - cached.time
+    if (age > HOME_CACHE_TTL) return false
+    this.renderHome(age > HOME_COVER_TTL ? stripStaleCovers(cached) : cached, cached.fallbackTip || '')
     return true
   },
 

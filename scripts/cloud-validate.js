@@ -2214,6 +2214,28 @@ async function run() {
     '展示期：定时任务可重复执行，已经关闭的活动不会被重复处理'
   )
 
+  // 保活触发器：云函数实例闲置几分钟就会被回收，下一个打开小程序的用户要等一次冷启动
+  // （见 README「首屏加载」）。config.json 里两分钟一次的 keepWarm 只负责把实例占热，
+  // 不能顺手把「到期自动关闭」也跑一遍 —— 那等于每两分钟全表扫一轮。
+  const warmTarget = store.activities.filter((item) => item._id === 'act_fresh')[0]
+  const warmTargetCreateTime = warmTarget.createTime
+  const warmTargetCloseTime = warmTarget.closeTime
+  warmTarget.createTime = Date.now() - 8 * DAY
+  const warmJob = await activityFn.main({ Type: 'Timer', TriggerName: 'keepWarm' })
+  log(
+    !!warmJob &&
+      warmJob.warm === true &&
+      typeof warmJob.time === 'number' &&
+      warmJob.closed === undefined &&
+      warmJob.closedPast === undefined,
+    '保活：keepWarm 触发器只唤醒实例，不跑到期关闭'
+  )
+  log(
+    warmTarget.status === 'recruiting' && warmTarget.closeTime === warmTargetCloseTime,
+    '保活：keepWarm 不动活动数据（刚过展示期的活动不会被顺手关掉）'
+  )
+  warmTarget.createTime = warmTargetCreateTime
+
   // 改期是正常诉求：被自动关闭之后，发起人仍能把集合时间改到未来（改完重新送审，不用重新发布）
   const rescheduled = await callActivity('update', { id: 'act_past_start', form }, ORGANIZER)
   const rescheduledDoc = store.activities.filter((item) => item._id === 'act_past_start')[0]
