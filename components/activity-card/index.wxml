@@ -65,9 +65,17 @@
     <view wx:if="{{showToolbar}}" class="act-toolbar">
       <text wx:if="{{act.auditApproved}}" class="act-status {{act.isClosed ? 'closed' : 'recruiting'}}">{{act.expired ? '已到期' : (act.isClosed ? '已关闭' : '招募中')}}</text>
       <text wx:else class="act-status {{act.auditStatus}}">{{act.auditText}}</text>
-      <!-- 已到期 / 集合时间已过的活动不能重新打开：展示期按发布时间算，重开也不会再出现在广场 -->
-      <view wx:if="{{act.auditApproved && !act.expired && !act.startPassed}}" class="act-toggle" catchtap="onToggle">
-        <text>{{act.isClosed ? '打开' : '关闭'}}</text>
+      <view class="act-toolbar-actions">
+        <!-- 已通过的活动可以随时改内容，改完服务端会重新置为待审核；
+             已到期的活动服务端会拒绝修改（改完也不会再展示），这里不给入口。
+             未通过的活动走卡片下方的驳回原因 +「修改后重新提交」，不重复给入口 -->
+        <view wx:if="{{act.auditApproved && !act.expired}}" class="act-edit" catchtap="onEdit">
+          <text>修改</text>
+        </view>
+        <!-- 已到期 / 集合时间已过的活动不能重新打开：展示期按发布时间算，重开也不会再出现在广场 -->
+        <view wx:if="{{act.auditApproved && !act.expired && !act.startPassed}}" class="act-toggle" catchtap="onToggle">
+          <text>{{act.isClosed ? '打开' : '关闭'}}</text>
+        </view>
       </view>
     </view>
 

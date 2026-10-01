@@ -2656,6 +2656,163 @@ function checkExpireRule() {
     })
 }
 
+/* ---------- 14. 活动修改：发起人改完必须重新进入审核 ---------- */
+/**
+ * 「修改活动」不只服务于驳回重提：已通过的活动同样可以改（改期、改人数、换封面都是正常诉求）。
+ * 但任何改动都要重新走一遍审核 —— 否则先发一条合规活动过审、再改成违规内容，审核就被绕过了。
+ * 这里把数据层结论（回到待审核、期间从广场下架、通过后带新内容恢复展示）与页面入口一起钉住。
+ */
+function checkActivityEdit() {
+  const api = require(path.join(ROOT, 'services/api'))
+  const DAY = 86400000
+  const readSource = (relative) => fs.readFileSync(path.join(ROOT, relative), 'utf8')
+  const visible = (list, id) => (list || []).some((item) => item.id === id)
+  const formOf = (title) => ({
+    type: 'hiking',
+    title,
+    location: '四川省成都市 天府广场',
+    locationAddress: '四川省成都市锦江区人民南路',
+    startTime: Date.now() + DAY,
+    endTime: Date.now() + 2 * DAY,
+    difficulty: 3,
+    distance: 8,
+    elevationGain: 150,
+    feeMode: 'aa',
+    maxPeople: 8,
+    groupQrCode: 'wxfile://tmp_edit_qr.png',
+    desc: '修改功能校验',
+    cityHint: '成都',
+  })
+
+  // 入口得先存在，否则功能在页面上没有落点：
+  // 详情页发起人操作条、我发布的卡片工具条、驳回卡片的「修改后重新提交」三条路都指向同一个编辑页
+  const detailWxml = readSource('pages/activity/detail/index.wxml')
+  const detailJs = readSource('pages/activity/detail/index.js')
+  const cardWxml = readSource('components/activity-card/index.wxml')
+  const cardJs = readSource('components/activity-card/index.js')
+  const listWxml = readSource('pages/user/activity-list/index.wxml')
+  const publishWxml = readSource('pages/activity/publish/index.wxml')
+  const publishJs = readSource('pages/activity/publish/index.js')
+
+  log(
+    detailWxml.indexOf('bindtap="onEditTap"') > -1 && detailJs.indexOf('onEditTap()') > -1,
+    '修改活动：详情页给发起人「修改」入口'
+  )
+  log(
+    detailJs.indexOf('!this.data.singlePage && isOrganizer && !activity.expired && !activity.auditPending') > -1,
+    '修改活动：单页模式 / 已到期 / 审核中的活动不给修改入口（服务端同样会拒绝）'
+  )
+  log(
+    cardWxml.indexOf('catchtap="onEdit"') > -1 && cardJs.indexOf("triggerEvent('editcard'") > -1,
+    '修改活动：「我发布的」卡片工具条上的修改入口已连到组件事件'
+  )
+  log(
+    // 自定义事件必须用 bind:xxx 这种带冒号的写法：连写形式（bindeditcard）在本项目里
+    // 不会把组件 triggerEvent 的事件送到页面，点了没反应，排查成本很高
+    listWxml.indexOf('bind:editcard="onEdit"') > -1 &&
+      cardJs.indexOf("triggerEvent('editcard'") > -1 &&
+      listWxml.indexOf('修改后重新提交') > -1,
+    '修改活动：列表同时接住卡片「修改」与驳回后的「修改后重新提交」'
+  )
+  log(
+    publishWxml.indexOf('保存修改后活动会重新进入审核') > -1 &&
+      publishJs.indexOf('this.data.editId ? api.update(') > -1,
+    '修改活动：编辑态提交走 update，并在页面上写明改完要重新审核'
+  )
+
+  // Mock 的登录是幂等的（同一个本地会话只会有一个用户），
+  // 要造出「发起人 / 路人」两个身份，得按留言用例那套做法直接换本地登录态
+  const storageModule = require(path.join(ROOT, 'utils/storage'))
+  const switchUser = (openid, nickName, userId) => {
+    storageModule.setStorage(storageModule.KEYS.user, {
+      openid,
+      userId,
+      nickName,
+      avatarUrl: '',
+      avatarColor: '#4ECDC4',
+      avatarText: nickName.slice(0, 1),
+    })
+  }
+  const ownerOpenid = 'mock_openid_edit_owner'
+  const strangerOpenid = 'mock_openid_edit_stranger'
+  const originalUser = storageModule.getStorage(storageModule.KEYS.user, null)
+  const originalGlobalUser = globalData.user
+
+  let activity = null
+
+  switchUser(ownerOpenid, '改活动的发起人', 3101)
+  return api
+    .create({ form: formOf('修改功能用例（初版）') })
+    .then((created) => {
+      activity = created
+      // 不带违禁词的正常内容在 Mock 里机审直接放行，模拟「已经通过审核、正在招募」的活动
+      log(created.auditStatus === 'approved', '修改活动：先发一条已通过审核的活动做基线')
+      switchUser(strangerOpenid, '围观群众', 3102)
+      return Promise.all([
+        // 别人不能改：服务端按发起人 openid 校验，不是自己的活动一律 FORBIDDEN
+        api.update({ id: activity.id, form: formOf('修改功能用例（冒名）') }).then(() => null, (err) => err),
+        api.join(activity.id),
+      ])
+    })
+    .then((res) => {
+      log(!!res[0] && res[0].code === 'FORBIDDEN', '修改活动：非发起人改不了别人的活动')
+      log(res[1].joinedCount === 1, '修改活动：先让一个人报名，供后面验证编辑不影响报名数据')
+      switchUser(ownerOpenid, '改活动的发起人', 3101)
+      // 改后的文案里带上「疑似」：机审只会给出「疑似」，必须重新过一遍人工，
+      // 这样才看得出「改完真的重新送审了」，而不是拿上一次的审核结论继续用
+      return api.update({
+        id: activity.id,
+        form: Object.assign(formOf('修改功能用例（改后）'), {
+          desc: '改后的说明：路线难度疑似偏大，请以现场情况为准',
+        }),
+      })
+    })
+    .then((edited) => {
+      log(
+        edited.auditStatus === 'pending' && edited.auditRemark === '',
+        '修改活动：保存后重新回到待审核并清空旧审核意见'
+      )
+      log(edited.title === '修改功能用例（改后）' && edited.id === activity.id, '修改活动：内容更新，活动还是原来那一条')
+      log(edited.joinedCount === 1, '修改活动：报名名单与人数不受修改影响')
+      return Promise.all([
+        api.list({ pageIndex: 0, pageSize: 100, sort: 'latest' }),
+        api.mine('published'),
+      ])
+    })
+    .then((res) => {
+      const square = res[0]
+      const mine = api.decorate((res[1] || []).filter((item) => item.id === activity.id)[0] || null)
+      log(visible(square.list, activity.id) === false, '修改活动：审核期间从广场下架，不再对外招募')
+      log(!!mine && mine.auditPending === true, '修改活动：发起人在「我发布的」能看到「审核中」')
+      return Promise.all([
+        // 审核中：非发起人连详情都看不到，发起人自己仍能预览等待审核
+        api.detail(activity.id).then((detail) => detail && detail.id, () => null),
+        api.adminApprove(activity.id),
+      ])
+    })
+    .then((res) => {
+      log(res[0] === activity.id, '修改活动：审核期间发起人仍能预览自己的活动')
+      return api.list({ pageIndex: 0, pageSize: 100, sort: 'latest' })
+    })
+    .then((square) => {
+      const back = (square.list || []).filter((item) => item.id === activity.id)[0]
+      log(!!back && back.title === '修改功能用例（改后）', '修改活动：审核通过后带新内容恢复广场展示')
+      switchUser(strangerOpenid, '围观群众', 3102)
+      return api.detail(activity.id).then((detail) => (detail && detail.title) || '')
+    })
+    .then((title) => {
+      log(title === '修改功能用例（改后）', '修改活动：重新过审后其他人也能看到改后的内容')
+      storageModule.setStorage(storageModule.KEYS.user, originalUser)
+      globalData.user = originalGlobalUser
+      return null
+    })
+    .catch((e) => {
+      storageModule.setStorage(storageModule.KEYS.user, originalUser)
+      globalData.user = originalGlobalUser
+      log(false, `修改活动：执行异常 → ${e && e.message}`)
+    })
+}
+
 /* -------------- 云模式入口守卫：编辑页的发起人判断、小程序码的 scene -------------- */
 /**
  * 两处都是「云端按隐私要求脱敏了，页面还在按本地数据形状取值」的坑：
@@ -3903,6 +4060,7 @@ function checkMessagePage() {
 
 return checkDeleteAccount()
   .then(() => checkHardening())
+  .then(() => checkActivityEdit())
   .then(() => checkExpireRule())
   .then(() => checkCloudShapeFixes())
   .then(() => checkSinglePageShare())

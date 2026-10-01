@@ -307,6 +307,12 @@
           <text class="share-icon">↗</text>
           <text>分享</text>
         </view>
+        <!-- 发起人修改活动：保存后重新进入审核。驳回时主按钮已经是「修改后重新提交」，不再重复给入口 -->
+        <view
+          wx:if="{{showEditEntry && mainBtn.mode !== 'edit'}}"
+          class="edit-entry"
+          bindtap="onEditTap"
+        ><text>修改</text></view>
         <!-- 已报名用户（非发起人）的主动入口：想看活动群的时候自己点，报名成功时不会自动弹出来 -->
         <view
           wx:if="{{!isOrganizer && activity.joined && activity.groupQrCode}}"

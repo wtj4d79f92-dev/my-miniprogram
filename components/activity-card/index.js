@@ -75,6 +75,13 @@ Component({
       this.triggerEvent('toggle', { id: act.id, status: act.status, event: e })
     },
 
+    /** 修改活动：交给页面跳发布页的编辑模式，保存后重新送审 */
+    onEdit() {
+      const act = this.data.act
+      if (!act) return
+      this.triggerEvent('editcard', { id: act.id })
+    },
+
     /**
      * 点卡片上的「地点」：直接在广场 / 首页调起地图导航，不跳详情页
      * （wxml 里用的是 catchtap，不会顺带触发卡片的进详情）。

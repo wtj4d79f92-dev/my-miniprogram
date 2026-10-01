@@ -505,6 +505,21 @@
   color: var(--brand);
 }
 
+/* 发起人的「修改」入口：与主按钮同高、同圆角的次要按钮，改完要重新送审，不该抢主按钮的视觉 */
+.edit-entry {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx;
+  margin-right: 16rpx;
+  padding: 0 34rpx;
+  border-radius: 999rpx;
+  border: 2rpx solid var(--brand);
+  color: var(--brand);
+  font-size: 28rpx;
+}
+
 /* 已报名用户的「查看二维码」入口：与退出活动同尺寸同字体，主色实底反白字并排展示。
    注意这是用户主动点的入口，报名成功时不会再自动弹码（审核按「强制引流至其他渠道」驳回过） */
 .qr-entry {

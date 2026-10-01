@@ -181,6 +181,8 @@ Page({
     statusText: '招募中',
     isOrganizer: false,
     mainBtn: { text: '我要报名', disabled: false, mode: 'join', style: '' },
+    // 发起人的「修改」入口：审核中 / 已到期的活动不给，避免改了也白改，或跟审核结果打架
+    showEditEntry: false,
     // 活动留言：只有参与本活动的人（发起人 / 已报名）有入口，非参与者连卡片都不渲染
     canComment: false,
     comments: [],
@@ -202,6 +204,11 @@ Page({
   onShow() {
     const app = getApp()
     this.setData({ user: app.globalData.user })
+    // 从发布页改完活动返回时重新拉一次详情：修改会重置审核状态，
+    // 不刷新的话页面还停在「招募中 / 关闭活动」这类旧按钮上，跟服务端已经不一致了。
+    // 单页模式（朋友圈）没有登录态且只做内容展示，不重复请求，免得一次网络抖动把已渲染的内容换成错误态
+    if (this._hasShown && !this.data.singlePage) this.loadDetail()
+    this._hasShown = true
   },
 
   loadDetail() {
@@ -320,11 +327,15 @@ Page({
 
     // 留言区门槛与报名一致：发起人 / 已报名的人才能看能发；退出活动后入口随之消失
     const canComment = !this.data.singlePage && (joined || isOrganizer)
+    // 发起人的「修改活动」入口：单页模式没有登录态、展示期已满、正在审核中的活动都不给，
+    // 驳回时主按钮本身就是「修改后重新提交」，wxml 里按 mainBtn.mode 排掉重复入口
     this.setData({
       activity,
       statusText,
       isOrganizer,
       mainBtn,
+      showEditEntry:
+        !this.data.singlePage && isOrganizer && !activity.expired && !activity.auditPending,
       canComment,
       // 没有入口时顺手清掉上一次的留言，避免换活动或退出后残留在页面上
       comments: canComment ? this.data.comments : [],
@@ -388,7 +399,7 @@ Page({
     if (mode === 'closed' || mode === 'full' || mode === 'audit' || mode === 'expired' || mode === 'singlepage') return
     if (mode === 'edit') {
       // 驳回后回到发布页，表单预填原内容，重新提交审核
-      wx.navigateTo({ url: `/pages/activity/publish/index?id=${this.data.id}` })
+      this.onEditTap()
       return
     }
     if (mode === 'toggle') {
@@ -400,6 +411,17 @@ Page({
       return
     }
     this.joinActivity()
+  },
+
+  /**
+   * 发起人修改活动：复用发布页的编辑模式回填原内容。
+   * 保存后服务端会把活动重新置为待审核（见云端 update 的 auditPatch），
+   * 所以已通过的活动改完会暂时从广场下架，审核通过后再恢复展示。
+   */
+  onEditTap() {
+    const id = this.data.id
+    if (!id) return
+    wx.navigateTo({ url: `/pages/activity/publish/index?id=${id}` })
   },
 
   /** 发起人关闭 / 重新打开自己发布的活动 */

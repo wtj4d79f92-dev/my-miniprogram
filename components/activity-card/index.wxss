@@ -204,6 +204,27 @@
   color: #e34d59;
 }
 
+/* 工具条右侧的按钮组：状态文案在左，操作按钮靠右依次排开 */
+.act-toolbar-actions {
+  display: flex;
+  align-items: center;
+}
+
+/* 「修改」与「打开 / 关闭」同尺寸的次要按钮，主色描边；改完要重新送审，不能跟状态文案抢视线 */
+.act-edit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 120rpx;
+  height: 60rpx;
+  margin-right: 16rpx;
+  padding: 0 28rpx;
+  border-radius: 999rpx;
+  border: 2rpx solid var(--brand);
+  color: var(--brand);
+  font-size: 26rpx;
+}
+
 /* 审核中 / 未通过时封面右上角的角标：与「已关闭」共用样式，仅换底色 */
 .act-audit-pending {
   background: rgba(217, 134, 0, 0.9);

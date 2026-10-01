@@ -67,7 +67,10 @@ Page({
     wx.navigateTo({ url: `/pages/activity/detail/index?id=${e.detail.id}` })
   },
 
-  /** 审核未通过：带着活动 id 进入发布页，表单预填后重新提交审核 */
+  /**
+   * 修改活动：带着活动 id 进发布页的编辑模式，表单预填原内容，
+   * 保存后服务端会重新置为待审核（入口来自卡片工具条「修改」或驳回卡片上的「修改后重新提交」）
+   */
   onEdit(e) {
     const id = (e.detail && e.detail.id) || e.currentTarget.dataset.id
     if (!id) return

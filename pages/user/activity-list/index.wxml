@@ -18,6 +18,8 @@
     bindrefresherrefresh="onRefresh"
   >
     <view class="scroll-body">
+      <!-- bind:editcard 是卡片工具条「修改」的自定义事件：自定义事件统一走 bind:xxx 的带冒号写法，
+           连写形式（bindeditcard）不会把组件 triggerEvent 的事件送到页面，表现是点了没反应 -->
       <activity-card
         wx:for="{{list}}"
         wx:key="id"
@@ -25,8 +27,10 @@
         showToolbar="{{tab === 'published'}}"
         bindtapcard="onCardTap"
         bindtoggle="onToggle"
+        bind:editcard="onEdit"
       >
-        <!-- 已到期的活动不能再重提（服务端 update 同样会拒绝），不再展示「修改后重新提交」 -->
+        <!-- 已通过的活动走卡片工具条上的「修改」，这里只处理驳回：展示原因 + 重提入口。
+             已到期的活动不能再重提（服务端 update 同样会拒绝），不再展示「修改后重新提交」 -->
         <view slot="footer" wx:if="{{item.auditRejected && !item.expired}}" class="audit-box">
           <view class="audit-reason">
             <text class="audit-label">未通过原因</text>
