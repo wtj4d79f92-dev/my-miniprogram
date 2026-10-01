@@ -1,5 +1,5 @@
 <view class="page admin-page">
-  <navigation-bar title="活动审核" color="#2D3748" background="#FFFFFF"></navigation-bar>
+  <navigation-bar title="活动审核" color="#2D3748" background="#BFAF92"></navigation-bar>
 
   <!-- 无权限：把 openid 露出来，方便配置到 admin 云函数的 ADMIN_OPENIDS -->
   <view wx:if="{{isAdmin === false}}" class="denied">
@@ -9,24 +9,24 @@
       审核台仅对运营开放。如需开通，请把下面这段 openid 加入 admin 云函数的环境变量 ADMIN_OPENIDS，或写入 admins 集合。
     </text>
     <view class="denied-openid"><text selectable="{{true}}">{{myOpenid || '未获取到 openid'}}</text></view>
-    <view class="btn-primary denied-btn" bindtap="goBack"><text>返回</text></view>
+    <view class="btn-primary denied-btn" bindtap="goBack" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>返回</text></view>
   </view>
 
   <block wx:else>
     <view class="stats">
-      <view class="stat" data-status="pending" bindtap="switchTab">
+      <view class="stat" data-status="pending" bindtap="switchTab" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
         <text class="stat-num pending">{{stats.pending}}</text>
         <text class="stat-label">待审核</text>
       </view>
-      <view class="stat" data-status="approved" bindtap="switchTab">
+      <view class="stat" data-status="approved" bindtap="switchTab" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
         <text class="stat-num">{{stats.approved}}</text>
         <text class="stat-label">已通过</text>
       </view>
-      <view class="stat" data-status="rejected" bindtap="switchTab">
+      <view class="stat" data-status="rejected" bindtap="switchTab" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
         <text class="stat-num">{{stats.rejected}}</text>
         <text class="stat-label">已驳回</text>
       </view>
-      <view class="stat" data-status="all" bindtap="switchTab">
+      <view class="stat" data-status="all" bindtap="switchTab" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
         <text class="stat-num">{{stats.total}}</text>
         <text class="stat-label">全部</text>
       </view>
@@ -39,6 +39,9 @@
         class="tab {{status === item.key ? 'active' : ''}}"
         data-status="{{item.key}}"
         bindtap="switchTab"
+        hover-class="btn-press"
+        hover-start-time="0"
+        hover-stay-time="80"
       >
         <text>{{item.label}}</text>
       </view>
@@ -53,7 +56,7 @@
         bindinput="onSearchInput"
         bindconfirm="onSearchConfirm"
       />
-      <view class="search-btn" bindtap="onSearchConfirm"><text>搜索</text></view>
+      <view class="search-btn" bindtap="onSearchConfirm" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>搜索</text></view>
     </view>
 
     <scroll-view
@@ -103,10 +106,10 @@
           <view class="audit-card-foot">
             <text class="audit-status {{item.auditStatus}}">{{item.statusText}}</text>
             <view class="audit-actions">
-              <view class="audit-btn ghost" data-id="{{item.id}}" catchtap="openDetail"><text>查看详情</text></view>
+              <view class="audit-btn ghost" data-id="{{item.id}}" catchtap="openDetail" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>查看详情</text></view>
               <block wx:if="{{item.auditStatus === 'pending' || item.auditStatus === 'rejected'}}">
-                <view class="audit-btn danger" data-id="{{item.id}}" catchtap="onRejectTap"><text>驳回</text></view>
-                <view class="audit-btn primary" data-id="{{item.id}}" catchtap="onApproveTap"><text>通过</text></view>
+                <view class="audit-btn danger" data-id="{{item.id}}" catchtap="onRejectTap" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>驳回</text></view>
+                <view class="audit-btn primary" data-id="{{item.id}}" catchtap="onApproveTap" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>通过</text></view>
               </block>
             </view>
           </view>
@@ -122,7 +125,7 @@
         <view wx:if="{{loadingMore}}" class="loading-tip"><text>加载更多…</text></view>
         <view wx:if="{{!loading && !hasMore && list.length > 1}}" class="loading-tip"><text>没有更多了</text></view>
 
-        <view class="migrate" bindtap="migrateHistory">
+        <view class="migrate" bindtap="migrateHistory" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
           <text>审核能力上线前的历史活动，点此补齐全量审核状态</text>
         </view>
         <view class="bottom-space"></view>
@@ -219,11 +222,14 @@
 
       <!-- 审核按钮固定在弹层底部，不用把详情滚到最后才能操作 -->
       <view class="sheet-actions">
-        <view class="audit-btn ghost" bindtap="closeDetail"><text>关闭</text></view>
+        <view class="audit-btn ghost" bindtap="closeDetail" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>关闭</text></view>
         <view
           wx:if="{{detail.auditStatus === 'pending' || detail.auditStatus === 'rejected'}}"
           class="audit-btn danger"
           bindtap="onRejectTap"
+          hover-class="btn-press"
+          hover-start-time="0"
+          hover-stay-time="80"
         >
           <text>驳回</text>
         </view>
@@ -231,6 +237,9 @@
           wx:if="{{detail.auditStatus === 'pending' || detail.auditStatus === 'rejected'}}"
           class="audit-btn primary"
           bindtap="onApproveTap"
+          hover-class="btn-press"
+          hover-start-time="0"
+          hover-stay-time="80"
         >
           <text>通过审核</text>
         </view>
@@ -254,6 +263,9 @@
           class="reject-preset {{rejectRemark === item ? 'active' : ''}}"
           data-reason="{{item}}"
           bindtap="pickRejectReason"
+          hover-class="btn-press"
+          hover-start-time="0"
+          hover-stay-time="80"
         >
           <text>{{item}}</text>
         </view>
@@ -266,8 +278,8 @@
         bindinput="onRejectInput"
       ></textarea>
       <view class="sheet-actions">
-        <view class="audit-btn ghost" bindtap="closeReject"><text>取消</text></view>
-        <view class="audit-btn danger {{acting ? 'disabled' : ''}}" bindtap="submitReject"><text>确认驳回</text></view>
+        <view class="audit-btn ghost" bindtap="closeReject" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>取消</text></view>
+        <view class="audit-btn danger {{acting ? 'disabled' : ''}}" bindtap="submitReject" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>确认驳回</text></view>
       </view>
     </view>
   </view>

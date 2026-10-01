@@ -1,5 +1,5 @@
 .publish-page {
-  background: var(--bg);
+  background: var(--page-bg);
 }
 
 .card + .card {
@@ -410,8 +410,10 @@
 .submit-bar {
   flex: none;
   padding: 16rpx 24rpx calc(16rpx + env(safe-area-inset-bottom));
-  background: #ffffff;
-  border-top: 2rpx solid var(--line);
+  /* 底部提交条与卡片同一套玻璃材质：半透明白 + 亮色上边 */
+  background: var(--bar-bg);
+  border-top: 2rpx solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 -8rpx 26rpx rgba(74, 58, 35, 0.12);
 }
 
 .submit-btn {

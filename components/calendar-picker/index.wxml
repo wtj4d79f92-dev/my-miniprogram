@@ -2,15 +2,15 @@
   <view class="mask" bindtap="cancel"></view>
   <view class="sheet calendar-sheet" catchtap="noop">
     <view class="sheet-head">
-      <text class="sheet-close" bindtap="cancel">取消</text>
+      <text class="sheet-close" bindtap="cancel" hover-class="row-press" hover-start-time="0" hover-stay-time="80">取消</text>
       <text class="sheet-title">{{title}}</text>
-      <text class="cal-confirm" bindtap="confirm">确定</text>
+      <text class="cal-confirm" bindtap="confirm" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">确定</text>
     </view>
 
     <view class="cal-toolbar">
-      <view class="cal-nav" bindtap="prevMonth"><text>‹</text></view>
+      <view class="cal-nav" bindtap="prevMonth" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>‹</text></view>
       <text class="cal-month">{{monthText}}</text>
-      <view class="cal-nav" bindtap="nextMonth"><text>›</text></view>
+      <view class="cal-nav" bindtap="nextMonth" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>›</text></view>
     </view>
 
     <view class="cal-week">
@@ -25,6 +25,9 @@
         data-ts="{{item.ts}}"
         data-disabled="{{item.disabled}}"
         bindtap="onSelect"
+        hover-class="btn-press"
+        hover-start-time="0"
+        hover-stay-time="80"
       >
         <text class="cal-day">{{item.day}}</text>
       </view>

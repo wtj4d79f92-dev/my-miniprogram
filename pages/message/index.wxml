@@ -1,9 +1,9 @@
 <view class="page">
-  <navigation-bar title="消息" color="#2D3748" background="#FFFFFF"></navigation-bar>
+  <navigation-bar title="消息" color="#2D3748" background="#BFAF92"></navigation-bar>
 
   <view wx:if="{{list.length && unreadCount}}" class="msg-bar">
     <text class="msg-bar-text">共 {{unreadCount}} 条未读</text>
-    <text class="msg-read-all" bindtap="onReadAll">全部已读</text>
+    <text class="msg-read-all" bindtap="onReadAll" hover-class="row-press" hover-start-time="0" hover-stay-time="80">全部已读</text>
   </view>
 
   <scroll-view
@@ -21,6 +21,9 @@
           wx:key="id"
           data-id="{{item.id}}"
           bindtap="onItemTap"
+          hover-class="card-press"
+          hover-start-time="0"
+          hover-stay-time="80"
         >
           <avatar
             url="{{item.from.avatarUrl}}"

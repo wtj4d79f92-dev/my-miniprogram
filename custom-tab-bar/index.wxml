@@ -5,6 +5,9 @@
     wx:key="pagePath"
     data-index="{{index}}"
     catchtap="switchTab"
+    hover-class="tab-press"
+    hover-start-time="0"
+    hover-stay-time="80"
   >
     <!-- 未读小红点：只挂在「我的」上，没进「我的」也能看到有新消息 -->
     <view class="tab-icon-wrap">

@@ -20,8 +20,8 @@
       <view class="agreement-space"></view>
     </scroll-view>
     <view class="agreement-actions">
-      <view class="btn-ghost agreement-btn" bindtap="close"><text>暂不同意</text></view>
-      <view class="btn-primary agreement-btn" bindtap="agree"><text>同意并继续</text></view>
+      <view class="btn-ghost agreement-btn" bindtap="close" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>暂不同意</text></view>
+      <view class="btn-primary agreement-btn" bindtap="agree" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>同意并继续</text></view>
     </view>
   </view>
 </view>

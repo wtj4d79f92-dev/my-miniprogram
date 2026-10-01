@@ -1,5 +1,5 @@
 <view class="page">
-  <navigation-bar title="意见反馈" color="#2D3748" background="#FFFFFF"></navigation-bar>
+  <navigation-bar title="意见反馈" color="#2D3748" background="#BFAF92"></navigation-bar>
 
   <scroll-view class="page-scroll" scroll-y>
     <view class="scroll-body">
@@ -14,7 +14,7 @@
         <text class="feedback-count">{{count}}/500</text>
       </view>
 
-      <view class="btn-primary submit-btn {{submitting ? 'disabled' : ''}}" bindtap="submit">
+      <view class="btn-primary submit-btn {{submitting ? 'disabled' : ''}}" bindtap="submit" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
         <text>{{submitting ? '提交中…' : '提交反馈'}}</text>
       </view>
 

@@ -197,7 +197,8 @@
 
 .version text {
   font-size: 22rpx;
-  color: var(--text-light);
+  /* 直接落在页面底色上 */
+  color: var(--text-on-bg-sub);
 }
 
 .profile-dialog {

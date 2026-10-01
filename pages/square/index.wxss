@@ -1,6 +1,7 @@
 .square-head {
   padding: 16rpx 24rpx 0;
-  background: rgba(255, 255, 255, 0.96);
+  /* 顶部筛选区和页面同底色，卡片才是浮起来的那一层 */
+  background: var(--page-bg);
   z-index: 10;
 }
 
@@ -91,7 +92,8 @@
 .sort-option {
   margin-right: 24rpx;
   font-size: 26rpx;
-  color: var(--text-sub);
+  /* 排序项直接落在页面底色上 */
+  color: var(--text-on-bg-sub);
 }
 
 .sort-option:last-child {
@@ -252,13 +254,14 @@
 
 .load-more-text {
   font-size: 24rpx;
-  color: var(--text-light);
+  /* 落在页面底色上 */
+  color: var(--text-on-bg-sub);
 }
 
 .loading-tip {
   padding: 80rpx 0;
   text-align: center;
-  color: var(--text-light);
+  color: var(--text-on-bg-sub);
   font-size: 26rpx;
 }
 
@@ -277,6 +280,13 @@
   background: linear-gradient(135deg, #00b578 0%, #43cea2 100%);
   box-shadow: 0 12rpx 32rpx rgba(0, 181, 120, 0.35);
   color: #ffffff;
+  transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 按下：保持水平居中，再往下沉一点 */
+.fab-press {
+  transform: translateX(-50%) translateY(6rpx) scale(0.95);
+  transition: transform 90ms cubic-bezier(0.4, 0, 1, 1);
 }
 
 .fab-plus {

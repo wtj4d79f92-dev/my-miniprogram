@@ -1,7 +1,8 @@
 .act-card {
-  background: var(--card);
+  /* 与全局卡片同一套玻璃材质：半透明卡面 + 外圈亮边 + 内里高光 */
+  background: var(--card-sheen);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow), var(--card-inner);
   overflow: hidden;
   margin-bottom: 24rpx;
 }

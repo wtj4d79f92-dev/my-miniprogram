@@ -1,7 +1,8 @@
 .tabs {
   display: flex;
   align-items: center;
-  background: rgba(255, 255, 255, 0.96);
+  /* 选项卡和页面同底色，卡片才是浮起来的那一层 */
+  background: var(--page-bg);
   border-bottom: 2rpx solid var(--line);
 }
 
@@ -12,7 +13,7 @@
   justify-content: center;
   padding: 26rpx 0;
   font-size: 28rpx;
-  color: var(--text-sub);
+  color: var(--text-on-bg-sub);
 }
 
 .tab.active {
@@ -29,7 +30,7 @@
 .loading-tip {
   padding: 80rpx 0;
   text-align: center;
-  color: var(--text-light);
+  color: var(--text-on-bg-sub);
   font-size: 26rpx;
 }
 

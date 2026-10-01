@@ -1,14 +1,14 @@
 <view class="page tab-page">
-  <navigation-bar title="活动广场" back="{{false}}" color="#2D3748" background="#FFFFFF"></navigation-bar>
+  <navigation-bar title="活动广场" back="{{false}}" color="#2D3748" background="#BFAF92"></navigation-bar>
 
   <view class="square-head">
     <!-- 城市栏 -->
     <view class="locate-bar">
-      <view class="locate-left" bindtap="onLocateTap">
+      <view class="locate-left" bindtap="onLocateTap" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
         <text class="locate-icon">📍</text>
         <text class="locate-city">{{locationDenied ? '定位未开启' : cityLabel}}</text>
       </view>
-      <view class="locate-switch" bindtap="openCityPicker"><text>切换城市</text></view>
+      <view class="locate-switch" bindtap="openCityPicker" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>切换城市</text></view>
     </view>
 
     <!-- 搜索栏 -->
@@ -22,8 +22,8 @@
         bindinput="onKeywordInput"
         bindconfirm="onKeywordConfirm"
       />
-      <text wx:if="{{keyword}}" class="search-clear" bindtap="onKeywordClear">✕</text>
-      <view class="search-submit" bindtap="onKeywordConfirm"><text>搜索</text></view>
+      <text wx:if="{{keyword}}" class="search-clear" bindtap="onKeywordClear" hover-class="row-press" hover-start-time="0" hover-stay-time="80">✕</text>
+      <view class="search-submit" bindtap="onKeywordConfirm" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>搜索</text></view>
     </view>
 
     <!-- 排序栏 + 筛选（活动类型 / 具体日期 / 星期几） -->
@@ -35,18 +35,21 @@
           wx:key="value"
           data-sort="{{item.value}}"
           bindtap="onSortTap"
+          hover-class="btn-press"
+          hover-start-time="0"
+          hover-stay-time="80"
         >{{item.label}}</text>
       </view>
       <view class="sort-filters">
-        <view class="type-filter {{type !== 'all' ? 'active' : ''}}" bindtap="toggleType">
+        <view class="type-filter {{type !== 'all' ? 'active' : ''}}" bindtap="toggleType" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
           <text class="type-text">{{typeLabel}}</text>
           <text class="type-arrow">{{typeOpen ? '▲' : '▼'}}</text>
         </view>
-        <view class="date-filter {{date ? 'active' : ''}}" bindtap="openDatePicker">
+        <view class="date-filter {{date ? 'active' : ''}}" bindtap="openDatePicker" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
           <text class="date-text">{{dateLabel}}</text>
-          <text wx:if="{{date}}" class="date-clear" catchtap="onDateClear">✕</text>
+          <text wx:if="{{date}}" class="date-clear" catchtap="onDateClear" hover-class="row-press" hover-start-time="0" hover-stay-time="80">✕</text>
         </view>
-        <view class="weekday-filter" bindtap="toggleWeekday">
+        <view class="weekday-filter" bindtap="toggleWeekday" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
           <text class="weekday-text">{{weekdayLabel}}</text>
           <text class="weekday-arrow">{{weekdayOpen ? '▲' : '▼'}}</text>
         </view>
@@ -60,6 +63,9 @@
         wx:key="key"
         data-type="{{item.key}}"
         bindtap="onTypeSelect"
+        hover-class="btn-press"
+        hover-start-time="0"
+        hover-stay-time="80"
       >{{item.emoji ? item.emoji + ' ' : ''}}{{item.name}}</view>
     </view>
 
@@ -70,6 +76,9 @@
         wx:key="value"
         data-value="{{item.value}}"
         bindtap="onWeekdayTap"
+        hover-class="btn-press"
+        hover-start-time="0"
+        hover-stay-time="80"
       >{{item.label}}</view>
     </view>
   </view>
@@ -103,7 +112,7 @@
 
       <view wx:if="{{list.length}}" class="load-more">
         <text wx:if="{{loadingMore}}" class="load-more-text">加载中…</text>
-        <text wx:elif="{{hasMore}}" class="load-more-text" bindtap="onLoadMoreTap">点击加载更多</text>
+        <text wx:elif="{{hasMore}}" class="load-more-text" bindtap="onLoadMoreTap" hover-class="row-press" hover-start-time="0" hover-stay-time="80">点击加载更多</text>
         <text wx:else class="load-more-text">已经到底啦</text>
       </view>
 
@@ -111,7 +120,7 @@
     </view>
   </scroll-view>
 
-  <view class="fab" bindtap="goPublish">
+  <view class="fab" bindtap="goPublish" hover-class="fab-press" hover-start-time="0" hover-stay-time="80">
     <text class="fab-plus">＋</text>
     <text class="fab-text">发布</text>
   </view>

@@ -42,14 +42,14 @@
       <view class="login-actions">
         <block wx:if="{{useMock}}">
           <!-- 演示模式：登录过的手机号直接复用，否则先输入手机号 -->
-          <view class="login-btn login-btn-main" bindtap="onPrimaryTap">
+          <view class="login-btn login-btn-main" bindtap="onPrimaryTap" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
             <text class="login-btn-title">{{knownPhone ? '登录此账号' : '手机号快捷登录'}}</text>
             <text class="login-btn-sub" wx:if="{{knownPhone}}">{{maskedPhone}}</text>
           </view>
-          <view class="login-btn login-btn-ghost" wx:if="{{knownPhone}}" bindtap="onSwitchPhone">
+          <view class="login-btn login-btn-ghost" wx:if="{{knownPhone}}" bindtap="onSwitchPhone" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
             <text>手机号快捷登录</text>
           </view>
-          <view class="switch-phone" bindtap="onSwitchPhone">
+          <view class="switch-phone" bindtap="onSwitchPhone" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
             <view class="icon-phone"><view class="icon-phone-line"></view></view>
             <text class="switch-phone-text">切换手机号</text>
           </view>
@@ -57,7 +57,7 @@
 
         <block wx:else>
           <!-- 云开发模式：openid 一键登录，或授权微信手机号 -->
-          <view class="login-btn login-btn-main" bindtap="onWechatLogin">
+          <view class="login-btn login-btn-main" bindtap="onWechatLogin" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
             <text class="login-btn-title">微信一键登录</text>
           </view>
           <button
@@ -73,7 +73,7 @@
       <view class="login-scroll-space"></view>
     </scroll-view>
     <view class="login-foot">
-      <text class="not-login" bindtap="cancel">暂不登录</text>
+      <text class="not-login" bindtap="cancel" hover-class="row-press" hover-start-time="0" hover-stay-time="80">暂不登录</text>
     </view>
   </view>
 
@@ -97,6 +97,9 @@
     <view
       class="login-btn login-btn-main login-btn-single {{phoneValid ? '' : 'login-btn-disabled'}}"
       bindtap="submitPhone"
+      hover-class="btn-press"
+      hover-start-time="0"
+      hover-stay-time="80"
     >
       <text class="login-btn-title">{{submitting ? '登录中…' : '登录'}}</text>
     </view>
@@ -126,10 +129,10 @@
       />
     </view>
 
-    <view class="login-btn login-btn-main login-btn-single profile-save" bindtap="saveProfile">
+    <view class="login-btn login-btn-main login-btn-single profile-save" bindtap="saveProfile" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
       <text class="login-btn-title">{{profileSaving ? '保存中…' : '保存'}}</text>
     </view>
-    <view class="login-btn login-btn-ghost profile-skip" bindtap="skipProfile"><text>暂不完善</text></view>
+    <view class="login-btn login-btn-ghost profile-skip" bindtap="skipProfile" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>暂不完善</text></view>
     <text class="profile-tips">头像昵称会展示在活动卡片与报名名单里，之后可在「我的」里随时修改</text>
   </view>
 
@@ -149,7 +152,7 @@
       </view>
       <view class="agreement-space"></view>
     </scroll-view>
-    <view class="login-btn login-btn-ghost agreement-back" bindtap="backToMain">
+    <view class="login-btn login-btn-ghost agreement-back" bindtap="backToMain" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
       <text>返回登录</text>
     </view>
   </view>

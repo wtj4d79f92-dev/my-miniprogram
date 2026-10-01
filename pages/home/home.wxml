@@ -1,6 +1,6 @@
 <view class="page tab-page">
   <!-- 单页模式下微信自带固定顶部导航栏，页面里的 navigation-bar 属于被禁用组件，这里不再渲染 -->
-  <navigation-bar wx:if="{{!singlePage}}" title="{{texts.appName}}" back="{{false}}" color="#2D3748" background="#FFFFFF"></navigation-bar>
+  <navigation-bar wx:if="{{!singlePage}}" title="{{texts.appName}}" back="{{false}}" color="#2D3748" background="#BFAF92"></navigation-bar>
 
   <scroll-view
     class="page-scroll tab-page-scroll"
@@ -18,18 +18,18 @@
 
       <!-- 定位栏 -->
       <view class="locate-bar">
-        <view class="locate-left" bindtap="onLocateTap">
+        <view class="locate-left" bindtap="onLocateTap" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
           <text class="locate-icon">📍</text>
           <text class="locate-city">{{locationDenied ? '定位未开启' : cityLabel}}</text>
           <text class="locate-tips">{{locationDenied ? '点击开启' : locateTip}}</text>
         </view>
-        <view class="locate-switch" bindtap="openCityPicker">
+        <view class="locate-switch" bindtap="openCityPicker" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
           <text>切换城市</text>
         </view>
       </view>
 
       <!-- 搜索入口 -->
-      <view class="search-entry" bindtap="goSquare">
+      <view class="search-entry" bindtap="goSquare" hover-class="card-press" hover-start-time="0" hover-stay-time="80">
         <text class="search-icon">🔍</text>
         <text class="search-placeholder">{{texts.searchPlaceholderHome}}</text>
         <view class="search-btn"><text>搜索</text></view>
@@ -50,6 +50,7 @@
       >
         <swiper-item wx:for="{{banners}}" wx:key="_id">
           <!-- 有配图时整条横幅铺图（imageUrl 是云函数换来的临时链接，image 是后台填的原值），没配图就是原来的渐变 -->
+          <!-- 横幅是 swiper 的滑动项，按下会被当成拖拽，不做按压下沉，免得和滑动打架 -->
           <view class="banner-item" style="background: {{item.bg}};" data-action="{{item.action}}" bindtap="onBannerTap">
             <image class="banner-image" wx:if="{{item.imageUrl || item.image}}" src="{{item.imageUrl || item.image}}" mode="aspectFill" />
             <view class="banner-mask" wx:if="{{item.imageUrl || item.image}}"></view>
@@ -65,7 +66,16 @@
         <text class="section-title">发现户外玩法</text>
       </view>
       <view class="type-grid card">
-        <view class="type-item" wx:for="{{typeGrid}}" wx:key="key" data-type="{{item.key}}" bindtap="onTypeTap">
+        <view
+          class="type-item"
+          wx:for="{{typeGrid}}"
+          wx:key="key"
+          data-type="{{item.key}}"
+          bindtap="onTypeTap"
+          hover-class="btn-press"
+          hover-start-time="0"
+          hover-stay-time="80"
+        >
           <view class="type-icon" style="background: {{item.color}}33;">
             <text>{{item.emoji}}</text>
           </view>
@@ -121,7 +131,7 @@
   </scroll-view>
 
   <!-- 发布要登录态与页面跳转，单页模式下都不可用 -->
-  <view class="fab" wx:if="{{!singlePage}}" bindtap="goPublish">
+  <view class="fab" wx:if="{{!singlePage}}" bindtap="goPublish" hover-class="fab-press" hover-start-time="0" hover-stay-time="80">
     <text class="fab-plus">＋</text>
     <text class="fab-text">发布</text>
   </view>

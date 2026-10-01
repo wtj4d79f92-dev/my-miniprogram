@@ -13,7 +13,8 @@
 .empty-text {
   margin-top: 24rpx;
   font-size: 26rpx;
-  color: var(--text-sub);
+  /* 空态直接落在页面底色上，用偏暖的深色 */
+  color: var(--text-on-bg-sub);
   text-align: center;
 }
 

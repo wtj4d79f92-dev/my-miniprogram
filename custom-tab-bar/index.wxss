@@ -10,8 +10,15 @@
   display: flex;
   height: calc(110rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
-  background: #ffffff;
-  border-top: 2rpx solid #edf2f2;
+  /*
+   * 半透明玻璃底栏：和卡片同一套材质，比纯白条更贴暖砂底色。
+   * tabBar 拿不到 page 上的 CSS 变量，颜色一律写字面量；透明度留 0.86，文字照常读得清。
+   * 不做 backdrop-filter：tabBar 是独立渲染层，底下透出来的只有页面底色，磨砂没有可磨的内容。
+   */
+  background: rgba(255, 255, 255, 0.86);
+  /* 暖色描边 + 上投影：tabBar 也是浮在暖砂底色上的一层 */
+  border-top: 2rpx solid rgba(74, 58, 35, 0.08);
+  box-shadow: 0 -8rpx 26rpx rgba(74, 58, 35, 0.12);
 }
 
 .tab-item {
@@ -24,6 +31,13 @@
      安全区一起算进点击区域，否则 tabBar 下半截点不动 */
   padding-bottom: env(safe-area-inset-bottom);
   box-sizing: border-box;
+  transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 按下：整个 tab 下沉一点，抬手弹回 */
+.tab-press {
+  transform: translateY(4rpx) scale(0.94);
+  transition: transform 90ms cubic-bezier(0.4, 0, 1, 1);
 }
 
 .tab-icon-wrap {

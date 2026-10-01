@@ -1,5 +1,5 @@
 .detail-page {
-  background: var(--bg);
+  background: var(--page-bg);
 }
 
 .field-row-tap {
@@ -31,6 +31,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* 封面同样是一张浮在暖砂底色上的卡片，投影与其它卡片保持一致 */
+  box-shadow: var(--shadow);
 }
 
 .cover-img {
@@ -438,7 +440,8 @@
   padding: 20rpx 0;
   text-align: center;
   font-size: 24rpx;
-  color: var(--text-light);
+  /* 这条落在页面底色上，灰字读不清，用偏暖的深色 */
+  color: var(--text-on-bg-sub);
   text-decoration: underline;
 }
 
@@ -446,8 +449,10 @@
 .action-bar {
   flex: none;
   padding: 16rpx 24rpx calc(16rpx + env(safe-area-inset-bottom));
-  background: #ffffff;
-  border-top: 2rpx solid var(--line);
+  /* 底部操作条与卡片同一套玻璃材质：半透明白 + 亮色上边 */
+  background: var(--bar-bg);
+  border-top: 2rpx solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 -8rpx 26rpx rgba(74, 58, 35, 0.12);
 }
 
 .agree-row {

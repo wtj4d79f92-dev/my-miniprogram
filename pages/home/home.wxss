@@ -24,7 +24,8 @@
 .locate-tips {
   margin-left: 12rpx;
   font-size: 22rpx;
-  color: var(--text-light);
+  /* 直接落在页面底色上，灰字读不清 */
+  color: var(--text-on-bg-sub);
 }
 
 .locate-switch {
@@ -42,8 +43,8 @@
   margin-top: 20rpx;
   padding: 0 10rpx 0 26rpx;
   border-radius: 999rpx;
-  background: #ffffff;
-  box-shadow: var(--shadow);
+  background: var(--card-sheen);
+  box-shadow: var(--shadow), var(--card-inner);
 }
 
 .search-icon {
@@ -72,6 +73,9 @@
 .banner {
   height: 280rpx;
   margin-top: 24rpx;
+  /* 横幅也按卡片看：和骨架态一样带 3D 悬浮投影，圆角由 .banner-item 裁出来 */
+  border-radius: 24rpx;
+  box-shadow: var(--shadow);
 }
 
 .banner-item {
@@ -194,7 +198,7 @@
 
 .footer text {
   font-size: 22rpx;
-  color: var(--text-light);
+  color: var(--text-on-bg-sub);
 }
 
 .fab {
@@ -212,6 +216,13 @@
   background: linear-gradient(135deg, #00b578 0%, #43cea2 100%);
   box-shadow: 0 12rpx 32rpx rgba(0, 181, 120, 0.35);
   color: #ffffff;
+  transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 按下：保持水平居中，再往下沉一点 */
+.fab-press {
+  transform: translateX(-50%) translateY(6rpx) scale(0.95);
+  transition: transform 90ms cubic-bezier(0.4, 0, 1, 1);
 }
 
 .fab-plus {
@@ -228,7 +239,7 @@
 /* 没有任何内容可显示时（首次打开、没有本地快照）先占位，形状与真实卡片一致，加载完自然替换 */
 .banner-skeleton,
 .skeleton-card {
-  background: var(--card);
+  background: var(--card-sheen);
   box-shadow: var(--shadow);
 }
 

@@ -108,5 +108,6 @@
   padding: 60rpx 0;
   text-align: center;
   font-size: 26rpx;
-  color: var(--text-light);
+  /* 直接落在页面底色上 */
+  color: var(--text-on-bg-sub);
 }

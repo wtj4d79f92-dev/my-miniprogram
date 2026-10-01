@@ -7,7 +7,7 @@
     title="活动详情"
     back-fallback="/pages/square/index"
     color="#2D3748"
-    background="#FFFFFF"
+    background="#BFAF92"
   ></navigation-bar>
 
   <!-- 活动不存在：接口正常返回，但活动确实不可见（未过审 / 已删除 / 被下架） -->
@@ -15,14 +15,14 @@
     <text class="not-found-icon">🧭</text>
     <text class="not-found-text">活动不存在或已下架</text>
     <!-- 单页模式下页面不能跳转，「返回」交给微信左上角的关闭按钮 -->
-    <view wx:if="{{!singlePage}}" class="btn-primary not-found-btn" bindtap="goBack"><text>返回</text></view>
+    <view wx:if="{{!singlePage}}" class="btn-primary not-found-btn" bindtap="goBack" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>返回</text></view>
   </view>
 
   <!-- 加载失败：网络 / 权限问题（例如朋友圈单页模式下云开发没开启未登录访问），可以重试 -->
   <view wx:elif="{{loadError && !loading}}" class="not-found">
     <text class="not-found-icon">📡</text>
     <text class="not-found-text">{{loadError}}</text>
-    <view class="btn-primary not-found-btn" bindtap="retryLoad"><text>重新加载</text></view>
+    <view class="btn-primary not-found-btn" bindtap="retryLoad" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>重新加载</text></view>
   </view>
 
   <block wx:else>
@@ -82,7 +82,7 @@
           </view>
 
           <!-- 点击地点调起地图：选中地图软件后地址会一起带过去导航 -->
-          <view class="field-row field-row-tap" bindtap="onLocationTap">
+          <view class="field-row field-row-tap" bindtap="onLocationTap" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
             <text class="field-label">地点</text>
             <text class="field-value">{{activity.location}}</text>
             <text class="field-nav">导航 ›</text>
@@ -131,7 +131,7 @@
             <text class="section-title">行前信息</text>
           </view>
           <text class="prep-sub">你的报名已生效，以下信息在小程序内就能看到</text>
-          <view class="prep-row prep-row-tap" bindtap="onLocationTap">
+          <view class="prep-row prep-row-tap" bindtap="onLocationTap" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
             <text class="prep-label">集合地点</text>
             <text class="prep-value ellipsis">{{activity.location}}</text>
             <text class="prep-nav">导航 ›</text>
@@ -198,18 +198,27 @@
                       class="comment-action"
                       data-comment-id="{{root.id}}"
                       bindtap="onCommentReply"
+                      hover-class="row-press"
+                      hover-start-time="0"
+                      hover-stay-time="80"
                     >回复</text>
                     <text
                       wx:if="{{root.canRemove}}"
                       class="comment-action"
                       data-comment-id="{{root.id}}"
                       bindtap="onCommentRemove"
+                      hover-class="row-press"
+                      hover-start-time="0"
+                      hover-stay-time="80"
                     >删除</text>
                     <text
                       wx:if="{{!root.isMine}}"
                       class="comment-action"
                       data-comment-id="{{root.id}}"
                       bindtap="onCommentReport"
+                      hover-class="row-press"
+                      hover-start-time="0"
+                      hover-stay-time="80"
                     >举报</text>
                   </view>
                 </view>
@@ -230,23 +239,32 @@
                     </view>
                     <text class="comment-text"><text wx:if="{{reply.replyToLabel}}" class="comment-reply-to">回复 @{{reply.replyToLabel}}：</text>{{reply.content}}</text>
                     <view class="comment-actions">
-                      <text
-                        class="comment-action"
-                        data-comment-id="{{reply.id}}"
-                        bindtap="onCommentReply"
-                      >回复</text>
-                      <text
-                        wx:if="{{reply.canRemove}}"
-                        class="comment-action"
-                        data-comment-id="{{reply.id}}"
-                        bindtap="onCommentRemove"
-                      >删除</text>
-                      <text
-                        wx:if="{{!reply.isMine}}"
-                        class="comment-action"
-                        data-comment-id="{{reply.id}}"
-                        bindtap="onCommentReport"
-                      >举报</text>
+                    <text
+                      class="comment-action"
+                      data-comment-id="{{reply.id}}"
+                      bindtap="onCommentReply"
+                      hover-class="row-press"
+                      hover-start-time="0"
+                      hover-stay-time="80"
+                    >回复</text>
+                    <text
+                      wx:if="{{reply.canRemove}}"
+                      class="comment-action"
+                      data-comment-id="{{reply.id}}"
+                      bindtap="onCommentRemove"
+                      hover-class="row-press"
+                      hover-start-time="0"
+                      hover-stay-time="80"
+                    >删除</text>
+                    <text
+                      wx:if="{{!reply.isMine}}"
+                      class="comment-action"
+                      data-comment-id="{{reply.id}}"
+                      bindtap="onCommentReport"
+                      hover-class="row-press"
+                      hover-start-time="0"
+                      hover-stay-time="80"
+                    >举报</text>
                     </view>
                   </view>
                 </view>
@@ -275,13 +293,16 @@
             <view
               class="comment-send {{commentSending || !commentInput ? 'disabled' : ''}}"
               bindtap="submitComment"
+              hover-class="btn-press"
+              hover-start-time="0"
+              hover-stay-time="80"
             ><text>{{commentSending ? '发送中' : '发送'}}</text></view>
           </view>
           <text class="comment-tip">留言只对本活动参与者可见；涉及手机号、微信号等联系方式，请自行判断风险。</text>
         </view>
 
         <!-- 举报：UGC 内容需要公开的投诉入口，自己的活动不展示 -->
-        <view wx:if="{{!isOrganizer && !singlePage}}" class="report-entry" bindtap="onReportTap">
+        <view wx:if="{{!isOrganizer && !singlePage}}" class="report-entry" bindtap="onReportTap" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
           <text>举报该活动</text>
         </view>
       </view>
@@ -303,7 +324,7 @@
         <text class="agree-link" catchtap="openJoinAgreement">《活动风险告知与免责协议》</text>
       </view>
       <view class="action-row">
-        <view wx:if="{{!singlePage}}" class="share-btn" bindtap="openSharePanel">
+        <view wx:if="{{!singlePage}}" class="share-btn" bindtap="openSharePanel" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
           <text class="share-icon">↗</text>
           <text>分享</text>
         </view>
@@ -312,16 +333,25 @@
           wx:if="{{showEditEntry && mainBtn.mode !== 'edit'}}"
           class="edit-entry"
           bindtap="onEditTap"
+          hover-class="btn-press"
+          hover-start-time="0"
+          hover-stay-time="80"
         ><text>修改</text></view>
         <!-- 已报名用户（非发起人）的主动入口：想看活动群的时候自己点，报名成功时不会自动弹出来 -->
         <view
           wx:if="{{!isOrganizer && activity.joined && activity.groupQrCode}}"
           class="qr-entry"
           bindtap="openQrModal"
+          hover-class="btn-press"
+          hover-start-time="0"
+          hover-stay-time="80"
         >查看二维码</view>
         <view
           class="main-btn {{mainBtn.disabled ? 'disabled' : ''}} {{mainBtn.style}}"
           bindtap="onMainTap"
+          hover-class="btn-press"
+          hover-start-time="0"
+          hover-stay-time="80"
         >
           <text>{{mainBtn.text}}</text>
         </view>
@@ -338,15 +368,15 @@
         <text class="sheet-close" bindtap="closeSharePanel">✕</text>
       </view>
       <view class="share-list">
-        <button class="share-item" open-type="share">
+        <button class="share-item" open-type="share" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
           <text class="share-emoji">💬</text>
           <text class="share-label">微信好友</text>
         </button>
-        <view class="share-item" bindtap="onTapShareTimeline">
+        <view class="share-item" bindtap="onTapShareTimeline" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
           <text class="share-emoji">🌤</text>
           <text class="share-label">朋友圈</text>
         </view>
-        <view class="share-item" bindtap="onSharePoster">
+        <view class="share-item" bindtap="onSharePoster" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
           <text class="share-emoji">🖼</text>
           <text class="share-label">生成分享图片</text>
         </view>
@@ -376,7 +406,7 @@
       </view>
       <text class="qr-tip">{{qrTip}}</text>
       <text class="qr-sub-tip">需要时可直接长按识别，或保存后分享给同行伙伴</text>
-      <view class="btn-primary qr-btn" bindtap="closeQrModal"><text>完成</text></view>
+      <view class="btn-primary qr-btn" bindtap="closeQrModal" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>完成</text></view>
     </view>
   </view>
 

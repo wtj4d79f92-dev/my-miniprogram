@@ -7,16 +7,44 @@ page {
   --mint: #4ecdc4;
   --orange: #ff7d00;
   --text: #2d3748;
-  --text-sub: #718096;
-  --text-light: #9aa5b1;
+  /* 卡面改成半透明后，白底上的那套灰字要压深一点，次要信息才不会糊在卡上 */
+  --text-sub: #667283;
+  --text-light: #828c98;
   --line: #edf2f2;
+  /* 卡片内部的浅色底（输入框、引用块、未选中胶囊），和页面底色区分开 */
   --bg: #f5f8f7;
-  --card: #ffffff;
-  --radius: 20rpx;
-  --shadow: 0 6rpx 24rpx rgba(45, 55, 72, 0.06);
+  /* 页面底色：暖砂，白卡片浮在上面才有层次 */
+  --page-bg: #bfaf92;
+  /* 直接落在页面底色上的次要文字：底色偏暖偏深，原来那套灰字读不清，换一套偏暖的深色 */
+  --text-on-bg-sub: #6b5c44;
+  /*
+   * 卡片材质：玻璃。
+   * 卡面不是纯白，而是半透明白 + 一道自上而下的微光渐变 —— 底色透一点上来，卡面才有"厚度"，
+   * 纯白盖死会回到平面白卡；透明度控制在 0.7 以上，正文对比度只比纯白低一点点。
+   * 注意：自定义属性的值必须写在一行里，WXSS 编译器遇到换行的值会整条丢掉，
+   * 后面同一声明块里的变量跟着一起失效（卡面直接变透明）。
+   */
+  --card-sheen: linear-gradient(168deg, rgba(255, 255, 255, 0.86) 0%, rgba(255, 255, 255, 0.74) 50%, rgba(255, 255, 255, 0.68) 100%);
+  /* 玻璃边缘：外侧一圈亮边（画在元素外面，不会被封面图盖住） */
+  --card-edge: 0 0 0 2rpx rgba(255, 255, 255, 0.75);
+  /* 玻璃内里：内圈亮边勾出玻璃的壁厚 + 顶部受光的高光 + 底部内阴影，一块有厚度的玻璃 */
+  --card-inner: inset 0 0 0 3rpx rgba(255, 255, 255, 0.95), inset 0 6rpx 10rpx rgba(255, 255, 255, 0.92), inset 0 -22rpx 36rpx rgba(74, 58, 35, 0.08);
+  --radius: 24rpx;
+  /*
+   * 悬浮投影分三层：贴边接触影勾轮廓 / 中层影把卡片"垫"起来 / 大范围环境影拉开悬浮感。
+   * 越靠近卡片的影越深越紧，远影越散越淡，这是"厚重"的关键 —— 单层影只会显得卡片很薄。
+   */
+  --shadow: var(--card-edge), 0 3rpx 0 rgba(120, 100, 72, 0.16), 0 3rpx 8rpx rgba(58, 44, 24, 0.12), 0 14rpx 28rpx rgba(58, 44, 24, 0.18), 0 32rpx 66rpx rgba(58, 44, 24, 0.24);
+  /* 按压态：投影收拢并变浅，配合 translateY 下沉 */
+  --shadow-press: 0 0 0 2rpx rgba(255, 255, 255, 0.55), 0 1rpx 3rpx rgba(58, 44, 24, 0.14), 0 5rpx 12rpx rgba(58, 44, 24, 0.16);
+  /*
+   * 固定在页面上的浮层（tabBar、底部操作条）也用半透明白，和卡片同一套材质。
+   * 这里不加 backdrop-filter：这几个浮层和滚动内容是并列的两层，不是叠在一起，
+   * 磨砂拿不到下面的内容（模拟器实测，tabBar 底下透出来的始终是页面底色），加了也是空转。
+   */
+  --bar-bg: rgba(255, 255, 255, 0.82);
 
-  background: linear-gradient(180deg, #ffffff 0%, #f2faf7 42%, #eef7fb 100%);
-  background-attachment: fixed;
+  background: var(--page-bg);
   color: var(--text);
   font-size: 28rpx;
   font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif;
@@ -53,11 +81,126 @@ page {
 
 /* 通用卡片 */
 .card {
-  background: var(--card);
+  /* 卡面用带微光的半透明白，配外圈亮边 + 内里高光，读起来像一块厚玻璃 */
+  background: var(--card-sheen);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow), var(--card-inner);
   padding: 24rpx;
   box-sizing: border-box;
+}
+
+/* --------------------- 卡片 3D 悬浮 + 按压微交互 --------------------- */
+/*
+ * 静置：双层投影让卡片浮在暖砂底色上（--shadow）。
+ * 按下：hover-class 挂上 .card-press，投影收拢 + translateY 下沉，像被按进桌面。
+ * 抬手：hover-class 摘掉后走基础态那条带过冲的曲线弹回。
+ * 按下与回弹的 transition 分开写：CSS 过渡取"变化后"那一侧的声明，
+ * 所以 .card-press 里是短促的按下曲线，基础态里是带过冲的回弹曲线。
+ */
+.card,
+.act-card,
+.msg-item,
+.audit-card,
+.search-entry,
+.user-card,
+.stats,
+.entry-group,
+.type-grid,
+.feedback-card {
+  transition:
+    transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 卡片按下：整体下沉 + 轻微收缩，投影同步收拢 */
+.card-press {
+  transform: translateY(8rpx) scale(0.985);
+  box-shadow: var(--shadow-press);
+  transition:
+    transform 90ms cubic-bezier(0.4, 0, 1, 1),
+    box-shadow 90ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* 按钮 / 胶囊按下：下沉幅度小一点，文字不跟着颤 */
+.btn-press {
+  transform: translateY(4rpx) scale(0.97);
+  transition: transform 90ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* 列表行按下：行贴在卡片里，位移会把圆角顶破，改用压暗表达按压 */
+.row-press {
+  opacity: 0.55;
+  transition: opacity 90ms ease-out;
+}
+
+/* 列表行的基础态：抬手时淡回去 */
+.entry,
+.msg-read-all,
+.report-entry,
+.comment-action,
+.field-row-tap,
+.prep-row-tap,
+.migrate {
+  transition: opacity 200ms ease-out;
+}
+
+/*
+ * 按钮 / 胶囊抬手回弹：与卡片同一条带过冲的曲线。
+ * 这些元素按下时挂 .btn-press（90ms 按下曲线），抬手回到这里 —— 所以基础态必须
+ * 声明回弹曲线，否则 hover-class 摘掉的那一下会直接跳回原样。
+ * .fab 自己有 translateX(-50%) 定位，单独用页面里的 .fab-press。
+ */
+.btn-primary,
+.btn-outline,
+.btn-ghost,
+.main-btn,
+.search-btn,
+.search-submit,
+.search-clear,
+.audit-btn,
+.denied-btn,
+.not-found-btn,
+.comment-send,
+.qr-entry,
+.edit-entry,
+.act-edit,
+.act-toggle,
+.audit-edit,
+.submit-btn,
+.poster-btn,
+.empty-btn,
+.login-btn,
+.login-btn-main,
+.login-btn-ghost,
+.switch-phone,
+.share-btn,
+.share-item,
+.stepper-btn,
+.fee-option,
+.tag-option,
+.type-option,
+.form-picker,
+.cover-add,
+.cover-remove,
+.location-btn,
+.qr-action,
+.qr-add,
+.cal-nav,
+.cal-cell,
+.cal-confirm,
+.city-confirm,
+.reject-preset,
+.type-item,
+.stat-item,
+.tab,
+.locate-switch,
+.sort-option,
+.type-filter,
+.date-filter,
+.weekday-filter,
+.type-panel-item,
+.weekday-item {
+  transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* 分区标题 */

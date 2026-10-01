@@ -1,11 +1,11 @@
 <view class="page">
-  <navigation-bar title="我的活动" color="#2D3748" background="#FFFFFF"></navigation-bar>
+  <navigation-bar title="我的活动" color="#2D3748" background="#BFAF92"></navigation-bar>
 
   <view class="tabs">
-    <view class="tab {{tab === 'joined' ? 'active' : ''}}" data-tab="joined" bindtap="switchTab">
+    <view class="tab {{tab === 'joined' ? 'active' : ''}}" data-tab="joined" bindtap="switchTab" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
       <text>我参与的</text>
     </view>
-    <view class="tab {{tab === 'published' ? 'active' : ''}}" data-tab="published" bindtap="switchTab">
+    <view class="tab {{tab === 'published' ? 'active' : ''}}" data-tab="published" bindtap="switchTab" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
       <text>我发布的</text>
     </view>
   </view>
@@ -36,7 +36,7 @@
             <text class="audit-label">未通过原因</text>
             <text class="audit-text">{{item.auditReason}}</text>
           </view>
-          <view class="audit-edit" data-id="{{item.id}}" catchtap="onEdit">
+          <view class="audit-edit" data-id="{{item.id}}" catchtap="onEdit" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
             <text>修改后重新提交</text>
           </view>
         </view>
