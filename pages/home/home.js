@@ -82,6 +82,8 @@ Page({
       this.getTabBar().setData({ selected: 0 })
     }
     this.setData({ user: app.globalData.user })
+    // 未读小红点是全局的：首页也要拉一次，否则「不进我的就看不到新消息」
+    app.refreshUnread(this)
     this.syncCityState()
     this.syncPageTitle()
     this.loadData()

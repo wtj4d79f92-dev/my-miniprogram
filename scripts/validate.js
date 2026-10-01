@@ -499,7 +499,7 @@ function createWxStub() {
   }
 }
 
-const globalData = { city: '', user: null, locationDenied: false }
+const globalData = { city: '', user: null, locationDenied: false, unreadCount: 0 }
 global.wx = createWxStub()
 global.getApp = () => ({
   globalData,
@@ -508,6 +508,16 @@ global.getApp = () => ({
   },
   setCity(city) {
     globalData.city = city
+  },
+  // 未读数在 app 里是一份全局状态（底部 tab 小红点与「我的」入口共用），
+  // 这里按真实实现给一个等价的轻量替身，页面用例不必关心它怎么来的
+  refreshUnread() {
+    return Promise.resolve(globalData.unreadCount || 0)
+  },
+  syncUnread() {},
+  setUnreadCount(count) {
+    globalData.unreadCount = Number(count) || 0
+    return globalData.unreadCount
   },
 })
 global.Behavior = (options) => options
@@ -899,6 +909,98 @@ const flow = (async () => {
     commentAfterQuitError = e.code
   }
   log(commentAfterQuitError === 'FORBIDDEN', '留言：退出活动后不再能查看留言')
+
+  /* ---------- 站内通知：新留言通知发起人，回复通知被回复人 ---------- */
+  // 通知是留言的附属产物：一级留言通知活动发起人，回复通知被回复那条留言的作者；
+  // 自己给自己留言不产生通知，通知里不带任何 openid。
+  const notifyList = () => storageModule.getStorage(mockModel.MOCK_NOTIFY_LIST, []) || []
+  // 用一条独立的活动做通知用例：详情页用例的目标活动就是广场最新的那条（种子数据的
+  // createTime 排在最前），在这条上留痕会把「刚报名时留言为空」的断言带偏
+  const notifyActivity = page1.list.filter(
+    (item) =>
+      item.id !== created.id &&
+      item.id !== outsiderActivity.id &&
+      item.status === 'recruiting' &&
+      item.joinedCount < item.maxPeople
+  )[0]
+  const notifyOwner = (notifyActivity.organizer || {}).openid
+  await step('加入通知用例的活动', api.join(notifyActivity.id))
+
+  const notifyBeforeTop = notifyList().length
+  const topComment = await step('在别人活动里留言', api.comment(notifyActivity.id, '周六九点在地铁口集合'))
+  const notifyAfterTop = notifyList()
+  log(
+    notifyAfterTop.length === notifyBeforeTop + 1 &&
+      notifyAfterTop[notifyAfterTop.length - 1].toOpenid === notifyOwner &&
+      notifyAfterTop[notifyAfterTop.length - 1].type === 'comment' &&
+      notifyAfterTop[notifyAfterTop.length - 1].commentId === topComment.id,
+    '通知：一级留言通知活动发起人，带上留言 id 与活动 id'
+  )
+
+  // 发起人回复这条留言：换成发起人的身份发送，再切回来查自己收到的通知
+  const mySnapshot = storageModule.getStorage(storageModule.KEYS.user, null)
+  storageModule.setStorage(storageModule.KEYS.user, {
+    openid: notifyOwner,
+    userId: 1001,
+    nickName: (notifyActivity.organizer || {}).nickName,
+    avatarColor: (notifyActivity.organizer || {}).avatarColor,
+    avatarText: (notifyActivity.organizer || {}).avatarText,
+  })
+  const ownerReply = await step('发起人回复留言', api.comment(notifyActivity.id, '收到，我带路', topComment.id))
+  storageModule.setStorage(storageModule.KEYS.user, mySnapshot)
+  log(
+    ownerReply.parentId === topComment.id &&
+      ownerReply.replyToId === topComment.id &&
+      ownerReply.replyToName === topComment.nickName,
+    '回复：挂在一级留言下，并带上被回复人的昵称快照'
+  )
+
+  const myNotices = await step('我的通知列表', api.notifications())
+  log(
+    myNotices.list.length === 1 &&
+      myNotices.list[0].type === 'reply' &&
+      myNotices.list[0].commentId === ownerReply.id &&
+      myNotices.list[0].content === '收到，我带路' &&
+      myNotices.list[0].activityId === notifyActivity.id,
+    '通知：收到回复通知；自己发的一级留言不给自己发通知'
+  )
+  log(
+    myNotices.list.every((item) => item.toOpenid === undefined && item.fromOpenid === undefined) &&
+      !!myNotices.list[0].from &&
+      !!myNotices.list[0].from.nickName,
+    '通知列表：不下发任何 openid，只给发送者快照'
+  )
+  log(myNotices.unreadCount === 1, '通知列表：未读数与未读条数一致')
+
+  // 已读：只能操作自己的那条，全部已读后未读数归零
+  const ownerNotice = notifyList().filter((item) => item.toOpenid === notifyOwner)[0]
+  let strangerReadError = ''
+  try {
+    await api.notificationRead(ownerNotice.id)
+  } catch (e) {
+    strangerReadError = e.code
+  }
+  log(strangerReadError === 'FORBIDDEN', '通知已读：不能标记别人的通知')
+  await step('标记自己的通知已读', api.notificationRead(myNotices.list[0].id))
+  const afterRead = await step('已读后的通知', api.notifications())
+  log(afterRead.unreadCount === 0 && afterRead.list[0].read === true, '通知已读：读过的通知不再计入未读数')
+  const unreadCount = await step('未读数', api.notificationUnread())
+  log(unreadCount.count === 0, '通知未读数：与列表里的未读数同一口径')
+  await step('全部标记已读', api.notificationReadAll())
+  log((await step('全部已读后的通知', api.notifications())).unreadCount === 0, '通知已读：支持一次全部标记已读')
+
+  let notifyGuestError = ''
+  const guestSnapshot = storageModule.getStorage(storageModule.KEYS.user, null)
+  storageModule.setStorage(storageModule.KEYS.user, null)
+  try {
+    await api.notifications()
+  } catch (e) {
+    notifyGuestError = e.code
+  }
+  storageModule.setStorage(storageModule.KEYS.user, guestSnapshot)
+  log(notifyGuestError === 'UNAUTHORIZED', '通知列表：未登录不能拉取')
+
+  await step('退出通知用例的活动', api.quit(notifyActivity.id))
 
   // 满员限制
   const fullActivity = page1.list.find((item) => item.joinedCount >= item.maxPeople)
@@ -1935,6 +2037,10 @@ function checkHomeNoAutoLocate() {
       homeGlobalData.cityLocated = true
       return Promise.resolve('成都')
     },
+    // 首页 onShow 会顺带刷新未读小红点，这里给同名的空实现即可
+    refreshUnread() {
+      return Promise.resolve(0)
+    },
   })
   global.wx.showLoading = () => {}
   global.wx.hideLoading = () => {}
@@ -2167,13 +2273,16 @@ checkSquareFilters()
  * 入口放在个人中心，且要两次确认才真的执行。
  */
 function checkDeleteAccount() {
-  const { KEYS, getStorage } = require(path.join(ROOT, 'utils/storage'))
+  const { KEYS, getStorage, setStorage } = require(path.join(ROOT, 'utils/storage'))
   const mockModel = require(path.join(ROOT, 'services/mock'))
   const api = require(path.join(ROOT, 'services/api'))
 
   let account = null
   let own = null
   let target = null
+  // 上面的用例已经在本地留了通知，这里记一个基线，只断言本次新增的条数
+  let notifyBaseline = 0
+  let notifyAfterSeed = []
 
   return api
     .login({ phone: '13800003333' })
@@ -2201,7 +2310,52 @@ function checkDeleteAccount() {
       return target ? api.join(target.id) : null
     })
     .then(() => api.feedback({ content: '注销前的反馈内容' }))
-    .then(() => api.comment(target.id, '注销前在别人活动里留的言'))
+    .then(() => {
+      notifyBaseline = (getStorage(mockModel.MOCK_NOTIFY_LIST, []) || []).length
+      return api.comment(target.id, '注销前在别人活动里留的言')
+    })
+    .then(() => {
+      // 造齐三类通知：发给我的、我自己发出的（上面那条留言已经产生一条）、被删活动下的
+      const seeded = (getStorage(mockModel.MOCK_NOTIFY_LIST, []) || []).slice()
+      seeded.push(
+        {
+          id: 'mock_notify_to_me',
+          toOpenid: account.openid,
+          fromOpenid: 'mock_u_1',
+          type: 'reply',
+          activityId: target.id,
+          commentId: 'cm_x',
+          content: '别人回复我的通知',
+          read: false,
+          createTime: Date.now(),
+        },
+        {
+          id: 'mock_notify_on_own',
+          toOpenid: 'mock_u_1',
+          fromOpenid: 'mock_u_2',
+          type: 'comment',
+          activityId: own.id,
+          commentId: 'cm_y',
+          content: '我发布的活动下的通知',
+          read: false,
+          createTime: Date.now(),
+        },
+        {
+          id: 'mock_notify_other',
+          toOpenid: 'mock_u_1',
+          fromOpenid: 'mock_u_2',
+          type: 'comment',
+          activityId: target.id,
+          commentId: 'cm_z',
+          content: '与我无关的通知',
+          read: false,
+          createTime: Date.now(),
+        }
+      )
+      setStorage(mockModel.MOCK_NOTIFY_LIST, seeded)
+      notifyAfterSeed = seeded
+      return null
+    })
     .then(() => {
       const joinMap = getStorage(mockModel.MOCK_JOIN_MAP, {}) || {}
       const commentMap = getStorage(mockModel.MOCK_COMMENT_MAP, {}) || {}
@@ -2210,8 +2364,9 @@ function checkDeleteAccount() {
           (getStorage(KEYS.published, []) || []).some((item) => item.id === own.id) &&
           (joinMap[target.id] || []).some((member) => member.openid === account.openid) &&
           (commentMap[target.id] || []).some((item) => item.openid === account.openid) &&
-          (getStorage(KEYS.feedback, []) || []).length > 0,
-        '注销：注销前账号、发布、报名、留言与反馈几类数据都在'
+          (getStorage(KEYS.feedback, []) || []).length > 0 &&
+          notifyAfterSeed.length === notifyBaseline + 4,
+        '注销：注销前账号、发布、报名、留言、通知与反馈几类数据都在'
       )
       return api.deleteAccount()
     })
@@ -2234,6 +2389,13 @@ function checkDeleteAccount() {
       log(
         leftComments.every((item) => item.openid !== account.openid),
         '注销：自己发过的留言一并删除，别人活动里不留痕'
+      )
+      const leftNotices = getStorage(mockModel.MOCK_NOTIFY_LIST, []) || []
+      log(
+        leftNotices.every((item) => item.toOpenid !== account.openid && item.fromOpenid !== account.openid) &&
+          leftNotices.every((item) => item.activityId !== own.id) &&
+          leftNotices.some((item) => item.id === 'mock_notify_other'),
+        '注销：发给自己的、自己发出的、被删活动下的通知一并清理，别人的通知保持不动'
       )
       log(
         !mockModel.visibleActivities().some((item) => item.organizer.openid === account.openid),
@@ -3157,6 +3319,63 @@ function checkHardening() {
     '留言：Mock 数据层与云端同一套权限与字段口径'
   )
 
+  /* 站内通知：新留言通知发起人，回复通知被回复的留言者 */
+  log(
+    cloudJs.indexOf("const notifications = db.collection('notifications')") > -1 &&
+      cloudJs.indexOf('async function notifyForComment(activity, comment, user, target)') > -1 &&
+      cloudJs.indexOf('type: target ? NOTIFY_REPLY : NOTIFY_COMMENT') > -1 &&
+      cloudJs.indexOf('if (!toOpenid || toOpenid === user.openid) return') > -1,
+    '通知：云端按「一级留言通知发起人、回复通知被回复人」写入，自己给自己留言不通知'
+  )
+  log(
+    cloudJs.indexOf("fail('NOT_FOUND', '要回复的留言不存在或已删除')") > -1 &&
+      cloudJs.indexOf('parentId: target ? String(target.parentId || target._id)') > -1 &&
+      cloudJs.indexOf('replyToName: target ?') > -1,
+    '回复：云端只允许回复同活动里未删除的留言，并记下所属一级留言与被回复人快照'
+  )
+  log(
+    cloudJs.indexOf("fail('FORBIDDEN', '只能操作自己的消息')") > -1 &&
+      cloudJs.indexOf('async function removeNotifications(openid, activityIds)') > -1 &&
+      cloudJs.indexOf('notifications: notificationsRemoved') > -1,
+    '通知：只能读自己的，注销时连站内通知一起清理'
+  )
+  log(
+    read('pages/activity/detail/index.wxml').indexOf('bindtap="onCommentReply"') > -1 &&
+      read('pages/activity/detail/index.js').indexOf('replyTarget') > -1 &&
+      read('services/api.js').indexOf('mockNotifyForComment') > -1 &&
+      read('services/mock.js').indexOf('MOCK_NOTIFY_LIST') > -1,
+    '回复：详情页带回复入口，Mock 数据层与云端同一套规则'
+  )
+  log(
+    read('pages/usercenter/index.wxml').indexOf('bindtap="goMessage"') > -1 &&
+      read('pages/usercenter/index.wxml').indexOf('entry-badge') > -1 &&
+      read('pages/usercenter/index.js').indexOf('.refreshUnread(this)') > -1 &&
+      read('pages/message/index.js').indexOf('.notifications()') > -1 &&
+      appJson.pages.indexOf('pages/message/index') > -1,
+    '我的：消息入口与未读红点接到通知接口，消息中心页已注册并展示列表'
+  )
+  // 未读小红点是全局的：底部 tab 也要能看见，不能只在「我的」页面里红
+  log(
+    read('app.js').indexOf('unreadCount: 0') > -1 &&
+      read('app.js').indexOf('refreshUnread(page)') > -1 &&
+      read('app.js').indexOf('.notificationUnread()') > -1 &&
+      read('app.js').indexOf('syncUnread(page)') > -1,
+    '未读小红点：app 里统一拉取并缓存，底部 tab 与「我的」共用一份'
+  )
+  log(
+    read('custom-tab-bar/index.wxml').indexOf('tab-badge') > -1 &&
+      read('custom-tab-bar/index.wxml').indexOf("item.icon === 'user' && unread") > -1 &&
+      read('custom-tab-bar/index.js').indexOf('unread: 0') > -1 &&
+      read('custom-tab-bar/index.wxss').indexOf('.tab-badge') > -1,
+    '未读小红点：底部 tab 的「我的」上按未读数渲染小红点'
+  )
+  log(
+    read('pages/home/home.js').indexOf('app.refreshUnread(this)') > -1 &&
+      read('pages/square/index.js').indexOf('app.refreshUnread(this)') > -1 &&
+      read('pages/message/index.js').indexOf('setUnreadCount(') > -1,
+    '未读小红点：首页 / 广场 / 我的切换时都会刷新，读掉消息后立刻同步给 tab'
+  )
+
   log(
     cloudJs.indexOf("fail('INVALID_PARAM', '请选择费用方式") > -1 &&
       cloudJs.indexOf("fail('INVALID_PARAM', '非 AA 制活动需填写费用说明") > -1,
@@ -3556,6 +3775,132 @@ function checkDetailComments() {
     })
 }
 
+/* -------------- 消息中心：只展示自己的通知，点开即已读并跳转 -------------- */
+/**
+ * 数据层的读写规则在 Mock 链路与 scripts/cloud-validate.js 里覆盖，这里验证页面这一层的决策：
+ * 只渲染发给自己的通知、带上动作文案与时间、点开后标已读并跳到对应活动。
+ */
+function checkMessagePage() {
+  const api = require(path.join(ROOT, 'services/api'))
+  const { KEYS, getStorage, setStorage } = require(path.join(ROOT, 'utils/storage'))
+  const mockModel = require(path.join(ROOT, 'services/mock'))
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  const pageOptions = []
+  global.Page = (options) => pageOptions.push(options)
+  const messagePagePath = path.join(ROOT, 'pages/message/index.js')
+  delete require.cache[require.resolve(messagePagePath)]
+  require(messagePagePath)
+  const page = pageOptions[0]
+
+  const originalToast = global.wx.showToast
+  const originalNavigate = global.wx.navigateTo
+  global.wx.showToast = () => {}
+  let navigated = ''
+  global.wx.navigateTo = (options) => {
+    navigated = (options && options.url) || ''
+  }
+
+  const userSnapshot = getStorage(KEYS.user, null)
+  const notifySnapshot = getStorage(mockModel.MOCK_NOTIFY_LIST, [])
+  const tester = {
+    openid: 'mock_openid_msg_tester',
+    userId: 88,
+    nickName: '消息测试员',
+    avatarColor: '#4ECDC4',
+    avatarText: '消',
+  }
+  setStorage(KEYS.user, tester)
+  globalData.user = tester
+  setStorage(mockModel.MOCK_NOTIFY_LIST, [
+    {
+      id: 'mock_notify_msg_1',
+      toOpenid: tester.openid,
+      fromOpenid: 'mock_u_1',
+      type: 'comment',
+      fromNickName: '山野阿宽',
+      fromAvatarColor: '#4ECDC4',
+      fromAvatarUrl: '',
+      fromAvatarText: '山',
+      activityId: 'mock_act_1',
+      activityTitle: '香山轻装徒步 · 看层林尽染',
+      commentId: 'c_1',
+      content: '我带了对讲机，路上联系',
+      read: false,
+      createTime: Date.now(),
+    },
+    {
+      id: 'mock_notify_msg_2',
+      toOpenid: 'mock_u_2',
+      fromOpenid: 'mock_u_1',
+      type: 'reply',
+      fromNickName: '山野阿宽',
+      fromAvatarColor: '#4ECDC4',
+      fromAvatarUrl: '',
+      fromAvatarText: '山',
+      activityId: 'mock_act_2',
+      activityTitle: '环雁栖湖骑行',
+      commentId: 'c_2',
+      content: '别人的通知',
+      read: false,
+      createTime: Date.now(),
+    },
+  ])
+
+  const ctx = Object.assign({}, page)
+  ctx.data = JSON.parse(JSON.stringify(page.data))
+  ctx.setData = function setData(patch) {
+    Object.assign(this.data, patch)
+  }
+
+  const restore = () => {
+    setStorage(KEYS.user, userSnapshot)
+    setStorage(mockModel.MOCK_NOTIFY_LIST, notifySnapshot)
+    globalData.user = userSnapshot
+    global.wx.showToast = originalToast
+    global.wx.navigateTo = originalNavigate
+  }
+
+  return ctx
+    .load()
+    .then(() => {
+      log(
+        ctx.data.list.length === 1 && ctx.data.unreadCount === 1,
+        '消息中心：只展示发给自己的通知，未读数与之一致'
+      )
+      log(
+        ctx.data.list[0].actionText.indexOf('发起的活动') > -1 &&
+          !!ctx.data.list[0].timeLabel &&
+          ctx.data.list[0].from.nickName === '山野阿宽',
+        '消息中心：按通知类型给出动作文案，带时间与发送者快照'
+      )
+      ctx.onItemTap({ currentTarget: { dataset: { id: 'mock_notify_msg_1' } } })
+      log(
+        navigated.indexOf('pages/activity/detail/index') > -1 && navigated.indexOf('id=mock_act_1') > -1,
+        '消息中心：点一条消息跳到对应活动'
+      )
+      return wait(20)
+    })
+    .then(() => {
+      log(ctx.data.unreadCount === 0 && ctx.data.list[0].read === true, '消息中心：点开后这条消息立即标记已读')
+      return ctx.onReadAll()
+    })
+    .then(() => {
+      const stored = getStorage(mockModel.MOCK_NOTIFY_LIST, []) || []
+      log(
+        stored.filter((item) => item.toOpenid === tester.openid).every((item) => item.read === true) &&
+          stored.some((item) => item.id === 'mock_notify_msg_2' && item.read === false),
+        '消息中心：全部已读只影响自己的通知，别人的保持未读'
+      )
+      restore()
+      return null
+    })
+    .catch((e) => {
+      restore()
+      log(false, `消息中心：执行异常 → ${e && e.message}`)
+    })
+}
+
 return checkDeleteAccount()
   .then(() => checkHardening())
   .then(() => checkExpireRule())
@@ -3565,6 +3910,7 @@ return checkDeleteAccount()
   .then(() => checkHomeShare())
   .then(() => checkBannerImage())
   .then(() => checkDetailComments())
+  .then(() => checkMessagePage())
   .then(() => checkSeedData())
 })
 .then(() => {

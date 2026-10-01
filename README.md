@@ -43,8 +43,8 @@ scripts/seed-data.js              导出提审演示数据（生成云开发控�
 
 `services/config.js` 中 `useMock` 控制数据来源：
 
-- `useMock: true`（演示模式）：数据由 `services/mock.js` 生成，操作结果写入本地缓存，缓存键与 PRD 5.3 一致（`aa_selected_city`、`square_pending_type`、`my_user`、`my_user_counter`、`my_published`、`my_joined`、`my_feedback`），另加 `mock_join_map`、`mock_status_map`、`mock_audit_map`、`mock_comment_map` 四个运行期缓存键，用于记录报名成员、关闭状态与关闭时间、本地审核结果、活动留言。首页另有一份列表快照 `aa_home_cache`（见「首屏加载」），两种模式共用。
-- `useMock: false`：走云开发，客户端调用 `activity` 云函数，action 与 PRD 8.6 一致（`home / list / detail / create / update / join / quit / toggle / mine / user / login / updateUser / qrcode / feedback / report / comments / comment / commentRemove / deleteAccount`），审核相关调用走独立的 `admin` 云函数。
+- `useMock: true`（演示模式）：数据由 `services/mock.js` 生成，操作结果写入本地缓存，缓存键与 PRD 5.3 一致（`aa_selected_city`、`square_pending_type`、`my_user`、`my_user_counter`、`my_published`、`my_joined`、`my_feedback`），另加 `mock_join_map`、`mock_status_map`、`mock_audit_map`、`mock_comment_map`、`mock_notifications` 五个运行期缓存键，用于记录报名成员、关闭状态与关闭时间、本地审核结果、活动留言与站内通知。首页另有一份列表快照 `aa_home_cache`（见「首屏加载」），两种模式共用。
+- `useMock: false`：走云开发，客户端调用 `activity` 云函数，action 与 PRD 8.6 一致（`home / list / detail / create / update / join / quit / toggle / mine / user / login / updateUser / qrcode / feedback / report / comments / comment / commentRemove / notifications / notificationUnread / notificationRead / notificationReadAll / deleteAccount`），审核相关调用走独立的 `admin` 云函数。
 
 > Mock 模式下把当前登录用户视为审核人，本地也能把「发布 → 待审 → 驳回 → 修改重提 → 通过」整条链路跑通；云端真人权限见下方「活动审核」。
 
@@ -53,7 +53,7 @@ scripts/seed-data.js              导出提审演示数据（生成云开发控�
 1. 在微信开发者工具中开通云开发，记录环境 ID；
 2. 把 `services/config.js` 的 `useMock` 改为 `false`，`useCloud` 改为 `true`，填入 `cloudEnv`；
 3. 在 `app.js` 的 `onLaunch` 中初始化：`wx.cloud.init({ env: config.cloudEnv, traceUser: true })`；
-4. 创建集合 `activities`、`users`、`banners`、`feedback`、`activity_comments`，权限按 PRD 8.7 设置（用户举报与意见反馈都落在 `feedback`，用 `kind` 区分：`feedback` / `report`；活动留言落在 `activity_comments`，两者都只允许云函数读写，客户端不得直连）；
+4. 创建集合 `activities`、`users`、`banners`、`feedback`、`activity_comments`、`notifications`，权限按 PRD 8.7 设置（用户举报与意见反馈都落在 `feedback`，用 `kind` 区分：`feedback` / `report`；活动留言落在 `activity_comments`，站内通知落在 `notifications`，三者都只允许云函数读写，客户端不得直连）；
 5. 新建 `cloudfunctions/activity` 云函数（Node.js），按 `services/api.js` 中 `cloudApi` 的 action 名实现路由，返回结构失败为 `{ code, message }`、成功为业务数据；
 6. 在 `project.config.json` 中补充 `"cloudfunctionRoot": "cloudfunctions/"` 后部署云函数。
 
@@ -82,8 +82,9 @@ scripts/seed-data.js              导出提审演示数据（生成云开发控�
 1. **我发布的活动**：连同 `cover` / `groupQrCode` / `miniQrCode` 三个云存储文件一起删除（Mock 模式清本地 `my_published` 与对应的状态、审核覆盖）；
 2. **我在别人活动里的报名**：从 `joinedPeople` 里移除并同步 `joinedCount`；
 3. **我发过的活动留言**：`activity_comments` 里该 openid 的记录删除；自己发布的活动被删后，别人留在这条活动下的留言也一并清理（活动没了，留言也就没有入口）；
-4. **我提交的反馈与举报**：`feedback` 集合里该 openid 的记录删除（举报是 `kind: 'report'` 的同一集合记录）；
-5. **账号本身**：`users` 里的记录删除。
+4. **我的站内通知**：发给我的、我发出的，以及被删活动下的 `notifications` 记录一并清理（通知里带着对方昵称头像快照与留言正文，留着等于「内容删了、痕迹还在」）；
+5. **我提交的反馈与举报**：`feedback` 集合里该 openid 的记录删除（举报是 `kind: 'report'` 的同一集合记录）；
+6. **账号本身**：`users` 里的记录删除。
 
 `activity_audits` 里的审核日志保留：那是平台内容审核的留存记录，只含活动 id、标题与审核人信息，不含注销用户的昵称 / 头像 / 手机号。注销后同一个微信再次登录会重新注册为新账号（用户编号递增），历史数据不会回来。
 
@@ -106,15 +107,33 @@ scripts/seed-data.js              导出提审演示数据（生成云开发控�
 
 | 位置 | 内容 |
 | --- | --- |
-| 集合 | `activity_comments`：`{ _id, activityId, openid, nickName, avatarUrl, avatarColor, avatarText, content, createTime, status, machineSuggest }` |
-| 云端 | `cloudfunctions/activity/index.js` 的 `comments` / `comment` / `commentRemove` —— 权限、内容安全、软删除都在服务端做，前端只控制入口 |
-| 前端 | `pages/activity/detail/index.js` 的 `loadComments` / `submitComment` / `onCommentRemove` / `onCommentReport`；卡片只在 `canComment`（发起人或已报名、非朋友圈单页模式）时渲染 |
-| 对外结构 | 走 `lib/helper.js` 的 `publicComment()`：抹掉 openid，只留 `isMine` / `canRemove` 两个布尔值 |
-| Mock | `services/mock.js` 的 `mock_comment_map` 缓存与 `services/api.js` 的 `mockIsParticipant` / `mockPublicComment`，与云端同一套口径 |
+| 集合 | `activity_comments`：`{ _id, activityId, openid, nickName, avatarUrl, avatarColor, avatarText, content, parentId, replyToId, replyToName, createTime, status, machineSuggest }` |
+| 云端 | `cloudfunctions/activity/index.js` 的 `comments` / `comment` / `commentRemove` —— 权限、内容安全、软删除、通知都在服务端做，前端只控制入口 |
+| 前端 | `pages/activity/detail/index.js` 的 `loadComments` / `submitComment` / `onCommentReply` / `onCommentRemove` / `onCommentReport`；卡片只在 `canComment`（发起人或已报名、非朋友圈单页模式）时渲染 |
+| 对外结构 | 走 `lib/helper.js` 的 `publicComment()`：抹掉 openid，只留 `isMine` / `canRemove` 两个布尔值与回复关系（`parentId` / `replyToId` / `replyToName`） |
+| Mock | `services/mock.js` 的 `mock_comment_map` / `mock_notifications` 缓存与 `services/api.js` 的 `mockIsParticipant` / `mockPublicComment` / `mockNotifyForComment`，与云端同一套口径 |
 
 查询只按 `activityId` 单字段取，再在内存里过滤与排序：云数据库对多字段组合查询要求建复合索引，留言是跟活动绑定的轻量数据，单字段查询足够。留言不做分页、不支持图片与编辑；发言前需要登录，报名的门槛同时也是留言区的门槛。
 
-**部署**：`activity` 云函数要重新上传（新增三个 action），并新建 `activity_comments` 集合，权限设为「仅云函数读写」或「所有用户不可读写」——留言只有参与者可见这件事不能靠客户端自觉。
+### 回复与站内通知
+
+留言是**两级结构**：一级留言下面挂它的回复。点「回复」后输入框切成回复态（placeholder 变成「回复 @某某」，旁边一条可取消的提示条），发送时带上 `replyToId`。
+
+1. **回复关系落库**：云端校验被回复的留言确实在同一个活动里且未删除，落库时记 `parentId`（所属的一级留言，前端据此把回复挂到对应留言下）与 `replyToId` / `replyToName`（直接回复的那条留言与作者昵称快照，用于「回复 @某某」）。回复一条回复时同样挂在同一个一级留言下，只是 `replyToName` 指向被回复的那个人；父留言被删后，孤儿回复在读取时降级成一级留言，不会凭空消失；
+2. **通知规则**：一级留言 → 通知**活动发起人**；回复 → 通知**被回复那条留言的作者**；自己给自己留言（发起人在自己活动里发消息、回复自己的留言）不产生通知；
+3. **落库与读回**：通知写 `notifications` 集合（收件人 openid、发送者昵称头像快照、通知类型、活动 id 与标题、留言 id 与正文快照、已读标记、时间）。通知写入整体兜住异常、只记日志——留言已经写库，不该因为一条通知失败就让用户看到「发送失败」；
+4. **只看自己的**：`notifications` / `notificationUnread` / `notificationRead` / `notificationReadAll` 四个 action 全部只按云函数上下文里的 openid 判定，标记已读时还额外校验这条通知的收件人是不是自己（不是则 `FORBIDDEN`）。对外结构走 `lib/helper.js` 的 `publicNotification()`，抹掉收发双方的 openid，只留展示快照。
+
+查询同样只按 `toOpenid` 单字段取，再在内存里排序与统计未读数（通知本来就不多，不做分页）。
+
+**未读提醒有两处，共用 app 里那一份数据**（`app.js` 的 `refreshUnread` / `syncUnread` / `setUnreadCount`，只调 `notificationUnread` 拉数字、不拉列表）：
+
+1. **底部 tab**：自定义 tabBar 的「我的」图标右上角画一个小红点（`custom-tab-bar/index.js` 的 `unread`），停在首页 / 广场也能看到有新消息；三个 tab 页的 `onShow` 都会刷新，同一时刻只发一次请求（首屏那次 home 请求本来就紧张，不该被三个并发的未读查询挤掉）。
+2. **「我的 → 消息」入口**：右侧显示未读条数角标（超过 99 显示 `99+`），与 tab 红点同一个来源。
+
+`pages/message/index` 是消息中心，按时间倒序列出通知，点一条即标已读并跳到对应活动，顶部有「全部已读」；读掉之后会顺手把 app 里的未读数改成新值，返回 tab 页时小红点立刻灭，不用等接口回来。
+
+**部署**：`activity` 云函数要重新上传（新增 `notifications` / `notificationUnread` / `notificationRead` / `notificationReadAll` 四个 action），并新建 `activity_comments`、`notifications` 两个集合，权限都设为「仅云函数读写」或「所有用户不可读写」——留言只有参与者可见、通知只有本人可见这两件事都不能靠客户端自觉。
 
 ## 活动展示期（发布后 7 天）
 
@@ -378,9 +397,9 @@ node scripts/validate.js
 node scripts/cloud-validate.js
 ```
 
-会检查：页面与组件的文件完整性、`usingComponents` 引用是否可解析、JSON 是否合法、JS 是否可通过语法解析，并跑一遍 Mock 业务链路（首页 → 广场筛选 → 详情 → 发布 → 报名 → 活动留言 → 我的活动 → 关闭活动 → 退出 → 反馈 → 机审自动放行 → 注销账号）。
+会检查：页面与组件的文件完整性、`usingComponents` 引用是否可解析、JSON 是否合法、JS 是否可通过语法解析，并跑一遍 Mock 业务链路（首页 → 广场筛选 → 详情 → 发布 → 报名 → 活动留言与回复 → 站内通知 → 消息中心 → 我的活动 → 关闭活动 → 退出 → 反馈 → 机审自动放行 → 注销账号）。
 
-`scripts/cloud-validate.js` 用内存数据库替代 `wx-server-sdk`，直接调用四个云函数（`activity` / `admin` / `contentCheck` / `seed`）的入口，覆盖：审核前后在首页 / 广场 / 详情的可见性、发布与编辑重提、报名与关闭的审核守卫、活动留言（非参与者被拒、退出后失去访问、违规内容拦截、只有作者与发起人能删、软删除留痕、举报留言带内容快照、注销时清掉自己的留言）、已关闭活动的当天可见与沉底排序（含跨页、城市筛选叠加、次日消失、重新打开归零）、审核人权限（含越权调用被拒）、待审列表与统计、驳回原因校验、审核日志、历史数据迁移，以及机审（文本违规拦截不写库、疑似标记复核、图片异步回调写回、图片违规自动驳回与下架、机审全过自动放行、二维码不是微信二维码时直接驳回且不进待审队列、被驳回后图片全通过也不放行、部分图片没结论 / 文本质疑 / 识别接口异常转人工、人工驳回后不被机审放行、接口异常降级）。机审接口在测试里是桩，通过行为开关切换文本与图片的 pass / review / risky / 调用失败、响应里不带结论、仅首张图送检失败，以及二维码的识别到群邀请码 / 个人微信二维码（两种链接形态）/ 群码与名片码同图（群码优先）/ 没识别到码 / 不是微信二维码 / 只有一维码 / 调用失败；「没结论」这条线单独覆盖：文本降级 → 图片结论回来后补检文本 → 补到结论自动放行（日志写明补检）、补检仍失败继续转人工（记 `text-recheck`）、图片推送没结论时不写 `pass` 也不放行（记 `image-failed`）、旧版推送只带 `isrisky` 仍按结论处理。演示数据那组还会真的走一遍首页 / 广场 / 详情 / 报名与清理，确认造出来的数据审核员看得到、`refresh` 能把 7 天展示期往后推、清理时不动真实活动。它是纯本地运行，不依赖云环境，也不改动云端数据。
+`scripts/cloud-validate.js` 用内存数据库替代 `wx-server-sdk`，直接调用四个云函数（`activity` / `admin` / `contentCheck` / `seed`）的入口，覆盖：审核前后在首页 / 广场 / 详情的可见性、发布与编辑重提、报名与关闭的审核守卫、活动留言（非参与者被拒、退出后失去访问、违规内容拦截、只有作者与发起人能删、软删除留痕、举报留言带内容快照、注销时清掉自己的留言）、留言回复与站内通知（回复关系落库、被回复留言不存在 / 已删除 / 非参与者被拒、一级留言通知发起人、回复通知被回复人、自己给自己留言不通知、通知只返回自己的且不下发 openid、单条 / 全部已读与未读数、注销时清掉收发双方与被删活动下的通知）、已关闭活动的当天可见与沉底排序（含跨页、城市筛选叠加、次日消失、重新打开归零）、审核人权限（含越权调用被拒）、待审列表与统计、驳回原因校验、审核日志、历史数据迁移，以及机审（文本违规拦截不写库、疑似标记复核、图片异步回调写回、图片违规自动驳回与下架、机审全过自动放行、二维码不是微信二维码时直接驳回且不进待审队列、被驳回后图片全通过也不放行、部分图片没结论 / 文本质疑 / 识别接口异常转人工、人工驳回后不被机审放行、接口异常降级）。机审接口在测试里是桩，通过行为开关切换文本与图片的 pass / review / risky / 调用失败、响应里不带结论、仅首张图送检失败，以及二维码的识别到群邀请码 / 个人微信二维码（两种链接形态）/ 群码与名片码同图（群码优先）/ 没识别到码 / 不是微信二维码 / 只有一维码 / 调用失败；「没结论」这条线单独覆盖：文本降级 → 图片结论回来后补检文本 → 补到结论自动放行（日志写明补检）、补检仍失败继续转人工（记 `text-recheck`）、图片推送没结论时不写 `pass` 也不放行（记 `image-failed`）、旧版推送只带 `isrisky` 仍按结论处理。演示数据那组还会真的走一遍首页 / 广场 / 详情 / 报名与清理，确认造出来的数据审核员看得到、`refresh` 能把 7 天展示期往后推、清理时不动真实活动。它是纯本地运行，不依赖云环境，也不改动云端数据。
 
 ## 已知限制（与 PRD 12.4 一致）
 
@@ -390,7 +409,8 @@ node scripts/cloud-validate.js
 - 地图选点发布的活动带着坐标，点「导航」直接开地图；只有地址文本的老活动（含本次改动前发布的）要先把地址解析成坐标，这一步依赖腾讯位置服务 key（`services/config.js` 的 `mapKey`）与 `apis.map.qq.com` 的 request 合法域名，未配置时应用会请用户在地图上点一次位置再导航；
 - 活动管理支持关闭 / 打开与编辑重提，暂不支持删除；
 - 活动留言只对参与者（发起人 / 已报名）可见，只支持文字，不做分页、图片与编辑；删除是保留原文的软删除，运营复核留言目前直接在云开发控制台看 `activity_comments` 集合，还没有独立的留言管理界面；
-- 审核结果暂未通过订阅消息通知发起人（订阅消息需用户在发布时授权「审核结果通知」，属于独立的一步）；
+- 留言 / 回复的通知是**站内消息**（`notifications` 集合 + 「我的 → 消息」），不是微信订阅消息：用户不进小程序就收不到推送，通知也只保留最近 50 条、不做分页，没有单条删除；
+- 全站的微信订阅消息都还没接（例如「审核结果通知」「新留言通知」）：订阅消息要模板 ID，还要用户在发布 / 留言时点授权，属于独立的一步；
 - 机审已接入：文本与图片内容安全都明确通过、且活动二维码（选填）没问题时才自动放行；活动二维码没识别出微信群邀请码或个人微信二维码时直接驳回（原因「活动二维码上传有误，请重新上传微信群二维码或个人微信二维码」），其余（`review`、检测异常、结论没回来）转人工，且审核台会把「文本检测失败 / 图片未出结论 / 图片未送检」这些转人工的原因标出来；图片结论依赖消息推送回调，未配置接收方时发布一律退化为人工审核（发布当刻文本检测没结论的活动，会在图片结论回来时补检一次文本）；
 - 活动二维码只认微信群邀请码与个人微信二维码（`QR_KINDS` 里的两条链接前缀）：企业微信群码、QQ 群码、收款码，以及带水印到识别不出的截图都会被判为「不是微信二维码」而直接驳回；要再放开别的形态（例如企业微信名片）时改 `cloudfunctions/activity/lib/contentCheck.js` 的 `QR_KINDS`，注意同步 `services/api.js` 的 `mockQrCodeCheck`；
 - 分享海报里的小程序码由 `wxacode.getUnlimited` 生成，`scene` 存活动 id、`page` 指向活动详情。小程序**未发布**时按 `envVersion: release` 生成会失败（海报退化成「小程序码」占位），首审 / 内测阶段可在 `activity` 云函数的环境变量里设 `WXACODE_ENV=trial`，上线后删掉即恢复正式版；详情页 `onLoad` 同时认 `id`（分享卡片 / 页面跳转）与 `scene`（小程序码，需 `decodeURIComponent`），两条入口都能落到对应活动；

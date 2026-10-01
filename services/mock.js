@@ -12,6 +12,9 @@ const MOCK_STATUS_MAP = 'mock_status_map'
 const MOCK_AUDIT_MAP = 'mock_audit_map'
 // 活动留言：{ [活动id]: 留言数组 }，与云端 activity_comments 集合同一套字段口径
 const MOCK_COMMENT_MAP = 'mock_comment_map'
+// 站内通知：通知数组，与云端 notifications 集合同一套字段口径
+// （新留言通知发起人、回复通知被回复人，见 services/api.js 的 mockNotifyForComment）
+const MOCK_NOTIFY_LIST = 'mock_notifications'
 /** 关闭当天的判定精度：自然日（当天 00:00 之后关闭的活动当天还留在广场） */
 const DAY_MS = 86400000
 
@@ -280,6 +283,15 @@ function saveComments(activityId, list) {
   setStorage(MOCK_COMMENT_MAP, commentMap)
 }
 
+/** 本地站内通知列表（按写入顺序，读取方自行按时间倒序） */
+function notificationList() {
+  return getStorage(MOCK_NOTIFY_LIST, []) || []
+}
+
+function saveNotifications(list) {
+  setStorage(MOCK_NOTIFY_LIST, list)
+}
+
 function memberOf(user) {
   return {
     openid: user.openid,
@@ -310,6 +322,7 @@ module.exports = {
   MOCK_STATUS_MAP,
   MOCK_AUDIT_MAP,
   MOCK_COMMENT_MAP,
+  MOCK_NOTIFY_LIST,
   DEFAULT_BANNERS,
   buildBaseActivities,
   allActivities,
@@ -322,6 +335,8 @@ module.exports = {
   saveJoin,
   commentList,
   saveComments,
+  notificationList,
+  saveNotifications,
   memberOf,
   cityFilter,
   normalizeCityName,

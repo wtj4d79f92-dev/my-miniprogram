@@ -93,7 +93,7 @@ const TEXTS = {
   searchPlaceholderHome: '搜活动、地点，加入旷行吖',
   searchPlaceholderSquare: '搜索活动、地点',
   footer: '— 和志同道合的人一起出发 —',
-  version: '旷行吖 v1.0.0',
+  version: '旷行吖 v1.2.0',
   about:
     '旷行吖是一款户外运动组队小程序，支持自驾游、徒步、打球、骑行、健身、游泳、露营等玩法，一键发起活动、快速摇人组队。',
   coastSlogan: '和志同道合的人一起出发',

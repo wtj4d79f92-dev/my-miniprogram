@@ -59,9 +59,69 @@ function formatCommentTime(ts) {
   return sameDay ? time : `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${time}`
 }
 
-/** 留言列表统一补上展示用的时间文案 */
-function decorateComments(list) {
-  return (list || []).map((item) => Object.assign({}, item, { timeLabel: formatCommentTime(item.createTime) }))
+/** 留言输入框的默认占位文案（切到回复态时会换成「回复 @某某」） */
+const COMMENT_PLACEHOLDER = '说点什么，只有参与活动的人能看到'
+
+/** 单条留言补齐展示字段：时间文案、回复列表（一级留言用）、「回复 @某某」前缀 */
+function decorateComment(item) {
+  // 直接回复一级留言时不重复标「回复 @发起人」——它本来就挂在那条留言下面；
+  // 回复某条回复时才需要点明对象，避免同一楼里几个人分不清在回谁
+  const replyToLabel = item.replyToId && item.replyToId !== item.parentId ? item.replyToName || '' : ''
+  return Object.assign({}, item, {
+    timeLabel: formatCommentTime(item.createTime),
+    replies: [],
+    replyToLabel,
+  })
+}
+
+/**
+ * 扁平留言列表 → 两级结构：一级留言按时间正序，回复挂到所属的一级留言下面。
+ * 接口按时间正序返回，所以这里天然保持「越靠下越新」。
+ * 父留言已被删除的孤儿回复降级成一级留言，至少不会凭空消失。
+ */
+function buildCommentThreads(list) {
+  const items = (list || []).map(decorateComment)
+  const byId = {}
+  items.forEach((item) => {
+    byId[item.id] = item
+  })
+  const roots = []
+  items.forEach((item) => {
+    const parent = item.parentId ? byId[item.parentId] : null
+    if (parent) parent.replies.push(item)
+    else roots.push(item)
+  })
+  return roots
+}
+
+/** 新留言落库后挂进列表：回复进对应留言的回复区，一级留言追加到末尾 */
+function appendComment(threads, created) {
+  const item = decorateComment(created)
+  const list = threads || []
+  if (!item.parentId) return list.concat([item])
+  let attached = false
+  const next = list.map((root) => {
+    if (root.id !== item.parentId) return root
+    attached = true
+    return Object.assign({}, root, { replies: root.replies.concat([item]) })
+  })
+  // 父留言找不到（刚被删）：按一级留言展示，和重新加载后的口径一致
+  return attached ? next : next.concat([item])
+}
+
+/** 在一级留言与回复里按 id 找留言 */
+function findComment(threads, id) {
+  let found = null
+  ;(threads || []).forEach((root) => {
+    if (found) return
+    if (root.id === id) {
+      found = root
+      return
+    }
+    const reply = (root.replies || []).filter((item) => item.id === id)[0]
+    if (reply) found = reply
+  })
+  return found
 }
 
 /**
@@ -127,6 +187,9 @@ Page({
     commentsLoading: false,
     commentInput: '',
     commentSending: false,
+    // 正在回复的那条留言（null = 发一级留言）：决定 placeholder 与发送时带上的 replyToId
+    replyTarget: null,
+    commentPlaceholder: COMMENT_PLACEHOLDER,
   },
 
   onLoad(options) {
@@ -265,6 +328,11 @@ Page({
       canComment,
       // 没有入口时顺手清掉上一次的留言，避免换活动或退出后残留在页面上
       comments: canComment ? this.data.comments : [],
+      replyTarget: canComment ? this.data.replyTarget : null,
+      commentPlaceholder:
+        canComment && this.data.replyTarget
+          ? `回复 @${this.data.replyTarget.nickName}`
+          : COMMENT_PLACEHOLDER,
       loading: false,
       notFound: false,
     })
@@ -562,7 +630,7 @@ Page({
         const current = this.data.activity
         // 页面已经换到别的活动 / 已经退出：丢弃这次结果
         if (!current || current.id !== activity.id) return null
-        this.setData({ comments: decorateComments(res && res.list), commentsLoading: false })
+        this.setData({ comments: buildCommentThreads(res && res.list), commentsLoading: false })
         return null
       })
       .catch((err) => {
@@ -579,6 +647,22 @@ Page({
 
   onCommentInput(e) {
     this.setData({ commentInput: e.detail.value })
+  },
+
+  /** 点某条留言的「回复」：输入框切到回复态，发送时带上这条留言的 id */
+  onCommentReply(e) {
+    const id = e.currentTarget.dataset.commentId
+    const target = findComment(this.data.comments, id)
+    if (!target) return
+    this.setData({
+      replyTarget: { id: target.id, nickName: target.nickName },
+      commentPlaceholder: `回复 @${target.nickName}`,
+    })
+  },
+
+  /** 取消回复：回到发一级留言的状态 */
+  cancelCommentReply() {
+    this.setData({ replyTarget: null, commentPlaceholder: COMMENT_PLACEHOLDER })
   },
 
   /** 发留言：参与动作，先确保登录态，再交给服务端过内容安全 */
@@ -598,15 +682,18 @@ Page({
 
   /** 发送留言：返回 Promise，调用方（含自动化用例）能等它写完再断言 */
   sendComment(content) {
+    const replyTarget = this.data.replyTarget
     this.setData({ commentSending: true })
     return api
-      .comment(this.data.id, content)
+      .comment(this.data.id, content, replyTarget ? replyTarget.id : '')
       .then((created) => {
         if (!created) return null
         this.setData({
-          comments: this.data.comments.concat(decorateComments([created])),
+          comments: appendComment(this.data.comments, created),
           commentInput: '',
           commentSending: false,
+          replyTarget: null,
+          commentPlaceholder: COMMENT_PLACEHOLDER,
         })
         return created
       })
@@ -620,7 +707,7 @@ Page({
   /** 删除留言：作者删自己的，发起人删活动里的任何一条（服务端同样按这两条判断） */
   onCommentRemove(e) {
     const commentId = e.currentTarget.dataset.commentId
-    const target = this.data.comments.filter((item) => item.id === commentId)[0]
+    const target = findComment(this.data.comments, commentId)
     if (!target) return
     ui.confirm({
       title: '删除这条留言？',
@@ -632,8 +719,11 @@ Page({
       api
         .commentRemove(this.data.id, commentId)
         .then(() => {
-          this.setData({ comments: this.data.comments.filter((item) => item.id !== commentId) })
+          // 删掉的正好是回复对象时先退出回复态，输入框不能还停在一个已经不存在的留言上
+          if (this.data.replyTarget && this.data.replyTarget.id === commentId) this.cancelCommentReply()
           ui.toast('已删除', 'success')
+          // 重新拉一次而不是本地过滤：一级留言被删后它的回复会被提升为一级，这层归位以服务端口径为准
+          return this.loadComments()
         })
         .catch((err) => ui.toast((err && err.message) || '删除失败，请稍后重试'))
     })

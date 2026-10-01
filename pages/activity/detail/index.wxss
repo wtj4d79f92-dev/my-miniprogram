@@ -280,6 +280,54 @@
   line-height: 1.6;
 }
 
+/* 回复：一级留言下面缩进一层，用浅底把「这是一条回复」和一级留言区分开 */
+.comment-replies {
+  margin: 0 0 4rpx 0;
+  padding: 0 16rpx;
+  border-radius: 16rpx;
+  background: var(--bg);
+}
+
+.comment-reply {
+  border-bottom: 2rpx solid var(--line);
+}
+
+.comment-reply:last-child {
+  border-bottom: none;
+}
+
+.comment-reply-to {
+  color: var(--brand);
+}
+
+/* 回复态提示条：输入框上方，点「回复」后出现 */
+.comment-reply-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20rpx;
+  padding: 12rpx 24rpx;
+  border-radius: 999rpx;
+  background: var(--brand-soft);
+}
+
+.comment-reply-tip {
+  flex: 1;
+  min-width: 0;
+  font-size: 24rpx;
+  color: var(--brand);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comment-reply-cancel {
+  flex: 0 0 auto;
+  margin-left: 16rpx;
+  font-size: 24rpx;
+  color: var(--text-sub);
+}
+
 .comment-actions {
   display: flex;
   justify-content: flex-end;

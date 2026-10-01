@@ -69,6 +69,8 @@ Page({
       this.getTabBar().setData({ selected: 1 })
     }
     const app = getApp()
+    // 与首页同一个口径：未读小红点是全局状态，切到广场也要刷新
+    app.refreshUnread(this)
     this.setData({
       user: app.globalData.user,
       city: app.globalData.city,

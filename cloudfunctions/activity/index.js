@@ -46,6 +46,7 @@ const {
   escapeRegExp,
   memberOf,
   publicComment,
+  publicNotification,
   publicActivity,
   withId,
   txDoc,
@@ -57,6 +58,7 @@ const banners = db.collection('banners')
 const feedbacks = db.collection('feedback')
 const auditLogs = db.collection('activity_audits')
 const comments = db.collection('activity_comments')
+const notifications = db.collection('notifications')
 
 const RECRUITING = 'recruiting'
 const CLOSED = 'closed'
@@ -83,6 +85,14 @@ const COMMENT_VISIBLE = 'visible'
 const COMMENT_REMOVED = 'removed'
 /** 一次返回的留言条数上限：站内沟通是轻量的，不做分页，只取最近的一批 */
 const COMMENT_LIMIT = 100
+/** 通知类型：comment 有人给「我发起的活动」留言 / reply 有人回复了「我的留言」 */
+const NOTIFY_COMMENT = 'comment'
+const NOTIFY_REPLY = 'reply'
+/**
+ * 一次返回的通知条数上限：与留言一样是轻量站内消息，不做分页，只取最近的一批。
+ * 未读数也从这一批里统计（通知超过上限时未读数按上限计），够用且省掉一次 count 查询。
+ */
+const NOTIFY_LIMIT = 50
 /**
  * 公开可见条件（审核中 / 未通过不可见）。
  * 每次调用都返回新的指令对象，避免同一个 db.command 实例在多条查询之间复用。
@@ -1099,7 +1109,13 @@ async function commentsOf(event, openid) {
   return { list: await listComments(doc, openid) }
 }
 
-/** 发留言：参与者才能发，内容先过文本内容安全再写库 */
+/**
+ * 发留言 / 回复：参与者才能发，内容先过文本内容安全再写库。
+ *
+ * 传了 replyToId 就是「回复某条留言」：只允许回复同一活动里未删除的留言，
+ * 落库时同时记下它所属的一级留言（parentId，前端据此挂到对应留言下）
+ * 与被回复人的昵称快照（replyToName，用于「回复 @某某」）。
+ */
 async function addComment(event, openid) {
   if (!openid) return fail('UNAUTHORIZED', '请先登录')
   const id = String((event && event.id) || '')
@@ -1113,6 +1129,15 @@ async function addComment(event, openid) {
   const checked = await checkText(content, openid)
   if (checked.suggest === RISKY) return fail('CONTENT_RISKY', '留言包含违规内容，请修改后重试')
 
+  const replyToId = String((event && event.replyToId) || '')
+  let target = null
+  if (replyToId) {
+    target = await findComment(replyToId)
+    if (!target || target.activityId !== id || target.status === COMMENT_REMOVED) {
+      return fail('NOT_FOUND', '要回复的留言不存在或已删除')
+    }
+  }
+
   const user = await findUser(openid)
   if (!user) return fail('UNAUTHORIZED', '请先登录')
   const record = Object.assign(memberOf(user), {
@@ -1120,11 +1145,17 @@ async function addComment(event, openid) {
     content,
     createTime: Date.now(),
     status: COMMENT_VISIBLE,
+    // 回复关系：一级留言这两项为空串；回复挂在被回复留言所属的一级留言下面
+    parentId: target ? String(target.parentId || target._id) : '',
+    replyToId: target ? String(target._id) : '',
+    replyToName: target ? text(target.nickName, LIMITS.nickName) || '微信用户' : '',
     // 机器给的是「疑似」时不拦用户，但把结论留下来，运营按这个标记复核
     machineSuggest: checked.suggest || '',
   })
   const res = await comments.add({ data: record })
-  return publicComment(Object.assign({ _id: res._id }, record), openid, false)
+  const created = Object.assign({ _id: res._id }, record)
+  await notifyForComment(doc, created, user, target)
+  return publicComment(created, openid, false)
 }
 
 /**
@@ -1151,6 +1182,103 @@ async function removeComment(event, openid) {
     data: { status: COMMENT_REMOVED, removedBy: openid, removeTime: Date.now() },
   })
   return { id: commentId, removed: true }
+}
+
+/* ------------------------------ 站内通知 ------------------------------ */
+
+/**
+ * 写一条站内通知。
+ *
+ * 通知是留言之后的附属动作：留言已经写库，通知失败不应该让用户看到「发送失败」，
+ * 所以这里整体兜住，只留日志——用户重发一次留言还会产生新的通知，不会漏消息成常态。
+ */
+async function pushNotification(record) {
+  try {
+    await notifications.add({ data: record })
+  } catch (e) {
+    console.error('[activity] 站内通知写入失败', e)
+  }
+}
+
+/**
+ * 留言 / 回复产生的站内通知：
+ * - 一级留言 → 通知活动发起人；
+ * - 回复 → 通知被回复的那条留言的作者（不是发起人）。
+ * 自己给自己留言（发起人在自己的活动下发消息、回复自己的留言）不通知。
+ *
+ * @param {Object} activity 活动文档
+ * @param {Object} comment 刚写入的留言文档（含 _id）
+ * @param {Object} user 发送者用户文档
+ * @param {Object|null} target 被回复的留言文档，一级留言传 null
+ */
+async function notifyForComment(activity, comment, user, target) {
+  const toOpenid = target
+    ? String(target.openid || '')
+    : String((activity.organizer && activity.organizer.openid) || '')
+  if (!toOpenid || toOpenid === user.openid) return
+  const actor = memberOf(user)
+  await pushNotification({
+    toOpenid,
+    type: target ? NOTIFY_REPLY : NOTIFY_COMMENT,
+    // 发送者快照：通知列表要展示「谁留言 / 谁回复」，但 openid 只落库不下发
+    fromOpenid: actor.openid,
+    fromNickName: actor.nickName,
+    fromAvatarColor: actor.avatarColor,
+    fromAvatarUrl: actor.avatarUrl,
+    fromAvatarText: actor.avatarText,
+    activityId: activity._id,
+    activityTitle: text(activity.title, LIMITS.title),
+    commentId: comment._id,
+    content: comment.content,
+    read: false,
+    createTime: comment.createTime,
+  })
+}
+
+/**
+ * 我的通知：按时间倒序取最近一批，并带出未读数。
+ * 只按 toOpenid 单字段查询后内存里排序 / 统计，与留言一样避开复合索引。
+ */
+async function listNotifications(event, openid) {
+  if (!openid) return fail('UNAUTHORIZED', '请先登录')
+  const res = await notifications.where({ toOpenid: openid }).limit(NOTIFY_LIMIT).get()
+  const rows = ((res && res.data) || []).sort((a, b) => (b.createTime || 0) - (a.createTime || 0))
+  return {
+    list: rows.map(publicNotification),
+    unreadCount: rows.filter((item) => !item.read).length,
+  }
+}
+
+/** 未读数：只给「我的」上的红点用，不返回列表 */
+async function unreadNotifications(event, openid) {
+  if (!openid) return fail('UNAUTHORIZED', '请先登录')
+  const res = await notifications.where({ toOpenid: openid }).limit(NOTIFY_LIMIT).get()
+  return { count: ((res && res.data) || []).filter((item) => !item.read).length }
+}
+
+/** 标记单条通知已读：只能标记发给自己的那条 */
+async function readNotification(event, openid) {
+  if (!openid) return fail('UNAUTHORIZED', '请先登录')
+  const id = String((event && event.id) || '')
+  if (!id) return fail('INVALID_PARAM', '请选择要读的消息')
+  let doc = null
+  try {
+    const res = await notifications.doc(id).get()
+    doc = (res && res.data) || null
+  } catch (e) {
+    doc = null
+  }
+  if (!doc) return fail('NOT_FOUND', '消息不存在')
+  if (doc.toOpenid !== openid) return fail('FORBIDDEN', '只能操作自己的消息')
+  if (!doc.read) await notifications.doc(id).update({ data: { read: true } })
+  return { id, read: true }
+}
+
+/** 全部标记已读：只按 toOpenid 单字段批量更新，重复执行幂等 */
+async function readAllNotifications(event, openid) {
+  if (!openid) return fail('UNAUTHORIZED', '请先登录')
+  await notifications.where({ toOpenid: openid }).update({ data: { read: true } })
+  return { ok: true }
 }
 
 /* ------------------------------ 注销账号 ------------------------------ */
@@ -1227,6 +1355,37 @@ async function removeComments(openid, activityIds) {
 }
 
 /**
+ * 删除该用户的站内通知：发给他的、他发出的，以及被删活动下的通知。
+ *
+ * 通知里带着对方的昵称头像快照与留言正文，注销后留着就等于「内容删了、痕迹还在」，
+ * 与「账号信息与相关数据永久删除」的承诺冲突。
+ * @param {string} openid 注销用户
+ * @param {string[]} activityIds 被一并删除的活动 id
+ * @returns {Promise<number>} 删除的通知条数
+ */
+async function removeNotifications(openid, activityIds) {
+  let removed = 0
+  const purge = async (condition) => {
+    for (;;) {
+      const res = await notifications.where(condition).limit(DELETE_BATCH).get()
+      const rows = res.data || []
+      if (!rows.length) break
+      for (let i = 0; i < rows.length; i += 1) {
+        await notifications.doc(rows[i]._id).remove()
+        removed += 1
+      }
+      if (rows.length < DELETE_BATCH) break
+    }
+  }
+  await purge({ toOpenid: openid })
+  await purge({ fromOpenid: openid })
+  for (let i = 0; i < (activityIds || []).length; i += 1) {
+    await purge({ activityId: activityIds[i] })
+  }
+  return removed
+}
+
+/**
  * 删除云存储文件。
  * 删不掉不阻塞注销：活动已经删除，残留文件不会再被任何入口引用，日志留痕即可。
  * @returns {Promise<number>} 实际删除的文件数
@@ -1291,6 +1450,7 @@ async function deleteAccount(event, openid) {
   const files = await removeCloudFiles(published.fileIDs)
   const joins = await removeJoinRecords(openid)
   const commentsRemoved = await removeComments(openid, published.activityIds)
+  const notificationsRemoved = await removeNotifications(openid, published.activityIds)
   // 反馈与举报（kind: 'report'）存在同一个集合里，按 openid 一次清掉
   const fb = await feedbacks.where({ openid }).remove()
   const feedbacksRemoved = (fb && fb.stats && fb.stats.removed) || 0
@@ -1302,6 +1462,7 @@ async function deleteAccount(event, openid) {
     files,
     joins,
     comments: commentsRemoved,
+    notifications: notificationsRemoved,
     feedbacks: feedbacksRemoved,
   }
 }
@@ -1442,6 +1603,10 @@ const ACTIONS = {
   comments: commentsOf,
   comment: addComment,
   commentRemove: removeComment,
+  notifications: listNotifications,
+  notificationUnread: unreadNotifications,
+  notificationRead: readNotification,
+  notificationReadAll: readAllNotifications,
   deleteAccount,
 }
 

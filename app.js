@@ -30,6 +30,8 @@ App({
     locationDenied: false,
     // 已登录用户
     user: null,
+    // 未读消息数：底部 tab 的小红点与「我的 → 消息」入口上的数字共用这一份
+    unreadCount: 0,
   },
 
   onLaunch() {
@@ -71,6 +73,8 @@ App({
   /** 登录态变化后同步 globalData、本地缓存与已打开页面上的 user 数据 */
   applyUser(user) {
     this.setUser(user)
+    // 登录态失效 / 注销后未读数要跟着归零，否则底部 tab 的小红点会一直亮着
+    if (!this.globalData.user) this.setUnreadCount(0)
     const pages = getCurrentPages ? getCurrentPages() : []
     pages.forEach((page) => {
       if (!page || !page.setData || !page.data || !('user' in page.data)) return
@@ -152,5 +156,63 @@ App({
     } else {
       removeStorage(KEYS.user)
     }
+  },
+
+  /**
+   * 未读消息数：底部 tab 的小红点与「我的 → 消息」入口共用同一份数据。
+   *
+   * 三个 tab 页的 onShow 都可能触发这次刷新，同一时刻只发一次请求 ——
+   * 首屏那次 home 请求本来就紧张，不该被三个并发的未读查询挤掉。
+   * 未登录或接口失败一律按 0 处理：红点是锦上添花，不能因为一次失败一直亮着。
+   * @param {object} [page] 需要同步小红点的页面（通常是调用方自己）
+   * @returns {Promise<number>} 未读条数
+   */
+  refreshUnread(page) {
+    // 先把本地那份推给 tabBar：切 tab 时能立刻画对，不用等接口回来
+    this.syncUnread(page)
+    if (!this.globalData.user) {
+      this.globalData.unreadCount = 0
+      this.syncUnread(page)
+      return Promise.resolve(0)
+    }
+    if (this._unreadPending) {
+      return this._unreadPending.then((count) => {
+        this.syncUnread(page)
+        return count
+      })
+    }
+    this._unreadPending = api
+      .notificationUnread()
+      .then((res) => (res && res.count) || 0)
+      .catch(() => 0)
+      .then((count) => {
+        this._unreadPending = null
+        this.globalData.unreadCount = count
+        this.syncUnread(page)
+        return count
+      })
+    return this._unreadPending
+  },
+
+  /**
+   * 把 globalData 里的未读数推给自定义 tabBar。
+   * 页面还没挂上 tabBar（首帧）或不是 tab 页时静默跳过，不影响业务。
+   */
+  syncUnread(page) {
+    let target = page
+    if (!target && getCurrentPages) {
+      const pages = getCurrentPages()
+      target = pages[pages.length - 1]
+    }
+    const bar = target && target.getTabBar && target.getTabBar()
+    if (bar) bar.setData({ unread: this.globalData.unreadCount || 0 })
+  },
+
+  /** 本地直接改未读数（消息中心读掉一条时用），tab 小红点立刻跟着变 */
+  setUnreadCount(count) {
+    const value = Number(count)
+    this.globalData.unreadCount = !Number.isFinite(value) || value < 0 ? 0 : value
+    this.syncUnread()
+    return this.globalData.unreadCount
   },
 })

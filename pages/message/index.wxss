@@ -1,0 +1,112 @@
+.msg-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16rpx 32rpx;
+  background: var(--brand-soft);
+}
+
+.msg-bar-text {
+  font-size: 24rpx;
+  color: var(--brand);
+}
+
+.msg-read-all {
+  font-size: 24rpx;
+  color: var(--brand-dark);
+}
+
+.msg-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.msg-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 24rpx;
+}
+
+.msg-item + .msg-item {
+  margin-top: 20rpx;
+}
+
+/* 未读：左侧一条主色竖条 + 右侧一个圆点，扫一眼就能看出哪几条没读过 */
+.msg-item.unread {
+  border-left: 6rpx solid var(--brand);
+}
+
+.msg-main {
+  flex: 1;
+  min-width: 0;
+  margin-left: 18rpx;
+}
+
+.msg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.msg-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.msg-time {
+  flex: 0 0 auto;
+  margin-left: 12rpx;
+  font-size: 20rpx;
+  color: var(--text-light);
+}
+
+.msg-action {
+  display: block;
+  margin-top: 4rpx;
+  font-size: 24rpx;
+  color: var(--text-sub);
+}
+
+.msg-content {
+  display: block;
+  margin-top: 8rpx;
+  word-break: break-word;
+  white-space: pre-wrap;
+  font-size: 26rpx;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.msg-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10rpx;
+}
+
+.msg-activity {
+  flex: 1;
+  min-width: 0;
+  font-size: 22rpx;
+  color: var(--text-light);
+}
+
+.msg-dot {
+  flex: 0 0 auto;
+  width: 14rpx;
+  height: 14rpx;
+  margin-left: 12rpx;
+  border-radius: 50%;
+  background: var(--orange);
+}
+
+.msg-empty {
+  display: block;
+  padding: 60rpx 0;
+  text-align: center;
+  font-size: 26rpx;
+  color: var(--text-light);
+}

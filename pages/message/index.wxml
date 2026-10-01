@@ -1,0 +1,67 @@
+<view class="page">
+  <navigation-bar title="消息" color="#2D3748" background="#FFFFFF"></navigation-bar>
+
+  <view wx:if="{{list.length && unreadCount}}" class="msg-bar">
+    <text class="msg-bar-text">共 {{unreadCount}} 条未读</text>
+    <text class="msg-read-all" bindtap="onReadAll">全部已读</text>
+  </view>
+
+  <scroll-view
+    class="page-scroll"
+    scroll-y
+    refresher-enabled="{{true}}"
+    refresher-triggered="{{refreshing}}"
+    bindrefresherrefresh="onRefresh"
+  >
+    <view class="scroll-body">
+      <view wx:if="{{list.length}}" class="msg-list">
+        <view
+          class="msg-item card {{item.read ? '' : 'unread'}}"
+          wx:for="{{list}}"
+          wx:key="id"
+          data-id="{{item.id}}"
+          bindtap="onItemTap"
+        >
+          <avatar
+            url="{{item.from.avatarUrl}}"
+            color="{{item.from.avatarColor}}"
+            text="{{item.from.avatarText}}"
+            size="sm"
+          ></avatar>
+          <view class="msg-main">
+            <view class="msg-head">
+              <text class="msg-name ellipsis">{{item.from.nickName}}</text>
+              <text class="msg-time">{{item.timeLabel}}</text>
+            </view>
+            <text class="msg-action">{{item.actionText}}</text>
+            <text class="msg-content">{{item.content}}</text>
+            <view class="msg-foot">
+              <text class="msg-activity ellipsis">来自「{{item.activityTitle}}」</text>
+              <text wx:if="{{!item.read}}" class="msg-dot"></text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <text wx:elif="{{loading}}" class="msg-empty">消息加载中…</text>
+
+      <empty-state
+        wx:if="{{!loading && !list.length && needLogin}}"
+        icon="🔔"
+        text="登录后查看留言与回复通知"
+        buttonText="微信一键登录"
+        bindaction="onLoginTap"
+      ></empty-state>
+
+      <empty-state
+        wx:elif="{{!loading && !list.length}}"
+        icon="🔔"
+        text="还没有新消息"
+        buttonText="去逛逛"
+        bindaction="goSquare"
+      ></empty-state>
+    </view>
+  </scroll-view>
+
+  <login-modal id="login-modal"></login-modal>
+</view>

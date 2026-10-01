@@ -6,7 +6,11 @@
     data-index="{{index}}"
     catchtap="switchTab"
   >
-    <view class="tab-icon tab-icon-{{item.icon}}"></view>
+    <!-- 未读小红点：只挂在「我的」上，没进「我的」也能看到有新消息 -->
+    <view class="tab-icon-wrap">
+      <view class="tab-icon tab-icon-{{item.icon}}"></view>
+      <view wx:if="{{item.icon === 'user' && unread}}" class="tab-badge"></view>
+    </view>
     <text class="tab-text">{{item.text}}</text>
   </view>
 </view>

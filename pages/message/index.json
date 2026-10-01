@@ -1,0 +1,9 @@
+{
+  "navigationBarTitleText": "消息 · 旷行吖",
+  "usingComponents": {
+    "navigation-bar": "/components/navigation-bar/navigation-bar",
+    "avatar": "/components/avatar/index",
+    "empty-state": "/components/empty-state/index",
+    "login-modal": "/components/login-modal/index"
+  }
+}

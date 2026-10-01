@@ -120,7 +120,64 @@ function mockPublicComment(record, openid, canRemoveAll) {
   delete item.status
   item.isMine = !!openid && record.openid === openid
   item.canRemove = !!(item.isMine || canRemoveAll)
+  // 回复关系（与云端 publicComment 同一口径）：parentId 是所属一级留言，
+  // replyToId / replyToName 是直接回复的那条留言与作者昵称快照，统一成字符串
+  item.parentId = String(record.parentId || '')
+  item.replyToId = String(record.replyToId || '')
+  item.replyToName = String(record.replyToName || '')
   return item
+}
+
+/** 站内通知对外结构：抹掉收发双方 openid，只留展示需要的快照（与云端 publicNotification 一致） */
+function mockPublicNotification(record) {
+  const source = record || {}
+  const nickName = String(source.fromNickName || '微信用户')
+  return {
+    id: source.id,
+    type: source.type || 'comment',
+    activityId: source.activityId || '',
+    activityTitle: source.activityTitle || '',
+    commentId: source.commentId || '',
+    content: source.content || '',
+    read: !!source.read,
+    createTime: source.createTime || 0,
+    from: {
+      nickName,
+      avatarColor: source.fromAvatarColor || '#4ECDC4',
+      avatarUrl: source.fromAvatarUrl || '',
+      avatarText: source.fromAvatarText || nickName.slice(0, 1),
+    },
+  }
+}
+
+/**
+ * 留言 / 回复产生的站内通知（与云端 notifyForComment 同一套规则）：
+ * 一级留言通知活动发起人，回复通知被回复那条留言的作者；自己给自己留言不通知。
+ */
+function mockNotifyForComment(activity, comment, user, target) {
+  const toOpenid = target
+    ? String(target.openid || '')
+    : String((activity.organizer && activity.organizer.openid) || '')
+  if (!toOpenid || toOpenid === user.openid) return
+  const list = mock.notificationList()
+  list.push({
+    id: mockId('mock_notify'),
+    toOpenid,
+    type: target ? 'reply' : 'comment',
+    // 发送者快照：openid 只落库用于清理，展示与下拉都只用昵称头像与活动 id
+    fromOpenid: user.openid,
+    fromNickName: user.nickName,
+    fromAvatarColor: user.avatarColor,
+    fromAvatarUrl: user.avatarUrl || '',
+    fromAvatarText: user.avatarText,
+    activityId: activity.id || activity._id || '',
+    activityTitle: activity.title || '',
+    commentId: comment.id,
+    content: comment.content,
+    read: false,
+    createTime: comment.createTime,
+  })
+  mock.saveNotifications(list)
 }
 
 /** Mock 版文本送检：命中违规词视为不通，供昵称这类短文本复用 */
@@ -719,7 +776,7 @@ const mockApi = {
     return withDelay({ list })
   },
 
-  comment(id, content) {
+  comment(id, content, replyToId) {
     const user = mock.currentUser()
     if (!user) return fail('UNAUTHORIZED', '请先登录')
     const activity = mock.findActivity(id)
@@ -731,16 +788,33 @@ const mockApi = {
     if (!value) return fail('INVALID_PARAM', '请填写留言内容')
     if (mockTextRisky(value)) return fail('CONTENT_RISKY', '留言包含违规内容，请修改后重试')
 
+    // 回复：只允许回复同一活动里未删除的留言，并记下它所属的一级留言（与云端同一套规则）
+    const targetId = String(replyToId || '')
+    let target = null
+    if (targetId) {
+      target =
+        mock
+          .commentList(id)
+          .filter((item) => (item.id === targetId || item._id === targetId) && item.status !== MOCK_COMMENT_REMOVED)[0] ||
+        null
+      if (!target) return fail('NOT_FOUND', '要回复的留言不存在或已删除')
+    }
+    const targetKey = target ? String(target.id || target._id) : ''
+
     const record = Object.assign(mock.memberOf(user), {
       id: mockId('mock_comment'),
       activityId: id,
       content: value,
       createTime: Date.now(),
       status: 'visible',
+      parentId: target ? String(target.parentId || targetKey) : '',
+      replyToId: targetKey,
+      replyToName: target ? String(target.nickName || '微信用户') : '',
     })
     const list = mock.commentList(id)
     list.push(record)
     mock.saveComments(id, list)
+    mockNotifyForComment(activity, record, user, target)
     return withDelay(mockPublicComment(record, user.openid, false))
   },
 
@@ -768,6 +842,56 @@ const mockApi = {
     })
     mock.saveComments(id, list)
     return withDelay({ id: targetId, removed: true })
+  },
+
+  /* ------------------------- 站内通知（新留言 / 回复） ------------------------- */
+  // 与云端 activity 云函数的 notifications / notificationUnread / notificationRead /
+  // notificationReadAll 一一对应：新留言通知发起人、回复通知被回复人。
+
+  notifications() {
+    const user = mock.currentUser()
+    if (!user) return fail('UNAUTHORIZED', '请先登录')
+    const list = mock
+      .notificationList()
+      .filter((item) => item.toOpenid === user.openid)
+      .sort((a, b) => (b.createTime || 0) - (a.createTime || 0))
+    return withDelay({
+      list: list.map(mockPublicNotification),
+      unreadCount: list.filter((item) => !item.read).length,
+    })
+  },
+
+  notificationUnread() {
+    const user = mock.currentUser()
+    if (!user) return fail('UNAUTHORIZED', '请先登录')
+    const count = mock
+      .notificationList()
+      .filter((item) => item.toOpenid === user.openid && !item.read).length
+    return withDelay({ count })
+  },
+
+  notificationRead(id) {
+    const user = mock.currentUser()
+    if (!user) return fail('UNAUTHORIZED', '请先登录')
+    const targetId = String(id || '')
+    if (!targetId) return fail('INVALID_PARAM', '请选择要读的消息')
+    const list = mock.notificationList()
+    const index = list.findIndex((item) => item.id === targetId)
+    if (index === -1) return fail('NOT_FOUND', '消息不存在')
+    if (list[index].toOpenid !== user.openid) return fail('FORBIDDEN', '只能操作自己的消息')
+    list[index] = Object.assign({}, list[index], { read: true })
+    mock.saveNotifications(list)
+    return withDelay({ id: targetId, read: true })
+  },
+
+  notificationReadAll() {
+    const user = mock.currentUser()
+    if (!user) return fail('UNAUTHORIZED', '请先登录')
+    const list = mock
+      .notificationList()
+      .map((item) => (item.toOpenid === user.openid ? Object.assign({}, item, { read: true }) : item))
+    mock.saveNotifications(list)
+    return withDelay({ ok: true })
   },
 
   /** Mock 的封面 / 二维码是本机临时路径，没有云存储文件需要换临时链接 */
@@ -829,7 +953,24 @@ const mockApi = {
     })
     setStorage(mock.MOCK_COMMENT_MAP, commentMap)
 
-    return withDelay({ ok: true, activities: published.length, joins, comments: commentsRemoved })
+    // 站内通知同样是用户数据：发给他的、他发出的，以及被删活动下的通知一并清掉
+    const notifyList = mock.notificationList()
+    const keptNotify = notifyList.filter(
+      (item) =>
+        item.toOpenid !== user.openid &&
+        item.fromOpenid !== user.openid &&
+        publishedIds.indexOf(item.activityId) === -1
+    )
+    const notificationsRemoved = notifyList.length - keptNotify.length
+    mock.saveNotifications(keptNotify)
+
+    return withDelay({
+      ok: true,
+      activities: published.length,
+      joins,
+      comments: commentsRemoved,
+      notifications: notificationsRemoved,
+    })
   },
 
   /* ------------------------- 本地审核（仅 Mock 模式） ------------------------- */
@@ -970,13 +1111,33 @@ const cloudApi = {
     return callCloud('comments', { id })
   },
 
-  comment(id, content) {
-    return callCloud('comment', { id, content })
+  /** 留言；传 replyToId 即回复某条留言（见云端 addComment） */
+  comment(id, content, replyToId) {
+    return callCloud('comment', { id, content, replyToId: replyToId || '' })
   },
 
   commentRemove(id, commentId) {
     return callCloud('commentRemove', { id, commentId })
   },
+
+  /** 我的站内通知列表（含未读数）：新留言通知发起人、回复通知被回复人 */
+  notifications() {
+    return callCloud('notifications', {})
+  },
+
+  /** 未读数：只给「我的」上的红点用 */
+  notificationUnread() {
+    return callCloud('notificationUnread', {})
+  },
+
+  notificationRead(id) {
+    return callCloud('notificationRead', { id })
+  },
+
+  notificationReadAll() {
+    return callCloud('notificationReadAll', {})
+  },
+
   /** 注销账号：云端会删除账号、其发布的活动（含云存储文件）、报名记录与反馈 */
   deleteAccount() {
     return callCloud('deleteAccount', {})

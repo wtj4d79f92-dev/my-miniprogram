@@ -18,6 +18,8 @@ Page({
     joinedCount: 0,
     publishedCount: 0,
     needProfile: false,
+    // 未读消息数：只用于「消息」入口上的红点，大于 0 才显示
+    unreadCount: 0,
     // 用户量少，暂时不在「我的」展示用户 ID，需要时改回 true 即可
     showUserId: false,
     // 是否是审核人：决定「活动审核」入口是否展示
@@ -42,6 +44,7 @@ Page({
     }
     this.syncUser()
     this.loadStats()
+    this.loadUnread()
     this.checkAdmin()
   },
 
@@ -97,6 +100,19 @@ Page({
       })
       .catch(() => {
         this.setData({ joinedCount: 0, publishedCount: 0 })
+      })
+  },
+
+  /**
+   * 未读消息数：与底部 tab 的小红点共用 app 里那一份（只拉数字、不拉列表），
+   * 拿到后同时刷新「消息」入口上的角标。
+   */
+  loadUnread() {
+    return getApp()
+      .refreshUnread(this)
+      .then((count) => {
+        this.setData({ unreadCount: count })
+        return count
       })
   },
 
@@ -300,6 +316,15 @@ Page({
     wx.navigateTo({ url: '/pages/feedback/index' })
   },
 
+  /** 消息中心：新留言 / 回复通知的落点，红点数字来自 notificationUnread */
+  goMessage() {
+    this.ensureLogin('查看消息需要先登录，是否立即登录？').then((user) => {
+      if (!user) return
+      this.handleLoginSuccess(user)
+      wx.navigateTo({ url: '/pages/message/index' })
+    })
+  },
+
   /* ------------------------------ 注销账号 ------------------------------ */
 
   /**
@@ -362,11 +387,14 @@ Page({
     }
     // 审核入口按 openid 判断，换账号后要重新问一次
     this._adminChecked = false
+    // 未读数存在 app 里，注销后要一起清掉，否则底部 tab 的小红点会一直亮着
+    getApp().setUnreadCount(0)
     this.setData({
       user: null,
       needProfile: false,
       joinedCount: 0,
       publishedCount: 0,
+      unreadCount: 0,
       isAdmin: false,
       showProfile: false,
       showPhone: false,
@@ -381,5 +409,6 @@ Page({
   onLogin(e) {
     this.handleLoginSuccess(e.detail)
     this.loadStats()
+    this.loadUnread()
   },
 })

@@ -149,6 +149,40 @@ function publicComment(doc, openid, canRemoveAll) {
   item.nickName = nickName
   item.isMine = !!openid && doc.openid === openid
   item.canRemove = !!(item.isMine || canRemoveAll)
+  // 回复关系：parentId 是所属的一级留言（前端据此把回复挂到对应留言下），
+  // replyToId / replyToName 是这条回复直接针对的那条留言与作者昵称快照（用于「回复 @某某」）。
+  // 三个字段都归一成字符串，前端不必再判 undefined。
+  item.parentId = String(doc.parentId || '')
+  item.replyToId = String(doc.replyToId || '')
+  item.replyToName = text(doc.replyToName, LIMITS.nickName)
+  return item
+}
+
+/**
+ * 站内通知对外输出：补 id、抹掉收发双方的 openid。
+ *
+ * 通知只有收件人自己能拉取（见云函数的 notifications action），
+ * 但 openid 依旧不下发 —— 前端展示只需要昵称头像快照与跳转用的活动 id。
+ * @param {Object} doc 数据库里的通知文档
+ */
+function publicNotification(doc) {
+  if (!doc) return null
+  const item = {
+    id: doc._id,
+    type: doc.type || 'comment',
+    activityId: doc.activityId || '',
+    activityTitle: text(doc.activityTitle, LIMITS.title),
+    commentId: doc.commentId || '',
+    content: text(doc.content, LIMITS.comment),
+    read: !!doc.read,
+    createTime: doc.createTime || 0,
+    from: {
+      nickName: text(doc.fromNickName, LIMITS.nickName) || '微信用户',
+      avatarColor: doc.fromAvatarColor || AVATAR_COLORS[0],
+      avatarUrl: doc.fromAvatarUrl || '',
+      avatarText: doc.fromAvatarText || (text(doc.fromNickName, LIMITS.nickName) || '微信用户').slice(0, 1),
+    },
+  }
   return item
 }
 
@@ -174,6 +208,7 @@ module.exports = {
   memberOf,
   publicMember,
   publicComment,
+  publicNotification,
   publicActivity,
   withId,
   txDoc,

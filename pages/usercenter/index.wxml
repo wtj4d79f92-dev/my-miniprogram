@@ -43,6 +43,12 @@
 
       <!-- 功能入口 -->
       <view class="entry-group card">
+        <view class="entry" bindtap="goMessage">
+          <text class="entry-icon">🔔</text>
+          <text class="entry-title">消息</text>
+          <text wx:if="{{unreadCount}}" class="entry-badge">{{unreadCount > 99 ? '99+' : unreadCount}}</text>
+          <text class="entry-arrow">›</text>
+        </view>
         <view wx:if="{{user && !user.phone}}" class="entry" bindtap="openPhone">
           <text class="entry-icon">📱</text>
           <view class="entry-main">

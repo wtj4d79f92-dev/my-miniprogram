@@ -177,33 +177,78 @@
             <text class="comment-sub">仅参与本活动的人可见</text>
           </view>
 
+          <!-- 两级结构：一级留言下面是它的回复。回复某条留言时会通知被回复的人（见云端 notifyForComment） -->
           <view wx:if="{{comments.length}}" class="comment-list">
-            <view class="comment-item" wx:for="{{comments}}" wx:key="id">
-              <avatar
-                url="{{item.avatarUrl}}"
-                color="{{item.avatarColor}}"
-                text="{{item.avatarText}}"
-                size="sm"
-              ></avatar>
-              <view class="comment-main">
-                <view class="comment-head">
-                  <text class="comment-name ellipsis">{{item.nickName}}</text>
-                  <text class="comment-time">{{item.timeLabel}}</text>
+            <view class="comment-thread" wx:for="{{comments}}" wx:key="id" wx:for-item="root">
+              <view class="comment-item">
+                <avatar
+                  url="{{root.avatarUrl}}"
+                  color="{{root.avatarColor}}"
+                  text="{{root.avatarText}}"
+                  size="sm"
+                ></avatar>
+                <view class="comment-main">
+                  <view class="comment-head">
+                    <text class="comment-name ellipsis">{{root.nickName}}</text>
+                    <text class="comment-time">{{root.timeLabel}}</text>
+                  </view>
+                  <text class="comment-text">{{root.content}}</text>
+                  <view class="comment-actions">
+                    <text
+                      class="comment-action"
+                      data-comment-id="{{root.id}}"
+                      bindtap="onCommentReply"
+                    >回复</text>
+                    <text
+                      wx:if="{{root.canRemove}}"
+                      class="comment-action"
+                      data-comment-id="{{root.id}}"
+                      bindtap="onCommentRemove"
+                    >删除</text>
+                    <text
+                      wx:if="{{!root.isMine}}"
+                      class="comment-action"
+                      data-comment-id="{{root.id}}"
+                      bindtap="onCommentReport"
+                    >举报</text>
+                  </view>
                 </view>
-                <text class="comment-text">{{item.content}}</text>
-                <view class="comment-actions">
-                  <text
-                    wx:if="{{item.canRemove}}"
-                    class="comment-action"
-                    data-comment-id="{{item.id}}"
-                    bindtap="onCommentRemove"
-                  >删除</text>
-                  <text
-                    wx:if="{{!item.isMine}}"
-                    class="comment-action"
-                    data-comment-id="{{item.id}}"
-                    bindtap="onCommentReport"
-                  >举报</text>
+              </view>
+
+              <view wx:if="{{root.replies.length}}" class="comment-replies">
+                <view class="comment-item comment-reply" wx:for="{{root.replies}}" wx:key="id" wx:for-item="reply">
+                  <avatar
+                    url="{{reply.avatarUrl}}"
+                    color="{{reply.avatarColor}}"
+                    text="{{reply.avatarText}}"
+                    size="sm"
+                  ></avatar>
+                  <view class="comment-main">
+                    <view class="comment-head">
+                      <text class="comment-name ellipsis">{{reply.nickName}}</text>
+                      <text class="comment-time">{{reply.timeLabel}}</text>
+                    </view>
+                    <text class="comment-text"><text wx:if="{{reply.replyToLabel}}" class="comment-reply-to">回复 @{{reply.replyToLabel}}：</text>{{reply.content}}</text>
+                    <view class="comment-actions">
+                      <text
+                        class="comment-action"
+                        data-comment-id="{{reply.id}}"
+                        bindtap="onCommentReply"
+                      >回复</text>
+                      <text
+                        wx:if="{{reply.canRemove}}"
+                        class="comment-action"
+                        data-comment-id="{{reply.id}}"
+                        bindtap="onCommentRemove"
+                      >删除</text>
+                      <text
+                        wx:if="{{!reply.isMine}}"
+                        class="comment-action"
+                        data-comment-id="{{reply.id}}"
+                        bindtap="onCommentReport"
+                      >举报</text>
+                    </view>
+                  </view>
                 </view>
               </view>
             </view>
@@ -211,12 +256,18 @@
           <text wx:elif="{{commentsLoading}}" class="comment-empty">留言加载中…</text>
           <text wx:else class="comment-empty">还没有留言，说说集合安排、拼车或装备吧</text>
 
+          <!-- 回复态提示条：点「回复」后出现，发送或取消后消失 -->
+          <view wx:if="{{replyTarget}}" class="comment-reply-bar">
+            <text class="comment-reply-tip">正在回复 @{{replyTarget.nickName}}</text>
+            <text class="comment-reply-cancel" bindtap="cancelCommentReply">取消</text>
+          </view>
+
           <view class="comment-input-row">
             <input
               class="comment-input"
               value="{{commentInput}}"
               maxlength="200"
-              placeholder="说点什么，只有参与活动的人能看到"
+              placeholder="{{commentPlaceholder}}"
               confirm-type="send"
               bindinput="onCommentInput"
               bindconfirm="submitComment"

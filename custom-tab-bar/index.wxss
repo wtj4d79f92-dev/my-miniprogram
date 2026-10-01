@@ -26,6 +26,13 @@
   box-sizing: border-box;
 }
 
+.tab-icon-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .tab-icon {
   width: 44rpx;
   height: 44rpx;
@@ -36,6 +43,19 @@
   mask-repeat: no-repeat;
   -webkit-mask-position: center;
   mask-position: center;
+}
+
+/* 未读小红点：白色描边让它在图标和背景上都看得清 */
+.tab-badge {
+  position: absolute;
+  top: -4rpx;
+  right: -12rpx;
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  background: #e5484d;
+  border: 3rpx solid #ffffff;
+  box-sizing: border-box;
 }
 
 .tab-icon-home {

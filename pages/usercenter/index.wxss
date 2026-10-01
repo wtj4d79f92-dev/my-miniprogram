@@ -171,6 +171,20 @@
   color: var(--text-light);
 }
 
+/* 未读消息红点：只在有未读时渲染，99 条以上显示 99+ */
+.entry-badge {
+  flex: 0 0 auto;
+  min-width: 36rpx;
+  margin-right: 12rpx;
+  padding: 0 12rpx;
+  border-radius: 999rpx;
+  background: #e5484d;
+  color: #ffffff;
+  font-size: 20rpx;
+  line-height: 36rpx;
+  text-align: center;
+}
+
 /* 注销账号：破坏性操作，文案用警示色与常规入口区分 */
 .entry-danger .entry-title {
   color: #e5484d;

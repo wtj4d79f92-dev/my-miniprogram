@@ -18,6 +18,7 @@ const store = {
   banners: [],
   feedback: [],
   activity_comments: [],
+  notifications: [],
   admins: [],
   activity_audits: [],
 }
@@ -1982,6 +1983,117 @@ async function run() {
   log(commentAfterQuit.code === 'FORBIDDEN', '留言：退出活动后不再能查看留言')
   await callActivity('join', { id: 'act_privacy' }, OTHER)
 
+  /* ---------- 站内通知：新留言通知发起人，回复通知被回复人 ---------- */
+  // 通知是留言的附属产物：一级留言通知活动发起人，回复通知被回复那条留言的作者；
+  // 自己给自己留言不产生通知，通知里不带任何 openid。
+  const notifyCountBefore = store.notifications.length
+  const memberComment = await callActivity('comment', { id: 'act_privacy', content: '我带了对讲机，路上联系' }, OTHER)
+  const notifyAfterMember = store.notifications[store.notifications.length - 1]
+  log(
+    store.notifications.length === notifyCountBefore + 1 &&
+      !!notifyAfterMember &&
+      notifyAfterMember.toOpenid === ORGANIZER &&
+      notifyAfterMember.type === 'comment' &&
+      notifyAfterMember.commentId === memberComment.id &&
+      notifyAfterMember.activityId === 'act_privacy',
+    '通知：一级留言通知活动发起人，带上留言 id 与活动 id'
+  )
+
+  const organizerSelfComment = await callActivity(
+    'comment',
+    { id: 'act_privacy', content: '我在自己发起的活动里补一句' },
+    ORGANIZER
+  )
+  log(
+    !!organizerSelfComment.id && store.notifications.length === notifyCountBefore + 1,
+    '通知：发起人在自己活动里留言不给自己发通知'
+  )
+
+  const replyByOrganizer = await callActivity(
+    'comment',
+    { id: 'act_privacy', content: '收到，地铁口见', replyToId: memberComment.id },
+    ORGANIZER
+  )
+  log(
+    replyByOrganizer.parentId === memberComment.id &&
+      replyByOrganizer.replyToId === memberComment.id &&
+      replyByOrganizer.replyToName === memberComment.nickName,
+    '回复：挂在一级留言下，并带上被回复人的昵称快照'
+  )
+  const notifyAfterReply = store.notifications[store.notifications.length - 1]
+  log(
+    store.notifications.length === notifyCountBefore + 2 &&
+      !!notifyAfterReply &&
+      notifyAfterReply.toOpenid === OTHER &&
+      notifyAfterReply.type === 'reply' &&
+      notifyAfterReply.content.indexOf('地铁口') > -1,
+    '通知：回复通知被回复的留言作者，正文按回复内容快照'
+  )
+
+  const replyEmpty = await callActivity(
+    'comment',
+    { id: 'act_privacy', content: '回复一条不存在的留言', replyToId: 'comment_not_exist' },
+    OTHER
+  )
+  log(replyEmpty.code === 'NOT_FOUND', '回复：被回复的留言不存在时拒绝写入')
+  const replyRemoved = await callActivity(
+    'comment',
+    { id: 'act_privacy', content: '回复一条已删除的留言', replyToId: commentByMember.id },
+    OTHER
+  )
+  log(replyRemoved.code === 'NOT_FOUND', '回复：被回复的留言已删除时拒绝写入')
+  const replyByStranger = await callActivity(
+    'comment',
+    { id: 'act_privacy', content: '外人来回复', replyToId: memberComment.id },
+    'openid_stranger'
+  )
+  log(replyByStranger.code === 'FORBIDDEN', '回复：没参加活动的人不能回复')
+
+  // 通知列表：只能看到发给自己的那批，且不下发任何 openid
+  const notifyGuest = await callActivity('notifications', {}, '')
+  log(notifyGuest.code === 'UNAUTHORIZED', '通知列表：未登录不能拉取')
+  const organizerNotify = await callActivity('notifications', {}, ORGANIZER)
+  log(
+    organizerNotify.unreadCount >= 1 &&
+      organizerNotify.list.length >= 1 &&
+      organizerNotify.list.every(
+        (item) => item.toOpenid === undefined && item.fromOpenid === undefined && !!item.from && !!item.from.nickName
+      ) &&
+      organizerNotify.list.every((item) => item.activityId === 'act_privacy'),
+    '通知列表：只返回自己的通知，不下发 openid，带发送者快照与活动 id'
+  )
+  const notifyOrder = organizerNotify.list.map((item) => item.createTime)
+  log(
+    notifyOrder.every((ts, index) => index === 0 || notifyOrder[index - 1] >= ts),
+    '通知列表：按时间倒序，最新的在最前'
+  )
+  const outsiderNotify = await callActivity('notifications', {}, 'openid_stranger')
+  log(outsiderNotify.list.length === 0 && outsiderNotify.unreadCount === 0, '通知列表：别人的通知看不到')
+
+  // 已读：只能操作自己的那条
+  const targetNotify = organizerNotify.list[0]
+  const readByStranger = await callActivity('notificationRead', { id: targetNotify.id }, 'openid_stranger')
+  log(readByStranger.code === 'FORBIDDEN', '通知已读：不能标记别人的通知')
+  const readMissing = await callActivity('notificationRead', { id: 'notify_not_exist' }, ORGANIZER)
+  log(readMissing.code === 'NOT_FOUND', '通知已读：不存在的通知按不存在处理')
+  const readOne = await callActivity('notificationRead', { id: targetNotify.id }, ORGANIZER)
+  log(readOne.read === true, '通知已读：能标记自己的通知')
+  const afterRead = await callActivity('notifications', {}, ORGANIZER)
+  log(
+    afterRead.unreadCount === organizerNotify.unreadCount - 1 &&
+      afterRead.list.filter((item) => item.id === targetNotify.id)[0].read === true,
+    '通知已读：读过的那条不再计入未读数'
+  )
+  const unreadOnly = await callActivity('notificationUnread', {}, ORGANIZER)
+  log(unreadOnly.count === afterRead.unreadCount, '通知未读数：与列表里的未读数同一口径')
+  const readAll = await callActivity('notificationReadAll', {}, ORGANIZER)
+  log(readAll.ok === true, '通知已读：支持一次全部标记已读')
+  const afterReadAll = await callActivity('notifications', {}, ORGANIZER)
+  log(
+    afterReadAll.unreadCount === 0 && afterReadAll.list.every((item) => item.read),
+    '通知已读：全部标记后未读数归零'
+  )
+
   /* ---------- 注销账号：账号、发布、报名、反馈与云存储文件一次清干净 ---------- */
   resetStore()
   seedUser(ORGANIZER, '发起人')
@@ -2035,6 +2147,52 @@ async function run() {
     createTime: Date.now(),
     status: 'visible',
   })
+  store.notifications.push(
+    {
+      _id: 'nt_to_me',
+      toOpenid: OTHER,
+      fromOpenid: ORGANIZER,
+      type: 'comment',
+      activityId: sharedActivity._id,
+      commentId: 'cm_other',
+      content: '别人发给我的一条通知',
+      read: false,
+      createTime: Date.now(),
+    },
+    {
+      _id: 'nt_from_me',
+      toOpenid: ORGANIZER,
+      fromOpenid: OTHER,
+      type: 'reply',
+      activityId: sharedActivity._id,
+      commentId: 'cm_mine',
+      content: '我发给别人的一条通知',
+      read: false,
+      createTime: Date.now(),
+    },
+    {
+      _id: 'nt_on_own',
+      toOpenid: ORGANIZER,
+      fromOpenid: 'openid_third',
+      type: 'comment',
+      activityId: ownActivity._id,
+      commentId: 'cm_on_own',
+      content: '我发布的活动下的通知',
+      read: false,
+      createTime: Date.now(),
+    },
+    {
+      _id: 'nt_other',
+      toOpenid: ORGANIZER,
+      fromOpenid: 'openid_third',
+      type: 'comment',
+      activityId: sharedActivity._id,
+      commentId: 'cm_other',
+      content: '与我无关的一条通知',
+      read: false,
+      createTime: Date.now(),
+    }
+  )
 
   const deleted = await callActivity('deleteAccount', {}, OTHER)
   log(!!deleted && deleted.ok === true, '注销：云函数返回成功')
@@ -2062,6 +2220,12 @@ async function run() {
     store.activity_comments.every((item) => item.openid !== OTHER) &&
       store.activity_comments.some((item) => item._id === 'cm_other'),
     '注销：自己发过的留言（含别人活动里的）一并删除，别人的留言保持不动'
+  )
+  log(
+    !store.notifications.some((item) => item.toOpenid === OTHER || item.fromOpenid === OTHER) &&
+      !store.notifications.some((item) => item.activityId === ownActivity._id) &&
+      store.notifications.some((item) => item._id === 'nt_other'),
+    '注销：发给自己的、自己发出的、被删活动下的通知一并清理，别人的通知保持不动'
   )
   log(
     deletedFiles.indexOf('cloud://env/cover.png') > -1 &&
