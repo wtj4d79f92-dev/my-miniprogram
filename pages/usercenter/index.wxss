@@ -177,7 +177,7 @@
   min-width: 36rpx;
   margin-right: 12rpx;
   padding: 0 12rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: #e5484d;
   color: #ffffff;
   font-size: 20rpx;
@@ -250,7 +250,7 @@
   align-items: center;
   margin-top: 30rpx;
   padding: 20rpx 24rpx;
-  border-radius: 16rpx;
+  border-radius: var(--radius-sm);
   background: #f6f8f8;
 }
 
@@ -282,7 +282,7 @@
   margin-top: 30rpx;
   height: 92rpx;
   padding: 0 28rpx;
-  border-radius: 16rpx;
+  border-radius: var(--radius-sm);
   background: #f6f8f8;
   font-size: 30rpx;
   color: var(--text);

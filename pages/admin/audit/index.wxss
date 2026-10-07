@@ -37,7 +37,7 @@
   width: 100%;
   margin-top: 28rpx;
   padding: 22rpx 24rpx;
-  border-radius: 16rpx;
+  border-radius: var(--radius-sm);
   background: #ffffff;
   color: var(--text-sub);
   font-size: 24rpx;
@@ -54,7 +54,7 @@
   display: flex;
   margin: 16rpx 24rpx 0;
   padding: 24rpx 0;
-  border-radius: 24rpx;
+  border-radius: var(--radius);
   background: var(--card-sheen);
   box-shadow: var(--shadow), var(--card-inner);
 }
@@ -113,7 +113,8 @@
   align-items: center;
   margin: 16rpx 24rpx 0;
   padding: 0 12rpx 0 24rpx;
-  border-radius: 999rpx;
+  /* 搜索框统一用 --radius，别单独做成胶囊 */
+  border-radius: var(--radius);
   background: var(--card-sheen);
   box-shadow: var(--shadow), var(--card-inner);
 }
@@ -127,7 +128,7 @@
 
 .search-btn {
   padding: 12rpx 24rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   color: var(--brand);
   font-size: 26rpx;
 }
@@ -136,7 +137,7 @@
 .audit-card {
   margin-top: 20rpx;
   padding: 24rpx;
-  border-radius: 24rpx;
+  border-radius: var(--radius);
   background: var(--card-sheen);
   box-shadow: var(--shadow), var(--card-inner);
 }
@@ -150,7 +151,7 @@
   width: 150rpx;
   height: 150rpx;
   margin-right: 20rpx;
-  border-radius: 16rpx;
+  border-radius: var(--radius-sm);
   background: var(--line);
 }
 
@@ -320,7 +321,7 @@
   height: 60rpx;
   margin-left: 16rpx;
   padding: 0 24rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   font-size: 26rpx;
 }
 
@@ -353,7 +354,7 @@
 .migrate {
   margin-top: 40rpx;
   padding: 24rpx;
-  border-radius: 16rpx;
+  border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.7);
   color: var(--text-on-bg-sub);
   font-size: 22rpx;
@@ -385,7 +386,7 @@
   flex-direction: column;
   max-height: 84vh;
   padding: 32rpx 32rpx calc(32rpx + env(safe-area-inset-bottom));
-  border-radius: 32rpx 32rpx 0 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   background: #ffffff;
   box-sizing: border-box;
 }
@@ -438,7 +439,7 @@
   width: 100%;
   height: 300rpx;
   margin-top: 20rpx;
-  border-radius: 20rpx;
+  border-radius: var(--radius);
   background: var(--line);
 }
 
@@ -529,7 +530,7 @@
   width: 320rpx;
   height: 320rpx;
   margin-top: 16rpx;
-  border-radius: 16rpx;
+  border-radius: var(--radius-sm);
   background: var(--line);
 }
 
@@ -569,7 +570,7 @@
 .reject-preset {
   margin: 0 16rpx 16rpx 0;
   padding: 12rpx 24rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: var(--bg);
   color: var(--text-sub);
   font-size: 24rpx;
@@ -585,7 +586,7 @@
   height: 200rpx;
   margin-top: 12rpx;
   padding: 20rpx 24rpx;
-  border-radius: 16rpx;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   color: var(--text);
   font-size: 26rpx;

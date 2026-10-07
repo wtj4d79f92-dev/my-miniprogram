@@ -16,9 +16,14 @@
    * 不做 backdrop-filter：tabBar 是独立渲染层，底下透出来的只有页面底色，磨砂没有可磨的内容。
    */
   background: rgba(255, 255, 255, 0.86);
-  /* 暖色描边 + 上投影：tabBar 也是浮在暖砂底色上的一层 */
-  border-top: 2rpx solid rgba(74, 58, 35, 0.08);
-  box-shadow: 0 -8rpx 26rpx rgba(74, 58, 35, 0.12);
+  /*
+   * 圆角与卡片 / 横幅 / 搜索框对齐（page 上的 --radius：24rpx）。
+   * tabBar 拿不到 page 的 CSS 变量，这里写字面量，改全局圆角时记得同步。
+   * 顶端不再描那条硬边（border-top），改成一片大范围的柔和上投影 ——
+   * 底栏是浮在暖砂上的一层"面"，靠投影和底色拉开，不靠描边。
+   */
+  border-radius: 24rpx 24rpx 0 0;
+  box-shadow: 0 -8rpx 26rpx rgba(58, 44, 24, 0.10), 0 -24rpx 64rpx rgba(58, 44, 24, 0.12);
 }
 
 .tab-item {

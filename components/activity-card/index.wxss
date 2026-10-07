@@ -44,7 +44,7 @@
   left: 20rpx;
   top: 20rpx;
   padding: 6rpx 20rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: rgba(255, 255, 255, 0.92);
   font-size: 22rpx;
   color: var(--text);
@@ -55,7 +55,7 @@
   right: 20rpx;
   top: 20rpx;
   padding: 6rpx 20rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: rgba(45, 55, 72, 0.65);
   color: #ffffff;
   font-size: 22rpx;
@@ -134,7 +134,7 @@
   flex: none;
   margin-left: 12rpx;
   padding: 0 12rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   font-size: 20rpx;
   line-height: 1.7;
   color: var(--brand);
@@ -220,7 +220,7 @@
   height: 60rpx;
   margin-right: 16rpx;
   padding: 0 28rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   border: 2rpx solid var(--brand);
   color: var(--brand);
   font-size: 26rpx;
@@ -242,7 +242,7 @@
   min-width: 140rpx;
   height: 60rpx;
   padding: 0 28rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   border: 2rpx solid var(--brand);
   color: var(--brand);
   font-size: 26rpx;

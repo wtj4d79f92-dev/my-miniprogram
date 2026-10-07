@@ -30,7 +30,7 @@
 
 .locate-switch {
   padding: 8rpx 24rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: var(--brand-soft);
   color: var(--brand);
   font-size: 24rpx;
@@ -42,7 +42,8 @@
   height: 84rpx;
   margin-top: 20rpx;
   padding: 0 10rpx 0 26rpx;
-  border-radius: 999rpx;
+  /* 搜索框跟横幅、卡片同一个圆角，别单独做成胶囊 */
+  border-radius: var(--radius);
   background: var(--card-sheen);
   box-shadow: var(--shadow), var(--card-inner);
 }
@@ -64,7 +65,7 @@
   justify-content: center;
   height: 64rpx;
   padding: 0 34rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: linear-gradient(135deg, #00b578 0%, #43cea2 100%);
   color: #ffffff;
   font-size: 26rpx;
@@ -73,8 +74,8 @@
 .banner {
   height: 280rpx;
   margin-top: 24rpx;
-  /* 横幅也按卡片看：和骨架态一样带 3D 悬浮投影，圆角由 .banner-item 裁出来 */
-  border-radius: 24rpx;
+  /* 横幅也按卡片看：和骨架态一样带悬浮投影，圆角由 .banner-item 裁出来 */
+  border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
 
@@ -85,7 +86,7 @@
   justify-content: center;
   height: 100%;
   padding: 0 40rpx;
-  border-radius: 24rpx;
+  border-radius: var(--radius);
   box-sizing: border-box;
   /* 配图铺满整条横幅，圆角要靠容器裁掉 */
   overflow: hidden;
@@ -157,7 +158,7 @@
   width: 88rpx;
   height: 88rpx;
   overflow: hidden;
-  border-radius: 28rpx;
+  border-radius: var(--radius);
   font-size: 40rpx;
 }
 
@@ -174,7 +175,7 @@
 .fallback-tip {
   margin: 24rpx 0 4rpx;
   padding: 18rpx 24rpx;
-  border-radius: 16rpx;
+  border-radius: var(--radius-sm);
   background: #fff7e8;
   color: #b26a00;
   font-size: 24rpx;
@@ -184,7 +185,7 @@
 .single-page-tip {
   margin: 16rpx 0 0;
   padding: 18rpx 24rpx;
-  border-radius: 16rpx;
+  border-radius: var(--radius-sm);
   background: var(--brand-soft);
   color: var(--text-sub);
   font-size: 24rpx;
@@ -211,7 +212,7 @@
   justify-content: center;
   height: 96rpx;
   padding: 0 34rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   transform: translateX(-50%);
   background: linear-gradient(135deg, #00b578 0%, #43cea2 100%);
   box-shadow: 0 12rpx 32rpx rgba(0, 181, 120, 0.35);
@@ -244,7 +245,7 @@
 }
 
 .banner-skeleton {
-  border-radius: 24rpx;
+  border-radius: var(--radius);
 }
 
 .skeleton-card {
@@ -266,7 +267,7 @@
 .skeleton-line {
   height: 24rpx;
   margin-top: 20rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: #e6ecf2;
 }
 

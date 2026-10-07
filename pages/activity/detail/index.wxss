@@ -11,7 +11,7 @@
   flex: none;
   margin-left: 16rpx;
   padding: 2rpx 14rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   font-size: 22rpx;
   line-height: 1.6;
   color: var(--brand);
@@ -26,7 +26,7 @@
   position: relative;
   height: 380rpx;
   margin-top: 16rpx;
-  border-radius: 24rpx;
+  border-radius: var(--radius);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -63,7 +63,7 @@
   right: 20rpx;
   top: 20rpx;
   padding: 8rpx 22rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: rgba(255, 255, 255, 0.92);
   font-size: 24rpx;
   color: var(--text);
@@ -286,7 +286,7 @@
 .comment-replies {
   margin: 0 0 4rpx 0;
   padding: 0 16rpx;
-  border-radius: 16rpx;
+  border-radius: var(--radius-sm);
   background: var(--bg);
 }
 
@@ -309,7 +309,7 @@
   justify-content: space-between;
   margin-top: 20rpx;
   padding: 12rpx 24rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: var(--brand-soft);
 }
 
@@ -362,7 +362,7 @@
   min-width: 0;
   height: 76rpx;
   padding: 0 24rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: var(--bg);
   font-size: 26rpx;
   color: var(--text);
@@ -376,7 +376,7 @@
   width: 132rpx;
   height: 76rpx;
   margin-left: 16rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: var(--brand);
   color: #ffffff;
   font-size: 26rpx;
@@ -449,10 +449,10 @@
 .action-bar {
   flex: none;
   padding: 16rpx 24rpx calc(16rpx + env(safe-area-inset-bottom));
-  /* 底部操作条与卡片同一套玻璃材质：半透明白 + 亮色上边 */
+  /* 底部操作条与卡片、tabBar 同一套玻璃材质：半透明白，靠柔和上投影和内容分层，不描硬边 */
   background: var(--bar-bg);
-  border-top: 2rpx solid rgba(255, 255, 255, 0.6);
-  box-shadow: 0 -8rpx 26rpx rgba(74, 58, 35, 0.12);
+  /* 上投影跟 tabBar 同一套：大范围、低透明度，别再压一道贴边的深影 */
+  box-shadow: 0 -8rpx 26rpx rgba(58, 44, 24, 0.10), 0 -24rpx 64rpx rgba(58, 44, 24, 0.10);
 }
 
 .agree-row {
@@ -519,7 +519,7 @@
   height: 88rpx;
   margin-right: 16rpx;
   padding: 0 34rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   border: 2rpx solid var(--brand);
   color: var(--brand);
   font-size: 28rpx;
@@ -534,7 +534,7 @@
   justify-content: center;
   height: 88rpx;
   margin-right: 16rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: var(--brand);
   /* 描边的退出活动按钮自带 2rpx 边框，这里补一条同色边框，两个按钮外框尺寸完全对齐 */
   border: 2rpx solid var(--brand);
@@ -549,7 +549,7 @@
   align-items: center;
   justify-content: center;
   height: 88rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: linear-gradient(135deg, #00b578 0%, #43cea2 100%);
   color: #ffffff;
   font-size: 30rpx;
@@ -662,7 +662,7 @@
   width: 400rpx;
   height: 400rpx;
   margin: 28rpx 0 20rpx;
-  border-radius: 20rpx;
+  border-radius: var(--radius);
   background: #f7fafa;
 }
 
@@ -719,7 +719,7 @@
   flex-direction: column;
   margin-top: 20rpx;
   padding: 24rpx;
-  border-radius: 20rpx;
+  border-radius: var(--radius);
 }
 
 .audit-banner.pending {

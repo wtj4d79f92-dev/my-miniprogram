@@ -69,7 +69,7 @@
   align-items: center;
   justify-content: center;
   height: 64rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   border: 2rpx solid var(--brand);
   color: var(--brand);
   font-size: 26rpx;

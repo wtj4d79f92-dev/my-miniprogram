@@ -25,18 +25,29 @@ page {
    * 后面同一声明块里的变量跟着一起失效（卡面直接变透明）。
    */
   --card-sheen: linear-gradient(168deg, rgba(255, 255, 255, 0.86) 0%, rgba(255, 255, 255, 0.74) 50%, rgba(255, 255, 255, 0.68) 100%);
-  /* 玻璃边缘：外侧一圈亮边（画在元素外面，不会被封面图盖住） */
-  --card-edge: 0 0 0 2rpx rgba(255, 255, 255, 0.75);
-  /* 玻璃内里：内圈亮边勾出玻璃的壁厚 + 顶部受光的高光 + 底部内阴影，一块有厚度的玻璃 */
-  --card-inner: inset 0 0 0 3rpx rgba(255, 255, 255, 0.95), inset 0 6rpx 10rpx rgba(255, 255, 255, 0.92), inset 0 -22rpx 36rpx rgba(74, 58, 35, 0.08);
-  --radius: 24rpx;
   /*
-   * 悬浮投影分三层：贴边接触影勾轮廓 / 中层影把卡片"垫"起来 / 大范围环境影拉开悬浮感。
-   * 越靠近卡片的影越深越紧，远影越散越淡，这是"厚重"的关键 —— 单层影只会显得卡片很薄。
+   * 玻璃内里：一圈很淡的亮边勾玻璃的壁厚 + 顶部受光的高光 + 底部内阴影。
+   * 亮边原来 3rpx / 0.95 太实，卡面下沿会显出一道白线，看着像描了边框 ——
+   * 压到 2rpx / 0.6，只留"这块玻璃有厚度"的暗示，轮廓交给下面的柔和投影去交代。
    */
-  --shadow: var(--card-edge), 0 3rpx 0 rgba(120, 100, 72, 0.16), 0 3rpx 8rpx rgba(58, 44, 24, 0.12), 0 14rpx 28rpx rgba(58, 44, 24, 0.18), 0 32rpx 66rpx rgba(58, 44, 24, 0.24);
+  --card-inner: inset 0 0 0 2rpx rgba(255, 255, 255, 0.6), inset 0 6rpx 12rpx rgba(255, 255, 255, 0.85), inset 0 -22rpx 36rpx rgba(74, 58, 35, 0.06);
+  /*
+   * 圆角尺度：所有"面"共用一套刻度，不再各写各的 —— 同类元素圆角不一致，页面就会显脏。
+   * 胶囊（按钮/标签）用 --radius-pill，卡内小面板用 --radius-sm，
+   * 卡片/横幅/搜索框/封面/弹窗一律用 --radius，大浮层（半屏弹层）用 --radius-lg。
+   */
+  --radius-pill: 999rpx;
+  --radius-sm: 16rpx;
+  --radius: 24rpx;
+  --radius-lg: 32rpx;
+  /*
+   * 悬浮投影：只留三层大范围、低透明度的落影，越远越散越淡，卡片像浮在暖砂上方。
+   * 这里刻意不要外圈亮边描边（原来是 --card-edge），也不要贴边的接触影 ——
+   * 那两道硬边会把卡片"钉"回底色上，看着像描了边框，而不是浮起来。
+   */
+  --shadow: 0 10rpx 24rpx rgba(58, 44, 24, 0.10), 0 26rpx 60rpx rgba(58, 44, 24, 0.15), 0 52rpx 110rpx rgba(58, 44, 24, 0.16);
   /* 按压态：投影收拢并变浅，配合 translateY 下沉 */
-  --shadow-press: 0 0 0 2rpx rgba(255, 255, 255, 0.55), 0 1rpx 3rpx rgba(58, 44, 24, 0.14), 0 5rpx 12rpx rgba(58, 44, 24, 0.16);
+  --shadow-press: 0 4rpx 14rpx rgba(58, 44, 24, 0.12), 0 14rpx 34rpx rgba(58, 44, 24, 0.12);
   /*
    * 固定在页面上的浮层（tabBar、底部操作条）也用半透明白，和卡片同一套材质。
    * 这里不加 backdrop-filter：这几个浮层和滚动内容是并列的两层，不是叠在一起，
@@ -247,7 +258,7 @@ page {
   display: inline-flex;
   align-items: center;
   padding: 4rpx 14rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   font-size: 22rpx;
   line-height: 1.5;
 }
@@ -272,7 +283,7 @@ page {
   align-items: center;
   justify-content: center;
   height: 88rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: linear-gradient(135deg, #00b578 0%, #43cea2 100%);
   color: #ffffff;
   font-size: 30rpx;
@@ -289,7 +300,7 @@ page {
   align-items: center;
   justify-content: center;
   height: 88rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   border: 2rpx solid var(--brand);
   color: var(--brand);
   font-size: 30rpx;
@@ -302,7 +313,7 @@ page {
   align-items: center;
   justify-content: center;
   height: 72rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: #f1f3f4;
   color: var(--text-sub);
   font-size: 26rpx;
@@ -344,7 +355,7 @@ page {
   bottom: 0;
   z-index: 901;
   background: #ffffff;
-  border-radius: 28rpx 28rpx 0 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   padding-bottom: env(safe-area-inset-bottom);
   box-sizing: border-box;
 }
@@ -380,7 +391,7 @@ page {
   transform: translateY(-50%);
   z-index: 901;
   background: #ffffff;
-  border-radius: 24rpx;
+  border-radius: var(--radius);
   padding: 36rpx 32rpx 28rpx;
   box-sizing: border-box;
 }

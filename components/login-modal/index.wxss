@@ -105,7 +105,7 @@
 .login-reason {
   margin-top: 44rpx;
   padding: 10rpx 26rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: var(--brand-soft);
 }
 
@@ -213,7 +213,7 @@
 
 .login-btn-main {
   min-height: 128rpx;
-  border-radius: 24rpx;
+  border-radius: var(--radius);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -239,7 +239,7 @@
   min-height: 104rpx;
   margin-top: 24rpx;
   border: 2rpx solid #e3eaea;
-  border-radius: 24rpx;
+  border-radius: var(--radius);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -423,7 +423,7 @@
   align-items: center;
   margin-top: 48rpx;
   padding: 22rpx 26rpx;
-  border-radius: 16rpx;
+  border-radius: var(--radius-sm);
   background: #f6f8f8;
   box-sizing: border-box;
 }

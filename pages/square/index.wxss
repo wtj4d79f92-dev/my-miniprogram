@@ -30,7 +30,7 @@
 
 .locate-switch {
   padding: 8rpx 24rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: var(--brand-soft);
   color: var(--brand);
   font-size: 24rpx;
@@ -41,7 +41,8 @@
   align-items: center;
   height: 78rpx;
   padding: 0 10rpx 0 24rpx;
-  border-radius: 999rpx;
+  /* 搜索框跟首页、横幅、卡片同一个圆角 */
+  border-radius: var(--radius);
   background: #f4f7f6;
 }
 
@@ -68,7 +69,7 @@
   justify-content: center;
   height: 60rpx;
   padding: 0 30rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: linear-gradient(135deg, #00b578 0%, #43cea2 100%);
   color: #ffffff;
   font-size: 26rpx;
@@ -115,7 +116,7 @@
   align-items: center;
   margin-right: 10rpx;
   padding: 8rpx 16rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: #f4f7f6;
 }
 
@@ -144,7 +145,7 @@
   align-items: center;
   margin-right: 10rpx;
   padding: 8rpx 16rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: #f4f7f6;
 }
 
@@ -175,7 +176,7 @@
   display: flex;
   align-items: center;
   padding: 8rpx 16rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: #f4f7f6;
 }
 
@@ -195,7 +196,7 @@
   flex-wrap: wrap;
   margin-top: 16rpx;
   padding: 16rpx 8rpx 8rpx;
-  border-radius: 16rpx;
+  border-radius: var(--radius-sm);
   background: #f7fafa;
 }
 
@@ -219,7 +220,7 @@
   flex-wrap: wrap;
   margin-top: 16rpx;
   padding: 16rpx 8rpx 8rpx;
-  border-radius: 16rpx;
+  border-radius: var(--radius-sm);
   background: #f7fafa;
 }
 
@@ -241,7 +242,7 @@
 .fallback-tip {
   margin: 20rpx 0 4rpx;
   padding: 18rpx 24rpx;
-  border-radius: 16rpx;
+  border-radius: var(--radius-sm);
   background: #fff7e8;
   color: #b26a00;
   font-size: 24rpx;
@@ -275,7 +276,7 @@
   justify-content: center;
   height: 96rpx;
   padding: 0 34rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   transform: translateX(-50%);
   background: linear-gradient(135deg, #00b578 0%, #43cea2 100%);
   box-shadow: 0 12rpx 32rpx rgba(0, 181, 120, 0.35);
