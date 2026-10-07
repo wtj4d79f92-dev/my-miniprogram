@@ -6,16 +6,21 @@
   align-items: center;
 }
 
-/* 地点可点击调起地图，给一个轻量的「可点」提示 */
+/* 「导航」是地点这一行唯一的点击热区，内边距放大让热区更好点 */
 .field-nav {
   flex: none;
-  margin-left: 16rpx;
-  padding: 2rpx 14rpx;
+  margin-left: 12rpx;
+  padding: 6rpx 16rpx;
   border-radius: var(--radius-pill);
   font-size: 22rpx;
   line-height: 1.6;
   color: var(--brand);
   background: var(--brand-soft);
+}
+
+/* 导航热区的按压反馈：卡片行本身不再可点，反馈落在按钮上 */
+.nav-press {
+  opacity: 0.7;
 }
 
 .detail-body {
@@ -197,11 +202,6 @@
   border-bottom: 2rpx solid var(--line);
 }
 
-/* 可点的两行（导航 / 活动群）：值用主色，和纯展示行区分开 */
-.prep-row-tap .prep-value {
-  color: var(--brand);
-}
-
 .prep-label {
   flex: 0 0 140rpx;
   font-size: 26rpx;
@@ -217,8 +217,11 @@
 
 .prep-nav {
   margin-left: 12rpx;
+  padding: 6rpx 16rpx;
+  border-radius: var(--radius-pill);
   font-size: 24rpx;
   color: var(--brand);
+  background: var(--brand-soft);
 }
 
 .prep-note {

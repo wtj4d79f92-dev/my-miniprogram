@@ -132,16 +132,21 @@
   color: var(--text);
 }
 
-/* 地点可点：点一下就用地图软件导航，和详情页同一套行为 */
+/* 「导航」胶囊是唯一点击热区：点它就用地图软件导航，和详情页同一套行为。
+   内边距放大一点，让热区不小于手指宽度，避免点不准 */
 .act-nav {
   flex: none;
-  margin-left: 12rpx;
-  padding: 0 12rpx;
+  margin-left: 8rpx;
+  padding: 6rpx 16rpx;
   border-radius: var(--radius-pill);
   font-size: 20rpx;
   line-height: 1.7;
   color: var(--brand);
   background: var(--brand-soft);
+}
+
+.act-nav-press {
+  opacity: 0.7;
 }
 
 .act-metric {

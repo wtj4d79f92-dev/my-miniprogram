@@ -68,7 +68,20 @@
         hover-class="btn-press"
         hover-start-time="0"
         hover-stay-time="80"
-      >{{item.emoji ? item.emoji + ' ' : ''}}{{item.name}}</view>
+      >
+        <!-- 与首页金刚区同一套线性图标（utils/type-icons.js）；「全部类型」没有类型，自然不渲染图标 -->
+        <image
+          wx:if="{{item.icon && !iconErrorMap[item.key]}}"
+          class="type-panel-icon"
+          src="{{item.icon}}"
+          mode="aspectFit"
+          data-key="{{item.key}}"
+          binderror="onTypeIconError"
+        />
+        <!-- 图标解码失败时退回 emoji，与图标占同一个位置 -->
+        <text wx:elif="{{item.emoji}}" class="type-panel-emoji">{{item.emoji}}</text>
+        <text>{{item.name}}</text>
+      </view>
     </view>
 
     <view wx:if="{{weekdayOpen}}" class="weekday-panel">

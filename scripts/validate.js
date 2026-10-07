@@ -3909,6 +3909,8 @@ function checkTypeIcons() {
   const homeWxss = read('pages/home/home.wxss')
   const publishWxml = read('pages/activity/publish/index.wxml')
   const publishWxss = read('pages/activity/publish/index.wxss')
+  const squareWxml = read('pages/square/index.wxml')
+  const squareWxss = read('pages/square/index.wxss')
   const dict = require(path.join(ROOT, 'utils/dict'))
   const { TYPE_ICONS, TYPE_ICON_STROKE } = require(path.join(ROOT, 'utils/type-icons'))
   const types = dict.TYPE_GRID
@@ -3947,6 +3949,20 @@ function checkTypeIcons() {
   log(
     homeWxml.indexOf('type-icon-img') > -1 && publishWxml.indexOf('type-icon-img') > -1,
     '金刚区：首页与发布页渲染的是同一套线性图标'
+  )
+  // 广场的「活动类型」下拉也是同一批玩法：漏掉它就会出现「首页是线性图标、筛选里还是 emoji」
+  log(
+    /class="type-panel-icon"[\s\S]*?src="\{\{item\.icon\}\}"/.test(squareWxml) &&
+      squareWxml.indexOf("item.emoji + ' '") === -1,
+    '活动广场：类型筛选渲染的是同一套线性图标，不再拼 emoji'
+  )
+  log(
+    (squareWxss.match(/\.type-panel-icon \{[\s\S]*?\}/) || [''])[0].indexOf('width: 30rpx') > -1,
+    '活动广场：筛选里的图标按图片尺寸给宽高'
+  )
+  log(
+    /binderror="onTypeIconError"/.test(squareWxml) && squareWxml.indexOf('type-panel-emoji') > -1,
+    '活动广场：类型图标加载失败时回退显示 emoji'
   )
   // 图标解码失败要退回 emoji，格子不能空着（原设计文档 6.3.2 的要求）
   log(

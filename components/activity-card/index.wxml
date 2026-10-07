@@ -33,11 +33,12 @@
       <text class="act-date">{{act.dateText}}</text>
     </view>
 
-    <!-- 点地点直接调起地图导航，catchtap 拦住卡片本身的「进详情」 -->
-    <view class="act-row" catchtap="onLocationTap">
+    <!-- 只有「导航」胶囊本身可点：点它直接调起地图导航，catchtap 拦住卡片本身的「进详情」；
+         地点文字只是展示，误触整行不再跳地图 -->
+    <view class="act-row">
       <text class="act-label">地点</text>
       <text class="act-location ellipsis">{{act.location}}</text>
-      <text class="act-nav">导航</text>
+      <text class="act-nav" catchtap="onLocationTap" hover-class="act-nav-press" hover-start-time="0" hover-stay-time="80">导航</text>
     </view>
 
     <view class="act-row" wx:if="{{act.showMetrics}}">

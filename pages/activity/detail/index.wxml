@@ -81,11 +81,11 @@
             <text class="organizer-date">{{activity.startLabel}}</text>
           </view>
 
-          <!-- 点击地点调起地图：选中地图软件后地址会一起带过去导航 -->
-          <view class="field-row field-row-tap" bindtap="onLocationTap" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
+          <!-- 只有右侧「导航」按钮可点：点它调起地图，选中地图软件后地址会一起带过去导航 -->
+          <view class="field-row field-row-tap">
             <text class="field-label">地点</text>
             <text class="field-value">{{activity.location}}</text>
-            <text class="field-nav">导航 ›</text>
+            <text class="field-nav" bindtap="onLocationTap" hover-class="nav-press" hover-start-time="0" hover-stay-time="80">导航 ›</text>
           </view>
 
           <view class="field-row" wx:if="{{activity.showMetrics && activity.hasDistance}}">
@@ -134,10 +134,10 @@
             <text class="section-title">行前信息</text>
           </view>
           <text class="prep-sub">你的报名已生效，以下信息在小程序内就能看到</text>
-          <view class="prep-row prep-row-tap" bindtap="onLocationTap" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
+          <view class="prep-row prep-row-tap">
             <text class="prep-label">集合地点</text>
             <text class="prep-value ellipsis">{{activity.location}}</text>
-            <text class="prep-nav">导航 ›</text>
+            <text class="prep-nav" bindtap="onLocationTap" hover-class="nav-press" hover-start-time="0" hover-stay-time="80">导航 ›</text>
           </view>
           <view class="prep-row">
             <text class="prep-label">集合时间</text>

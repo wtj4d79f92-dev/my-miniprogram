@@ -203,10 +203,27 @@
   /* 预留 1px，避免部分机型取整后每行只排得下 3 个 */
   flex: 0 0 calc(25% - 1px);
   min-width: 0;
+  /* 图标 + 名称作为一组居中，与原来「emoji + 名称」的对齐方式保持一致 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 14rpx 0;
-  text-align: center;
   font-size: 26rpx;
   color: var(--text-sub);
+}
+
+/* 与首页金刚区同源的类型图标（utils/type-icons.js） */
+.type-panel-icon {
+  flex: 0 0 auto;
+  width: 30rpx;
+  height: 30rpx;
+  margin-right: 8rpx;
+}
+
+/* 只在图标解码失败时出现：顶上图标的位置 */
+.type-panel-emoji {
+  margin-right: 8rpx;
+  font-size: 26rpx;
 }
 
 .type-panel-item.active {

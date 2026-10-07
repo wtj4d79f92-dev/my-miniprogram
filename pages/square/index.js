@@ -28,6 +28,8 @@ Page({
     typeOptions: TYPE_OPTIONS,
     typeLabel: TYPE_PLACEHOLDER,
     typeOpen: false,
+    // 类型图标按 key 记失败状态：data URI 正常不会失败，留一手兜底，筛选项不至于空着
+    iconErrorMap: {},
     sortOptions: SORT_OPTIONS,
     weekdayOptions: WEEKDAY_OPTIONS,
     city: '',
@@ -237,6 +239,13 @@ Page({
     const type = e.currentTarget.dataset.type || 'all'
     this.setData({ type, typeLabel: typeLabelOf(type), typeOpen: false })
     this.loadList(true)
+  },
+
+  /** 类型图标解码失败：这一项退回 emoji，其余筛选项不受影响 */
+  onTypeIconError(e) {
+    const key = e.currentTarget.dataset.key
+    if (!key || this.data.iconErrorMap[key]) return
+    this.setData({ [`iconErrorMap.${key}`]: true })
   },
 
   onSortTap(e) {
