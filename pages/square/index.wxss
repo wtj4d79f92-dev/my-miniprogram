@@ -45,15 +45,16 @@
 .search-row {
   display: flex;
   align-items: center;
-  height: 78rpx;
-  padding: 0 10rpx 0 24rpx;
-  /* 搜索框跟首页、横幅、卡片同一个圆角 */
+  height: 84rpx;
+  padding: 0 24rpx;
+  /* 与首页搜索框同一套材质：同圆角、同玻璃底、同投影 */
   border-radius: var(--radius);
-  background: #f4f7f6;
+  background: var(--card-sheen);
+  box-shadow: var(--shadow), var(--card-inner);
 }
 
 .search-icon {
-  font-size: 24rpx;
+  font-size: 26rpx;
 }
 
 .search-input {
@@ -63,21 +64,13 @@
   color: var(--text);
 }
 
+.search-placeholder {
+  color: var(--text-light);
+}
+
 .search-clear {
   padding: 0 12rpx;
   color: var(--text-light);
-  font-size: 26rpx;
-}
-
-.search-submit {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 60rpx;
-  padding: 0 30rpx;
-  border-radius: var(--radius-pill);
-  background: linear-gradient(135deg, #00b578 0%, #43cea2 100%);
-  color: #ffffff;
   font-size: 26rpx;
 }
 

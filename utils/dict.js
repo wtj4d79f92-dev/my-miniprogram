@@ -1,7 +1,9 @@
 // 全局字典：活动类型、标签、难度、星期筛选、默认横幅、默认文案
 
+const { TYPE_ICONS } = require('./type-icons')
+
 /** 活动类型字典（key / 名称 / emoji / 主题色 / 渐变） */
-const ACTIVITY_TYPES = [
+const ACTIVITY_TYPE_ROWS = [
   { key: 'hiking', name: '徒步', emoji: '🌿', color: '#4ECDC4', from: '#84fab0', to: '#8fd3f4' },
   { key: 'climbing', name: '爬山', emoji: '🥾', color: '#43cea2', from: '#43cea2', to: '#185a9d' },
   { key: 'driving', name: '自驾游', emoji: '🚗', color: '#45B7D1', from: '#89F7FE', to: '#66A6FF' },
@@ -13,6 +15,14 @@ const ACTIVITY_TYPES = [
   { key: 'swimming', name: '游泳', emoji: '🏊', color: '#00CDAC', from: '#74ebd5', to: '#9face6' },
   { key: 'other', name: '其他', emoji: '🎉', color: '#A8DADC', from: '#E0EAFC', to: '#CFDEF3' },
 ]
+
+/**
+ * 玩法卡片 / 筛选胶囊仍然吃 emoji 与渐变（emoji 在此处是回退素材，见页面里的图标加载失败分支），
+ * 金刚区额外挂一份统一线性图标：icon 是 data URI，页面直接交给 <image>。
+ */
+const ACTIVITY_TYPES = ACTIVITY_TYPE_ROWS.map((item) =>
+  Object.assign({}, item, { icon: TYPE_ICONS[item.key] || '' })
+)
 
 /** 活动标签（仅自驾游 / 徒步 / 爬山可选） */
 const ACTIVITY_TAGS = [

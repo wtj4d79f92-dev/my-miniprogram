@@ -146,6 +146,17 @@
   height: 88rpx;
   overflow: hidden;
   border-radius: var(--radius);
+  /* 十个格子共用同一块极浅品牌底：颜色不再承担「区分功能」的职责，全靠图标形状 */
+  background: var(--brand-soft);
+}
+
+.type-icon-img {
+  width: 52rpx;
+  height: 52rpx;
+}
+
+/* 只在图标解码失败时兜底显示，正常不会出现 */
+.type-icon-emoji {
   font-size: 40rpx;
 }
 

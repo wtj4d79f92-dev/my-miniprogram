@@ -2,6 +2,8 @@
 const KEYS = {
   selectedCity: 'aa_selected_city',
   pendingType: 'square_pending_type',
+  // 首页点搜索框进广场时置位，广场读取后自动聚焦搜索输入框
+  pendingSearch: 'square_pending_search',
   user: 'my_user',
   userCounter: 'my_user_counter',
   lastPhone: 'my_last_phone',

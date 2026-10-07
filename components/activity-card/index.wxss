@@ -20,36 +20,6 @@
   height: 100%;
 }
 
-.poster {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-.poster-title {
-  font-size: 32rpx;
-  font-weight: 700;
-  color: #ffffff;
-}
-
-.poster-sub {
-  margin-top: 8rpx;
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.act-type {
-  position: absolute;
-  left: 20rpx;
-  top: 20rpx;
-  padding: 6rpx 20rpx;
-  border-radius: var(--radius-pill);
-  background: rgba(255, 255, 255, 0.92);
-  font-size: 22rpx;
-  color: var(--text);
-}
-
 .act-closed {
   position: absolute;
   right: 20rpx;
@@ -63,6 +33,39 @@
 
 .act-body {
   padding: 24rpx;
+}
+
+/* 无封面活动（只有默认封面）的版式：不铺装饰图，这行只承载审核 / 关闭状态窄标签
+   （活动类型已挪到卡片底部的费用行左侧） */
+.act-flat-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 16rpx;
+}
+
+.act-status-flat {
+  flex: none;
+  padding: 4rpx 18rpx;
+  border-radius: var(--radius-pill);
+  font-size: 22rpx;
+  line-height: 1.6;
+}
+
+/* 状态窄标签沿用角标的配色口径：审核中橙、未通过红、已关闭/已到期灰 */
+.act-status-flat {
+  background: rgba(45, 55, 72, 0.08);
+  color: var(--text-sub);
+}
+
+.act-status-flat.tone-pending {
+  background: rgba(217, 134, 0, 0.12);
+  color: #d98600;
+}
+
+.act-status-flat.tone-rejected {
+  background: rgba(227, 77, 89, 0.12);
+  color: #e34d59;
 }
 
 .act-title-row {
@@ -155,19 +158,30 @@
   margin-top: 6rpx;
 }
 
-.act-avatars {
+/* 底部左侧：有报名时先排成员头像堆叠，再跟活动类型标签；没人报名时只剩类型标签 */
+.act-foot-left {
   display: flex;
   align-items: center;
 }
 
-.act-avatars .avatar {
+.act-foot-left .avatar {
   margin-right: -12rpx;
 }
 
-.act-people {
-  margin-left: 24rpx;
+/* 活动类型：从卡片顶部挪到底部，占原来「x/y人」的位置。
+   默认左对齐（跟上面的「地点 / 全程」同一条竖线），只有前面排了成员头像时才让出间距 */
+.act-type-tag {
+  flex: none;
+  padding: 4rpx 18rpx;
+  border-radius: var(--radius-pill);
   font-size: 24rpx;
-  color: var(--text-sub);
+  line-height: 1.5;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.act-type-tag.with-avatars {
+  margin-left: 36rpx;
 }
 
 .act-fee {

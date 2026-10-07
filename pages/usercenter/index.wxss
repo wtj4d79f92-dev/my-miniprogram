@@ -143,8 +143,22 @@
   text-align: left;
 }
 
+/*
+ * 入口图标：emoji 换成统一的线性图标（utils/user-icons.js），改用 <image> 渲染。
+ * 原来 .entry-icon 是「固定宽度的文字槽」，现在得显式给宽高；
+ * 40rpx 图标 + 12rpx 留白 = 原来的 52rpx 槽宽，标题的起始位置保持不变。
+ */
 .entry-icon {
+  flex: 0 0 auto;
+  width: 40rpx;
+  height: 40rpx;
+  margin-right: 12rpx;
+}
+
+/* 只在图标解码失败时出现：退回 emoji，槽宽沿用原来的 52rpx，行首不会塌 */
+.entry-icon-emoji {
   width: 52rpx;
+  margin-right: 0;
   font-size: 30rpx;
 }
 

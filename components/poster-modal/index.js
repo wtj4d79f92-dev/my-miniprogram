@@ -232,7 +232,8 @@ Component({
           ctx.fillText('活动介绍', 80, 1178)
           ctx.fillStyle = '#2D3748'
           ctx.font = '26px sans-serif'
-          this.wrapText(ctx, act.desc || '暂无活动介绍，报名前可与发起人沟通确认。', 220, 1178, 450, 36, 2)
+          // 海报上的空介绍兜底文案与详情页保持一致
+          this.wrapText(ctx, act.desc || '暂无活动介绍，报名后可与发起人沟通确认细节。', 220, 1178, 450, 36, 2)
         })
     },
 

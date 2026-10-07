@@ -156,8 +156,19 @@
   height: 84rpx;
   overflow: hidden;
   border-radius: var(--radius);
-  font-size: 38rpx;
   border: 4rpx solid transparent;
+  /* 与首页金刚区共用同一块极浅品牌底，十个类型不再一格子一色 */
+  background: var(--brand-soft);
+}
+
+.type-icon-img {
+  width: 50rpx;
+  height: 50rpx;
+}
+
+/* 只在图标解码失败时兜底显示，正常不会出现 */
+.type-icon-emoji {
+  font-size: 38rpx;
 }
 
 .type-item.active .type-icon {

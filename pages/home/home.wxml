@@ -26,7 +26,7 @@
       </view>
 
       <!-- 搜索入口：极简仿搜索框，整框可点，点击进入活动广场搜索 -->
-      <view class="search-entry" bindtap="goSquare" hover-class="card-press" hover-start-time="0" hover-stay-time="80">
+      <view class="search-entry" bindtap="onSearchTap" hover-class="card-press" hover-start-time="0" hover-stay-time="80">
         <text class="search-icon">🔍</text>
         <text class="search-placeholder">{{texts.searchPlaceholderHome}}</text>
       </view>
@@ -72,8 +72,18 @@
           hover-start-time="0"
           hover-stay-time="80"
         >
-          <view class="type-icon" style="background: {{item.color}}33;">
-            <text>{{item.emoji}}</text>
+          <!-- 图标换成统一的线性图标（utils/type-icons.js）；底色十个格子共用一套，功能只靠形状区分 -->
+          <view class="type-icon">
+            <image
+              wx:if="{{!iconErrorMap[index]}}"
+              class="type-icon-img"
+              src="{{item.icon}}"
+              mode="aspectFit"
+              data-index="{{index}}"
+              binderror="onTypeIconError"
+            />
+            <!-- 图标没解出来时退回 emoji，格子不空着 -->
+            <text wx:else class="type-icon-emoji">{{item.emoji}}</text>
           </view>
           <text class="type-name">{{item.name}}</text>
         </view>

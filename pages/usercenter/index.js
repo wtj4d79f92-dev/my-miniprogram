@@ -4,6 +4,7 @@ const config = require('../../services/config')
 const loginBehavior = require('../../behaviors/login-behavior')
 const ui = require('../../utils/ui')
 const { needProfileSetup, uploadAvatar, usableAvatar } = require('../../utils/profile')
+const { USER_ICONS } = require('../../utils/user-icons')
 
 Page({
   behaviors: [loginBehavior],
@@ -11,6 +12,10 @@ Page({
   data: {
     texts: TEXTS,
     aboutText: TEXTS.about,
+    // 功能入口图标：与首页金刚区同一套线性图标（utils/user-icons.js），按入口 key 取
+    entryIcons: USER_ICONS,
+    // 图标按入口 key 记失败状态：data URI 正常不会失败，留一手兜底，行首不至于空着
+    iconErrorMap: {},
     useMock: config.useMock,
     user: null,
     // 顶部头像：历史版本把本机临时路径存成过头像，那种地址加载不出来，这里按「没有头像」退回首字色块
@@ -306,6 +311,13 @@ Page({
       this.handleLoginSuccess(user)
       wx.navigateTo({ url: '/pages/activity/publish/index' })
     })
+  },
+
+  /** 入口图标解码失败：这一行退回 emoji，其余入口不受影响 */
+  onEntryIconError(e) {
+    const key = e.currentTarget.dataset.key
+    if (!key || this.data.iconErrorMap[key]) return
+    this.setData({ [`iconErrorMap.${key}`]: true })
   },
 
   goSquare() {

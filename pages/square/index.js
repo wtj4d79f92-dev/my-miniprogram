@@ -34,6 +34,8 @@ Page({
     cityLabel: '全部',
     locationDenied: false,
     keyword: '',
+    // 由首页搜索框进来时置位，输入框自动聚焦弹起键盘
+    searchFocus: false,
     type: 'all',
     sort: 'latest',
     weekday: -1,
@@ -79,6 +81,8 @@ Page({
     })
     // 首页玩法 / 横幅带参进入
     this.applyPendingType()
+    // 首页点搜索框进来：自动聚焦搜索输入框
+    this.applyPendingSearch()
     this.syncPageTitle()
     if (this._loadedOnce) {
       this.loadList(true)
@@ -92,6 +96,16 @@ Page({
     if (!pendingType) return
     removeStorage(KEYS.pendingType)
     this.setData({ type: pendingType, typeLabel: typeLabelOf(pendingType) })
+  },
+
+  /**
+   * 首页点搜索框进来：自动聚焦搜索输入框，和首页的「点搜索即搜」连成一步。
+   * 每次 onShow 都按标记重算，避免上次的聚焦态残留、切回广场又弹一次键盘。
+   */
+  applyPendingSearch() {
+    const pending = getStorage(KEYS.pendingSearch, false)
+    if (pending) removeStorage(KEYS.pendingSearch)
+    this.setData({ searchFocus: !!pending })
   },
 
   buildQuery() {
@@ -202,6 +216,11 @@ Page({
 
   onKeywordConfirm() {
     this.loadList(true)
+  },
+
+  /** 失焦收起聚焦标记，避免切走再回来又自动弹一次键盘 */
+  onSearchBlur() {
+    if (this.data.searchFocus) this.setData({ searchFocus: false })
   },
 
   onKeywordClear() {

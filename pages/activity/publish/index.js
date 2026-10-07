@@ -20,6 +20,8 @@ Page({
 
   data: {
     typeGrid: TYPE_GRID,
+    // 类型图标按格子下标记失败状态：data URI 正常不会失败，留一手兜底，格子不至于空着
+    iconErrorMap: {},
     // 标签的选中态在 js 里算好：WXML 表达式不支持调用 indexOf 之类的方法
     tagOptions: ACTIVITY_TAGS.map((item) => ({ key: item.key, name: item.name, active: false })),
     difficultyOptions: DIFFICULTY_OPTIONS,
@@ -228,6 +230,13 @@ Page({
 
   removeCover() {
     this.setData({ 'form.cover': '' })
+  },
+
+  /** 类型图标解码失败：这一格退回 emoji，其余格子不受影响 */
+  onTypeIconError(e) {
+    const index = e.currentTarget.dataset.index
+    if (index === undefined || this.data.iconErrorMap[index]) return
+    this.setData({ [`iconErrorMap[${index}]`]: true })
   },
 
   onTypeTap(e) {

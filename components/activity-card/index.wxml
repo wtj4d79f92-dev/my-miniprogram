@@ -6,27 +6,21 @@
   hover-start-time="0"
   hover-stay-time="80"
 >
-  <view class="act-cover" style="background: {{act.bg}};">
-    <image
-      wx:if="{{coverSrc}}"
-      class="act-cover-img"
-      src="{{coverSrc}}"
-      mode="aspectFill"
-      binderror="onCoverError"
-    ></image>
-    <view wx:else class="poster">
-      <text class="poster-title">{{poster.title}}</text>
-      <text class="poster-sub">{{poster.sub}}</text>
-    </view>
-    <view class="act-type"><text>{{act.typeName}}</text></view>
-    <!-- 审核状态比业务状态更该被发起人看到，优先展示；但过了展示期的活动已自动关闭，按已到期展示 -->
-    <view wx:if="{{!act.auditApproved && !act.expired}}" class="act-closed act-audit-{{act.auditStatus}}"><text>{{act.auditText}}</text></view>
-    <!-- 展示期届满（发布满 7 天）自动关闭，与发起人主动关闭区分开 -->
-    <view wx:elif="{{act.expired}}" class="act-closed"><text>已到期</text></view>
-    <view wx:elif="{{act.isClosed}}" class="act-closed"><text>已关闭</text></view>
+  <!-- 没传封面图的活动不再铺默认海报：那块 280rpx 的装饰图只是重复的渐变 + 同一句 slogan，
+       列表里白白占掉半屏，直接整块省掉。活动类型不再占顶部一行，统一挪到卡片底部的费用行左侧
+       （见下方 act-foot 里的类型标签） -->
+  <view wx:if="{{coverSrc}}" class="act-cover" style="background: {{act.bg}};">
+    <image class="act-cover-img" src="{{coverSrc}}" mode="aspectFill" binderror="onCoverError"></image>
+    <view wx:if="{{statusText}}" class="act-closed {{statusClass}}"><text>{{statusText}}</text></view>
   </view>
 
   <view class="act-body">
+    <!-- 无封面时的状态窄标签：状态文案与角标同源（见 js 里的 resolveStatus），口径不会走偏。
+         活动类型已经挪到卡片底部，这行只在有审核 / 关闭状态时才出现 -->
+    <view wx:if="{{!coverSrc && statusText && !showToolbar}}" class="act-flat-head">
+      <text class="act-status-flat tone-{{statusTone}}">{{statusText}}</text>
+    </view>
+
     <view class="act-title-row">
       <text wx:if="{{act.showMetrics && act.difficulty}}" class="act-difficulty">{{act.difficultyText}}</text>
       <text class="tag tag-orange act-tag" wx:for="{{act.tagNames}}" wx:key="*this">{{item}}</text>
@@ -54,7 +48,7 @@
     </view>
 
     <view class="act-foot">
-      <view class="act-avatars">
+      <view class="act-foot-left">
         <avatar
           wx:for="{{act.avatarList}}"
           wx:key="key"
@@ -64,7 +58,9 @@
           size="xs"
           ring="{{true}}"
         ></avatar>
-        <text class="act-people">{{act.peopleText}}</text>
+        <!-- 活动类型：占原来「x/y人」的位置，报名人数不再在列表里露面。
+             没头像时标签跟上面的「地点 / 全程」左对齐，有头像时再让出间距 -->
+        <text class="act-type-tag {{act.avatarList.length ? 'with-avatars' : ''}}">{{act.typeName}}</text>
       </view>
       <text class="act-fee">{{act.feeText}}</text>
     </view>

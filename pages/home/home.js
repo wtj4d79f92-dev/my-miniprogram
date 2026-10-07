@@ -54,6 +54,8 @@ Page({
   data: {
     texts: TEXTS,
     typeGrid: TYPE_GRID,
+    // 金刚区图标按格子下标记失败状态：data URI 正常不会失败，留一手兜底，格子不至于空着
+    iconErrorMap: {},
     city: '',
     cityLabel: '全部',
     locationDenied: false,
@@ -266,6 +268,16 @@ Page({
   },
 
   /**
+   * 点搜索框：进广场并把搜索输入框自动聚焦（弹起键盘），
+   * 让「首页点搜索 → 广场直接输入」连成一步，和广场内的搜索体验一致。
+   */
+  onSearchTap() {
+    if (this.data.singlePage) return
+    setStorage(KEYS.pendingSearch, true)
+    wx.switchTab({ url: '/pages/square/index' })
+  },
+
+  /**
    * 带类型进广场：横幅 / 玩法入口点击时，除预选活动类型外还要带上「当前定位城市」，
    * 避免定位还没回来就跳转，广场落到「全部城市」而筛不出同城活动。
    */
@@ -295,6 +307,13 @@ Page({
 
   onTypeTap(e) {
     this.openSquare(e.currentTarget.dataset.type)
+  },
+
+  /** 金刚区图标解码失败：这一格退回 emoji，其余格子不受影响 */
+  onTypeIconError(e) {
+    const index = e.currentTarget.dataset.index
+    if (index === undefined || this.data.iconErrorMap[index]) return
+    this.setData({ [`iconErrorMap[${index}]`]: true })
   },
 
   onCardTap(e) {

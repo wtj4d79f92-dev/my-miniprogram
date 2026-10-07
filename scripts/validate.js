@@ -1484,7 +1484,56 @@ function checkCoverUrlPreference() {
   card.observers.act.call(cardCtx, { cover: 'cloud://env.box/cover.png' })
   log(cardCtx.data.coverSrc === 'cloud://env.box/cover.png', '活动卡片：没有临时链接时退回原始 cover')
   card.observers.act.call(cardCtx, { cover: '' })
-  log(cardCtx.data.coverSrc === '', '活动卡片：未上传封面时走默认海报')
+  log(cardCtx.data.coverSrc === '', '活动卡片：未上传封面时封面地址为空，列表里不渲染默认封面')
+
+  // 默认封面不再占位，但「审核中 / 未通过 / 已关闭」这些信息不能跟着丢：改走标题上方的窄标签
+  card.observers.act.call(cardCtx, {
+    cover: '',
+    auditApproved: false,
+    expired: false,
+    auditStatus: 'pending',
+    auditText: '审核中',
+  })
+  log(
+    cardCtx.data.statusText === '审核中' &&
+      cardCtx.data.statusClass === 'act-audit-pending' &&
+      cardCtx.data.statusTone === 'pending',
+    '活动卡片：无封面时审核状态走窄标签'
+  )
+  card.observers.act.call(cardCtx, { cover: '', auditApproved: true, expired: false, isClosed: true })
+  log(
+    cardCtx.data.statusText === '已关闭' && cardCtx.data.statusTone === 'closed',
+    '活动卡片：无封面时已关闭状态走窄标签'
+  )
+  card.observers.act.call(cardCtx, { cover: '', auditApproved: true, expired: false, isClosed: false })
+  log(cardCtx.data.statusText === '', '活动卡片：招募中的活动不带状态标签')
+
+  const cardWxml = fs.readFileSync(path.join(ROOT, 'components/activity-card/index.wxml'), 'utf8')
+  log(
+    cardWxml.indexOf('wx:if="{{coverSrc}}" class="act-cover"') > -1,
+    '活动卡片：只有真的传了封面图才渲染封面块'
+  )
+  log(
+    cardWxml.indexOf('class="act-flat-head"') > -1 &&
+      cardWxml.indexOf('act-status-flat') > -1 &&
+      cardWxml.indexOf('act-type-flat') === -1,
+    '活动卡片：无封面时审核 / 关闭状态走标题上方的窄标签，活动类型不再占这行'
+  )
+  log(
+    cardWxml.indexOf('act-type-tag') > cardWxml.indexOf('class="act-foot"') &&
+      cardWxml.indexOf('act-people') === -1 &&
+      cardWxml.indexOf('act.peopleText') === -1,
+    '活动卡片：活动类型挪到底部费用行左侧，列表页不再展示报名人数'
+  )
+  // 类型标签默认跟上方「地点 / 全程」同一条竖线左对齐，只有前面排了成员头像时才让出间距
+  const cardWxss = fs.readFileSync(path.join(ROOT, 'components/activity-card/index.wxss'), 'utf8')
+  const typeTagRule = (cardWxss.match(/\.act-type-tag \{[\s\S]*?\}/) || [''])[0]
+  log(
+    typeTagRule.indexOf('margin-left') === -1 &&
+      /\.act-type-tag\.with-avatars \{[\s\S]*?margin-left/.test(cardWxss),
+    '活动卡片：活动类型标签默认左对齐，只有前面有头像时才留间距'
+  )
+  log(cardWxml.indexOf('poster') === -1, '活动卡片：列表里不再渲染默认封面海报')
 
   // 临时链接默认 2 小时过期，页面停留过久后要能按 fileID 重取
   const originalMedia = api.media
@@ -2015,13 +2064,16 @@ function checkFuzzyLocate() {
 /**
  * 首页曾在 onLoad 里自动 app.relocate()，用户一进小程序什么都没点就会看到位置授权弹窗
  * （审核口径里「收集地理位置须经用户明确同意」，启动即索权既打断浏览也容易被挑）。
- * 现在改成：启动只读已有状态、按「全部城市」展示，等用户点定位栏再弹。
- * 这里把两条路径都钉住：启动/切回首页不请求定位，点击定位栏才请求。
+ * 现在改成：启动只读已有状态、按「全部城市」展示，等用户主动操作再弹。
+ * 定位栏之后又从「图标 + 文案 + 定位按钮」收敛成了城市胶囊（commit「顶部定位与切换城市合并为城市胶囊」）：
+ * 点胶囊不再直接定位，而是打开城市弹层，重新定位成了弹层里的一项，字段也从 locateTip 换成了 cityLabel。
+ * 这里把三条路径都钉住：启动/切回首页不请求定位、主动定位才请求、胶囊能再次点开弹层。
  */
 function checkHomeNoAutoLocate() {
   const pagePath = path.join(ROOT, 'pages/home/home.js')
   const pageOptions = []
   const relocateCalls = []
+  const pickerOpenCalls = []
   const originPage = global.Page
   const originGetApp = global.getApp
   const originShowLoading = global.wx.showLoading
@@ -2063,6 +2115,14 @@ function checkHomeNoAutoLocate() {
     getTabBar() {
       return null
     },
+    // 定位栏现在是打开城市弹层的胶囊，重新定位收在弹层里，这里返回一个记录调用的假弹层
+    selectComponent() {
+      return {
+        open(city) {
+          pickerOpenCalls.push(city || '')
+        },
+      }
+    },
   }
   Object.keys(page).forEach((key) => {
     if (typeof page[key] === 'function' && !ctx[key]) {
@@ -2075,8 +2135,8 @@ function checkHomeNoAutoLocate() {
       page.onLoad.call(ctx)
       log(relocateCalls.length === 0, '首页：启动时不自动请求定位，位置授权弹窗等用户点击')
       log(
-        ctx.data.cityLabel === '全部' && ctx.data.locateTip === '点击定位',
-        '首页：首屏未定位时按「全部城市」展示，定位栏提示「点击定位」'
+        ctx.data.cityLabel === '全部' && ctx.data.locationDenied === false,
+        '首页：首屏未定位时按「全部城市」展示，定位胶囊上显示「全部」'
       )
       page.onShow.call(ctx)
       log(relocateCalls.length === 0, '首页：切回首页同样不自动请求定位')
@@ -2086,8 +2146,14 @@ function checkHomeNoAutoLocate() {
     .then(() => {
       log(relocateCalls.length === 1, '首页：用户点定位栏才发起定位（主动触发）')
       log(
-        ctx.data.cityLabel === '成都' && ctx.data.locationDenied === false && ctx.data.locateTip === '点击重新定位',
-        '首页：定位成功后定位栏显示城市，并可再次点击重新定位'
+        ctx.data.cityLabel === '成都' && ctx.data.locationDenied === false,
+        '首页：定位成功后定位胶囊显示城市名'
+      )
+      // 定位成功后胶囊还要能再次点开，弹层里带着当前城市（重新定位是弹层里的第一项）
+      ctx.openCityPicker()
+      log(
+        pickerOpenCalls.length === 1 && pickerOpenCalls[0] === '成都',
+        '首页：定位胶囊可再次点开城市弹层，且把当前城市带进去'
       )
       global.getApp = originGetApp
       global.wx.showLoading = originShowLoading
@@ -3432,6 +3498,10 @@ function checkHardening() {
       detailWxml.indexOf('class="qr-entry"') > -1,
     '详情页：报名后在小程序内给出行前信息，活动二维码只保留「退出活动」旁的用户主动入口'
   )
+  log(
+    detailWxml.indexOf('wx:if="{{activity.joined || isOrganizer}}" class="card"') > -1,
+    '详情页：已报名名单只对参与者（发起人 / 已报名本人）展示，未报名的浏览者不渲染'
+  )
 
   /* 活动留言：仅参与者可见的站内沟通，同时也是 UGC —— 三个口子一个都不能少 */
   // 1. 只有参与者能看能发；2. 内容过机审；3. 可删除 + 可举报
@@ -3825,6 +3895,136 @@ function checkBannerImage() {
   else setStorage(KEYS.homeCache, cachedBefore)
 }
 
+/* -------------- 金刚区：统一线性图标 + 统一底色，不再按类型上色 -------------- */
+/**
+ * 金刚区以前直接摆 emoji，还得靠「每格一个色块」区分功能：扁平的和微拟物的混在一起，
+ * 颜色本身也成了噪声。换成一套线性图标后，这里钉住三件事，免得以后又漂回去：
+ * ① 十个玩法的图标同源且规格一致（不填充 / 同一描边色与线宽），风格统一靠的是这个；
+ * ② 页面不再按类型下发底色，底色只在样式表里声明一处；
+ * ③ 首页金刚区与发布页的类型选择共用同一份图标，两处不会各长各的。
+ */
+function checkTypeIcons() {
+  const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
+  const homeWxml = read('pages/home/home.wxml')
+  const homeWxss = read('pages/home/home.wxss')
+  const publishWxml = read('pages/activity/publish/index.wxml')
+  const publishWxss = read('pages/activity/publish/index.wxss')
+  const dict = require(path.join(ROOT, 'utils/dict'))
+  const { TYPE_ICONS, TYPE_ICON_STROKE } = require(path.join(ROOT, 'utils/type-icons'))
+  const types = dict.TYPE_GRID
+
+  log(
+    types.length === 10 && types.every((item) => item.icon && item.icon.indexOf('data:image/svg+xml') === 0),
+    '金刚区：十个玩法都挂上了 svg data URI 图标'
+  )
+  log(
+    Object.keys(TYPE_ICONS).length === types.length && types.every((item) => TYPE_ICONS[item.key] === item.icon),
+    '金刚区：类型图标与 utils/type-icons.js 同源，没有各写各的'
+  )
+
+  // 线性规格：不填充 + 圆角端点 + 同一描边色。面性图标会带 fill，风格立刻就分家了
+  const svgs = Object.keys(TYPE_ICONS).map((key) => decodeURIComponent(TYPE_ICONS[key]))
+  log(
+    svgs.every((svg) => /fill="none"/.test(svg) && /stroke-linecap="round"/.test(svg)),
+    '金刚区：十个图标都是同一套线性规格（不填充 + 圆角端点）'
+  )
+  log(
+    svgs.every((svg) => svg.indexOf(`stroke="${TYPE_ICON_STROKE}"`) > -1),
+    '金刚区：十个图标共用同一个描边色，功能只靠形状区分'
+  )
+
+  // 底色：页面里不再逐格上色，两个页面共用同一块极浅品牌底
+  log(
+    homeWxml.indexOf('{{item.color}}') === -1 && publishWxml.indexOf('{{item.color}}') === -1,
+    '金刚区：格子底色不再按类型下发（页面里没有 item.color 上色）'
+  )
+  const brandTile = (wxss) => (wxss.match(/\.type-icon \{[\s\S]*?\}/) || [''])[0]
+  log(
+    brandTile(homeWxss).indexOf('background: var(--brand-soft)') > -1 &&
+      brandTile(publishWxss).indexOf('background: var(--brand-soft)') > -1,
+    '金刚区：首页与发布页的格子共用同一块极浅品牌底色'
+  )
+  log(
+    homeWxml.indexOf('type-icon-img') > -1 && publishWxml.indexOf('type-icon-img') > -1,
+    '金刚区：首页与发布页渲染的是同一套线性图标'
+  )
+  // 图标解码失败要退回 emoji，格子不能空着（原设计文档 6.3.2 的要求）
+  log(
+    /binderror="onTypeIconError"/.test(homeWxml) &&
+      /binderror="onTypeIconError"/.test(publishWxml) &&
+      homeWxml.indexOf('type-icon-emoji') > -1,
+    '金刚区：图标加载失败时回退显示 emoji'
+  )
+}
+
+/* -------------- 「我的」功能入口：与金刚区共用同一套线性图标 -------------- */
+/**
+ * 「我的」入口原来是一排 emoji，跟首页金刚区是两个物种。
+ * 换成线性图标后钉住几件事：① 13 个入口都挂上了图标，且与 utils/user-icons.js 同源；
+ * ② 与金刚区共用 utils/line-icons.js 这份外壳（视窗 / 线宽 / 圆角 / 不填充），两处风格不会分家；
+ * ③ 常规入口共用品牌色，只有注销账号走警示色；④ 解码失败要能退回 emoji。
+ */
+function checkUserIcons() {
+  const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
+  const pageWxml = read('pages/usercenter/index.wxml')
+  const pageWxss = read('pages/usercenter/index.wxss')
+  const pageJs = read('pages/usercenter/index.js')
+  const { USER_ICONS } = require(path.join(ROOT, 'utils/user-icons'))
+  const { TYPE_ICONS } = require(path.join(ROOT, 'utils/type-icons'))
+  const { LINE_ICON_BRAND, LINE_ICON_DANGER, LINE_ICON_STROKE_WIDTH } = require(path.join(ROOT, 'utils/line-icons'))
+
+  const keys = Object.keys(USER_ICONS)
+  const svgs = keys.map((key) => decodeURIComponent(USER_ICONS[key]))
+  const typeSvgs = Object.keys(TYPE_ICONS).map((key) => decodeURIComponent(TYPE_ICONS[key]))
+
+  log(keys.length === 13, `「我的」入口：13 个入口图标齐全（当前 ${keys.length} 个）`)
+  log(
+    keys.every((key) => USER_ICONS[key].indexOf('data:image/svg+xml') === 0),
+    '「我的」入口：图标都是 svg data URI'
+  )
+
+  // 与金刚区同源：同一份 line-icons 外壳，规格天然一致
+  const linear = (svg) => /fill="none"/.test(svg) && /stroke-linecap="round"/.test(svg)
+  log(
+    svgs.every(linear) && typeSvgs.every(linear),
+    '「我的」入口：与金刚区同为线性规格（不填充 + 圆角端点）'
+  )
+  const sameWeight = (svg) => svg.indexOf(`stroke-width="${LINE_ICON_STROKE_WIDTH}"`) > -1
+  log(
+    svgs.every(sameWeight) && typeSvgs.every(sameWeight),
+    '「我的」入口：线宽与金刚区共用同一个值，两处不会粗细不一'
+  )
+
+  // 颜色：常规入口品牌色，只有破坏性入口走警示色
+  log(
+    keys.filter((key) => USER_ICONS[key].indexOf(encodeURIComponent(LINE_ICON_DANGER)) > -1).join(',') === 'remove',
+    '「我的」入口：只有注销账号走警示色'
+  )
+  log(
+    keys
+      .filter((key) => key !== 'remove')
+      .every((key) => USER_ICONS[key].indexOf(encodeURIComponent(LINE_ICON_BRAND)) > -1),
+    '「我的」入口：其余入口共用品牌色描边，不靠颜色区分功能'
+  )
+
+  // 页面渲染 + 回退
+  log(
+    (pageWxml.match(/class="entry-icon" src="\{\{entryIcons\./g) || []).length === keys.length,
+    '「我的」入口：每一行都渲染 line-icons 的图标'
+  )
+  log(pageWxml.indexOf('<text class="entry-icon">') === -1, '「我的」入口：行首不再直接摆 emoji')
+  log(
+    /binderror="onEntryIconError"/.test(pageWxml) &&
+      pageWxml.indexOf('entry-icon-emoji') > -1 &&
+      /onEntryIconError\s*\(/.test(pageJs),
+    '「我的」入口：图标加载失败时回退显示 emoji'
+  )
+  log(
+    (pageWxss.match(/\.entry-icon \{[\s\S]*?\}/) || [''])[0].indexOf('width: 40rpx') > -1,
+    '「我的」入口：图标按图片尺寸给宽高（不再是固定宽度的文字槽）'
+  )
+}
+
 /* -------------- 活动留言：详情页只给参与者渲染，发送 / 删除即时生效 -------------- */
 /**
  * 数据层的权限在 Mock 链路与 scripts/cloud-validate.js 里覆盖，这里验证页面这一层的决策：
@@ -4067,6 +4267,8 @@ return checkDeleteAccount()
   .then(() => checkDetailBackFallback())
   .then(() => checkHomeShare())
   .then(() => checkBannerImage())
+  .then(() => checkTypeIcons())
+  .then(() => checkUserIcons())
   .then(() => checkDetailComments())
   .then(() => checkMessagePage())
   .then(() => checkSeedData())

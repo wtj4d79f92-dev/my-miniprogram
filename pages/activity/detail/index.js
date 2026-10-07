@@ -268,7 +268,8 @@ Page({
     activity.startPassed = !!raw.startPassed || expire.isPastStart(raw)
     activity.isClosed = raw.status === 'closed' || !!activity.expired || activity.startPassed
     activity.isFull = raw.joinedCount >= raw.maxPeople
-    activity.descText = raw.desc || '暂无活动介绍，报名前可与发起人沟通确认细节。'
+    // 空介绍不再劝人「报名前」先问，改成报名后再找发起人确认细节，与报名流程口径一致
+    activity.descText = raw.desc || '暂无活动介绍，报名后可与发起人沟通确认细节。'
 
     let statusText = '招募中'
     if (activity.expired) {
