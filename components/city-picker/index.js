@@ -106,6 +106,12 @@ Component({
       this.triggerEvent('change', { city: key, label: label || '全部' })
     },
 
+    /** 弹层内的「定位到当前城市」：交给页面执行定位（未授权时页面负责引导设置） */
+    onLocate() {
+      this.setData({ visible: false })
+      this.triggerEvent('locate')
+    },
+
     close() {
       this.setData({ visible: false })
     },

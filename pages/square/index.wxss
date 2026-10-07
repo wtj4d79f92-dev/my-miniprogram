@@ -8,32 +8,38 @@
 .locate-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding-bottom: 16rpx;
-}
-
-.locate-left {
-  display: flex;
-  align-items: center;
 }
 
 .locate-icon {
   font-size: 26rpx;
 }
 
-.locate-city {
-  margin-left: 8rpx;
-  font-size: 30rpx;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.locate-switch {
-  padding: 8rpx 24rpx;
+/* 定位 + 切换城市合并成一个胶囊，点开即城市选择弹层 */
+.city-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 10rpx 22rpx 10rpx 18rpx;
   border-radius: var(--radius-pill);
   background: var(--brand-soft);
   color: var(--brand);
-  font-size: 24rpx;
+}
+
+.city-pill-name {
+  margin-left: 8rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  max-width: 360rpx;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.city-pill-arrow {
+  margin-left: 8rpx;
+  font-size: 22rpx;
+  opacity: 0.7;
 }
 
 .search-row {

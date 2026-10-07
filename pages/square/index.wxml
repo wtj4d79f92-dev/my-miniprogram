@@ -2,13 +2,13 @@
   <navigation-bar title="活动广场" back="{{false}}" color="#2D3748" background="#BFAF92"></navigation-bar>
 
   <view class="square-head">
-    <!-- 城市栏 -->
+    <!-- 城市栏：定位与切换城市合并成一个胶囊，点开即城市选择弹层 -->
     <view class="locate-bar">
-      <view class="locate-left" bindtap="onLocateTap" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
+      <view class="city-pill" bindtap="openCityPicker" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
         <text class="locate-icon">📍</text>
-        <text class="locate-city">{{locationDenied ? '定位未开启' : cityLabel}}</text>
+        <text class="city-pill-name">{{locationDenied ? '定位未开启' : cityLabel}}</text>
+        <text class="city-pill-arrow">▾</text>
       </view>
-      <view class="locate-switch" bindtap="openCityPicker" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>切换城市</text></view>
     </view>
 
     <!-- 搜索栏 -->
@@ -125,7 +125,7 @@
     <text class="fab-text">发布</text>
   </view>
 
-  <city-picker id="city-picker" city="{{city}}" bindchange="onCityChange"></city-picker>
+  <city-picker id="city-picker" city="{{city}}" bindchange="onCityChange" bindlocate="onLocateTap"></city-picker>
   <calendar-picker id="calendar-picker" bindconfirm="onDateConfirm"></calendar-picker>
   <login-modal id="login-modal" bindlogin="onLogin"></login-modal>
 </view>

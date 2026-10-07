@@ -4,6 +4,24 @@
   font-weight: 600;
 }
 
+/* 「定位到当前城市」快捷项：与选择器同宽，靠一条浅分隔线跟列表分开 */
+.sheet-locate {
+  display: flex;
+  align-items: center;
+  margin: 0 24rpx 8rpx;
+  padding: 22rpx 24rpx;
+  border-radius: var(--radius-sm);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.sheet-locate-icon {
+  margin-right: 10rpx;
+  font-size: 26rpx;
+}
+
 .city-picker {
   width: 100%;
   height: 440rpx;

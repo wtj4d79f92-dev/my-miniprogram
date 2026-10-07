@@ -57,7 +57,6 @@ Page({
     city: '',
     cityLabel: '全部',
     locationDenied: false,
-    locateTip: '点击定位',
     banners: [],
     hotList: [],
     newestList: [],
@@ -107,7 +106,6 @@ Page({
       city,
       cityLabel: city || '全部',
       locationDenied: app.globalData.locationDenied,
-      locateTip: city ? '点击重新定位' : '点击定位',
     })
   },
 
@@ -117,7 +115,6 @@ Page({
       city: city || '',
       cityLabel: city || '全部',
       locationDenied: !city,
-      locateTip: city ? '点击重新定位' : '点击定位',
     })
     this.syncPageTitle()
   },
@@ -253,7 +250,7 @@ Page({
     const app = getApp()
     const city = e.detail.city || ''
     app.setCity(city)
-    this.setData({ city, cityLabel: city || '全部', locationDenied: false, locateTip: '点击重新定位' })
+    this.setData({ city, cityLabel: city || '全部', locationDenied: false })
     this.syncPageTitle()
     this.loadData()
   },
