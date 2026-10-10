@@ -521,6 +521,25 @@ Page({
       ui.toast(result.first)
       return
     }
+    // 活动二维码非必传，但没传时代码里参与人看不到联系方式，发布前提醒一次
+    // 仅起提示作用：用户点「取消」可以回去补传，点「继续发布」照常提交
+    if (!String(this.data.form.groupQrCode || '').trim()) {
+      ui.confirm({
+        title: '提示',
+        content: '还没有上传联系方式（活动二维码），请上传联系方式，避免参与人无法及时与你联系。仍要继续发布吗？',
+        cancelText: '取消',
+        confirmText: '继续发布',
+      }).then((ok) => {
+        if (ok) this.publishActivity()
+      })
+      return
+    }
+    this.publishActivity()
+  },
+
+  /** 校验与联系方式提醒之后的真正提交：组装 payload → 上传图片 → 创建 / 更新活动 */
+  publishActivity() {
+    if (this.data.submitting || this.data.published) return
     const form = this.data.form
     const payload = Object.assign({}, form, {
       distance: Number(form.distance) || 0,
