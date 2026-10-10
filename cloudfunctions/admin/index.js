@@ -16,15 +16,20 @@ const _ = db.command
 const { fail, text, num, limitRange, withId } = require('./lib/helper')
 const { PENDING, APPROVED, REJECTED, approvedWhere, auditStatusOf } = require('./lib/audit')
 const { collectFileIDs, resolveMedia } = require('./lib/media')
+// 线路词库：linesImport 把内置词库整份写进 lines 集合，见 scripts/extract-lines.js
+const { LINE_LIBRARY, LINE_LIBRARY_VERSION } = require('./lib/lines')
 
 const activities = db.collection('activities')
 const auditLogs = db.collection('activity_audits')
 const admins = db.collection('admins')
+const lines = db.collection('lines')
 
 const DEFAULT_PAGE_SIZE = 20
 const MAX_PAGE_SIZE = 50
 const MAX_REMARK = 200
 const LOG_LIMIT = 30
+/** 线路词库写库并发度：几百条小记录分批写，避免一次 set 太多把云函数拖超时 */
+const LINE_IMPORT_BATCH = 20
 
 /** 管理端列表只展示审核需要的字段：joinedPeople 这类大数组不带出来，避免响应体过大 */
 const LIST_FIELDS = {
@@ -319,6 +324,42 @@ async function migrate(event, openid, admin) {
 
 /* ------------------------------ 路由 ------------------------------ */
 
+/**
+ * 导入线路词库：把内置词库（lib/lines.js，由 scripts/extract-lines.js 从线路表生成）
+ * 整份写进 lines 集合，doc(_id).set() 不存在则创建、存在则整份覆盖，所以可以反复执行，
+ * 词库更新后（重跑生成脚本 → 重新部署云函数）再调一次即可对齐。
+ *
+ * 也可以不用这个接口：云开发控制台 → 数据库 → lines 集合 → 导入 scripts/seed/lines.json，
+ * 两条路径写进去的数据完全一样。
+ */
+async function linesImport(event, openid, admin) {
+  let saved = 0
+  for (let i = 0; i < LINE_LIBRARY.length; i += LINE_IMPORT_BATCH) {
+    const chunk = LINE_LIBRARY.slice(i, i + LINE_IMPORT_BATCH)
+    await Promise.all(
+      chunk.map((item) =>
+        // 文档 id 就是线路 id（line_001 这种），data 里不能再带 _id：云端不允许改 _id 字段
+        lines.doc(item.id).set({ data: Object.assign({}, item) })
+      )
+    )
+    saved += chunk.length
+  }
+  if (saved) {
+    await writeLog({
+      activityId: '',
+      title: '',
+      action: 'linesImport',
+      from: '',
+      to: 'lines',
+      remark: `导入线路词库 ${saved} 条（版本 ${LINE_LIBRARY_VERSION}）`,
+      adminOpenid: openid || '',
+      adminName: adminName(admin),
+      createTime: Date.now(),
+    })
+  }
+  return { saved, total: LINE_LIBRARY.length, version: LINE_LIBRARY_VERSION }
+}
+
 /** whoami 之外的 action 全部要求审核人身份 */
 const ACTIONS = {
   whoami,
@@ -328,6 +369,7 @@ const ACTIONS = {
   reject,
   logs,
   migrate,
+  linesImport,
 }
 
 exports.main = async (event) => {

@@ -66,6 +66,7 @@
   line-height: 1.5;
 }
 
+
 .audit-tip {
   display: flex;
   flex-direction: column;
@@ -210,6 +211,8 @@
   width: 190rpx;
   flex: none;
   font-size: 28rpx;
+  /* 与卡片标题（.form-title）统一为 600：整页标题一样粗，不再有「有的加粗有的不加粗」 */
+  font-weight: 600;
   color: var(--text);
 }
 
@@ -294,13 +297,6 @@
 .fee-tip {
   display: block;
   margin: 4rpx 0 8rpx 190rpx;
-  line-height: 1.5;
-}
-
-/* 活动二维码选填说明：不传也能发布，避免发起人以为必须建群才能发活动 */
-.qr-tip {
-  display: block;
-  margin-top: 12rpx;
   line-height: 1.5;
 }
 

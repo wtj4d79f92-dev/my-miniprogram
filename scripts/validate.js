@@ -3476,9 +3476,9 @@ function checkHardening() {
     '二维码选填：发布页与云函数都不再把活动二维码当必填项'
   )
   log(
-    publishWxml.indexOf('二维码只是参与者想临时沟通时的补充渠道') > -1 &&
-      publishWxss.indexOf('.qr-tip') > -1,
-    '二维码选填：发布页写明不上传也能发布（含独立样式，真机上不会被挤掉）'
+    publishWxml.indexOf('qr-tip') === -1 &&
+      publishWxml.indexOf('二维码只是参与者想临时沟通时的补充渠道') === -1,
+    '二维码选填：发布页不再挂长段选填说明，选填口径只由「选填」标签表达'
   )
   log(
     detailJs.indexOf('扫码加入活动群') === -1 && detailJs.indexOf('joinTitle') === -1,
@@ -3678,6 +3678,286 @@ function checkHardening() {
     .then((res) => {
       log(!!res && !!res.id, '反馈：正常内容可以正常提交')
     })
+}
+
+/* ---------------------- 线路词库：标题 → 强度指标自动填充 ----------------------
+ * 数据来自《成都周边徒步登山线路表.xlsx》，由 scripts/extract-lines.js 生成词库。
+ * 这里钉住三件事：
+ *   ① 词库本身：条数 / 星级 / 中心词齐全，前端与两个云函数的副本逐字一致，导出物与词库对账；
+ *   ② 匹配规则：标题里的地名命中词库；同时命中多条时选难度低的、再选长度短的；
+ *   ③ 页面接线：输入标题自动填三项指标、用户改过的字段不再被覆盖、编辑模式不覆盖原值。
+ */
+function checkLineLibrary() {
+  const lines = require(path.join(ROOT, 'utils/lines'))
+  const { LINE_LIBRARY, LINE_LIBRARY_VERSION } = lines
+  const { matchLine, normalizeText } = require(path.join(ROOT, 'utils/line-match'))
+  const { DIFFICULTY_OPTIONS } = require(path.join(ROOT, 'utils/dict'))
+
+  const frontText = fs.readFileSync(path.join(ROOT, 'utils/lines.js'), 'utf8')
+  const cloudText = fs.readFileSync(path.join(ROOT, 'cloudfunctions/activity/lib/lines.js'), 'utf8')
+  const adminText = fs.readFileSync(path.join(ROOT, 'cloudfunctions/admin/lib/lines.js'), 'utf8')
+  log(
+    frontText === cloudText && frontText === adminText,
+    '线路词库：前端 / activity / admin 三份词库逐字一致（同一脚本生成，不允许手改其中一份）'
+  )
+
+  log(LINE_LIBRARY.length >= 190, `线路词库：共 ${LINE_LIBRARY.length} 条线路`)
+  const badStars = LINE_LIBRARY.filter((item) => !(item.stars >= 1 && item.stars <= 10))
+  log(badStars.length === 0, `线路词库：星级都在 1–10 之间（异常 ${badStars.length} 条）`)
+  const badKeys = LINE_LIBRARY.filter(
+    (item) => !item.keys.length || item.keys.some((key) => key.length < 2)
+  )
+  log(badKeys.length === 0, `线路词库：每条都有 ≥2 字的匹配中心词（异常 ${badKeys.length} 条）`)
+  const ids = LINE_LIBRARY.map((item) => item.id)
+  log(new Set(ids).size === ids.length, '线路词库：线路 id 唯一，导入数据库不会互相覆盖')
+  // 四项字段缺任何一项的线路直接不入词库：留空值或补默认值都是在替用户编数据
+  // （原表里写「未知」的 4 条就是这样被剔除的：茂县/彭州长年峰、茂县/彭州天牙峰，各 2 个星级）
+  const incomplete = LINE_LIBRARY.filter(
+    (item) => !item.name || !(item.stars > 0) || !(item.distance > 0) || !(item.elevation > 0)
+  )
+  log(incomplete.length === 0, `线路词库：193 条线路的名称 / 星级 / 全长 / 爬升都完整（残缺 ${incomplete.length} 条）`)
+  log(LINE_LIBRARY.length === 193, `线路词库：剔除字段缺失的 4 条后共 ${LINE_LIBRARY.length} 条`)
+  log(
+    LINE_LIBRARY.every((item) => !('distanceText' in item) && !('elevationText' in item)),
+    '线路词库：不再保留原表文本字段，字段只剩名称 / 星级 / 全长 / 爬升 + 匹配中心词'
+  )
+
+  const seedFile = fs.readFileSync(path.join(ROOT, 'scripts/seed/lines.json'), 'utf8').trim().split('\n')
+  const seedRows = seedFile.map((line) => JSON.parse(line))
+  log(
+    seedRows.length === LINE_LIBRARY.length &&
+      seedRows[0]._id === LINE_LIBRARY[0].id &&
+      seedRows[seedRows.length - 1].name === LINE_LIBRARY[LINE_LIBRARY.length - 1].name,
+    '线路词库：控制台导入用的 scripts/seed/lines.json 与词库对账一致'
+  )
+  log(!!LINE_LIBRARY_VERSION && LINE_LIBRARY_VERSION.length === 8, `线路词库：带内容版本号 ${LINE_LIBRARY_VERSION}`)
+
+  // ② 匹配规则
+  const emei = matchLine('15号夜爬峨眉山')
+  log(!!emei && emei.key === '峨眉山', `标题匹配：「15号夜爬峨眉山」命中中心词「${emei && emei.key}」`)
+  log(
+    !!emei &&
+      emei.stars === 4 &&
+      emei.distance === 21.5 &&
+      emei.elevation === 1368 &&
+      emei.name === '峨眉山马合湖穿万佛顶至金顶',
+    '标题匹配：峨眉山同时匹配到 4 条时，按「难度低 → 长度短」取 4 星的 21.5km 那条'
+  )
+  log(
+    Object.keys(require(path.join(ROOT, 'utils/line-match'))).indexOf('describeLineMatch') === -1,
+    '标题匹配：不生成提示文案（匹配结果只写进表单字段，页面上不提示匹配到了哪条线路）'
+  )
+  log(matchLine('随便走走') === null, '标题匹配：标题里没有词库地名时什么都不匹配（不瞎填）')
+  log(matchLine('') === null && matchLine('15') === null, '标题匹配：空标题 / 只有数字时不匹配')
+  log(matchLine('周末都江堰赵九铁拉练').key === '都江堰赵九铁', '标题匹配：多地名线路取更长（更具体）的中心词')
+  log(matchLine('青城后山徒步').name === '都江堰青城后山环线', '标题匹配：去地名前缀后仍能按「青城后山」命中')
+  log(normalizeText('15号 夜爬 峨眉山！') === '号夜爬峨眉山', '标题匹配：数字 / 字母 / 标点不参与匹配')
+
+  // 用户规则「同时匹配到多条 → 难度低的、长度短的」用一份构造词库钉死，避免以后排序条件被改坏
+  const fakeLib = [
+    { id: 'a', name: '测试峰高难', stars: 8, distance: 30, elevation: 3000, keys: ['测试峰'] },
+    { id: 'b', name: '测试峰轻松', stars: 2, distance: 8, elevation: 400, keys: ['测试峰'] },
+    { id: 'c', name: '测试峰同星级更长', stars: 2, distance: 15, elevation: 600, keys: ['测试峰'] },
+    { id: 'd', name: '测试峰同星级同长度', stars: 2, distance: 8, elevation: 500, keys: ['测试峰'] },
+  ]
+  const fake = matchLine('周末去测试峰', fakeLib)
+  log(
+    !!fake && fake.id === 'b',
+    `标题匹配：同中心词并列时选难度最低、长度最短的那条（选中 ${fake && fake.name}）`
+  )
+  log(
+    matchLine('周末天牙峰') === null && matchLine('周末长年峰') === null,
+    '标题匹配：字段缺失被剔除的线路（天牙峰 / 长年峰）不再能被匹配到'
+  )
+
+  // ③ 页面接线
+  const pageOptions = []
+  global.Page = (options) => pageOptions.push(options)
+  delete require.cache[path.join(ROOT, 'pages/activity/publish/index.js')]
+  require(path.join(ROOT, 'pages/activity/publish/index.js'))
+  const page = pageOptions[0]
+  const ctx = {
+    data: {
+      form: { type: 'hiking', title: '', difficulty: 3, distance: '', elevationGain: '' },
+      errors: {},
+      showMetrics: true,
+      showTags: true,
+      tagOptions: [],
+      difficultyIndex: 2,
+      difficultyLabel: DIFFICULTY_OPTIONS[2].label,
+    },
+    setData(patch) {
+      Object.keys(patch).forEach((key) => {
+        const parts = key.split('.')
+        let target = this.data
+        for (let i = 0; i < parts.length - 1; i += 1) {
+          if (!target[parts[i]]) target[parts[i]] = {}
+          target = target[parts[i]]
+        }
+        target[parts[parts.length - 1]] = patch[key]
+      })
+    },
+    clearError() {},
+  }
+  // 真机上页面方法都挂在页面实例上；测试里把 page 上的方法绑到替身 ctx，让 this 指向同一份 data
+  Object.keys(page).forEach((key) => {
+    if (typeof page[key] === 'function') ctx[key] = page[key].bind(ctx)
+  })
+
+  page.loadLineLibrary.call(ctx, false)
+  log(
+    Array.isArray(ctx._library) && ctx._library.length === LINE_LIBRARY.length,
+    '发布页：进页面就先拿到词库，输入标题不用等网络'
+  )
+  const publishWxml = fs.readFileSync(path.join(ROOT, 'pages/activity/publish/index.wxml'), 'utf8')
+  const publishJs = fs.readFileSync(path.join(ROOT, 'pages/activity/publish/index.js'), 'utf8')
+  log(
+    publishWxml.indexOf('line-tip') === -1 &&
+      publishWxml.indexOf('lineTip') === -1 &&
+      publishJs.indexOf('lineTip') === -1,
+    '发布页：标题匹配只填表单字段，页面上不再有「匹配到哪条线路」的提示块'
+  )
+
+  page.onTitleInput.call(ctx, { detail: { value: '15号夜爬峨眉山' } })
+  log(!!ctx._lineTimer, '发布页：标题输入走防抖，不是每个字都跑一遍词库')
+  page.onTitleBlur.call(ctx, { detail: { value: '15号夜爬峨眉山' } })
+  log(ctx._lineTimer === null, '发布页：失焦后立即结算一次匹配，不再等防抖')
+  log(
+    ctx.data.difficultyIndex === 3 && ctx.data.form.difficulty === 4 && ctx.data.difficultyLabel === '4星',
+    '发布页：标题命中峨眉山后自动填活动难度'
+  )
+  log(
+    ctx.data.form.distance === '21.5' && ctx.data.form.elevationGain === '1368',
+    '发布页：标题命中后自动填全程长度与累计爬升'
+  )
+  log(ctx.data.lineTip === undefined, '发布页：自动填充后页面上不出现匹配提示')
+
+  // 用户手动改过的字段不再被覆盖（改了长度，再换个标题）
+  page.onDistanceInput.call(ctx, { detail: { value: '12' } })
+  page.onTitleBlur.call(ctx, { detail: { value: '15号夜爬峨眉山' } })
+  log(ctx.data.form.distance === '12', '发布页：用户手动填过的全程长度不会被标题匹配改回去')
+  page.onTitleBlur.call(ctx, { detail: { value: '周末青城后山轻徒步' } })
+  log(
+    ctx.data.form.distance === '12' &&
+      ctx.data.form.elevationGain === '913' &&
+      ctx.data.form.difficulty === 2,
+    '发布页：换标题后只更新用户没动过的项（长度保留 12，爬升 / 难度按新线路填）'
+  )
+  page.onTitleBlur.call(ctx, { detail: { value: '随便走走' } })
+  log(
+    ctx.data.form.distance === '12' && ctx.data.form.elevationGain === '',
+    '发布页：标题不再命中时把自动填的收回去，用户自己填的留着'
+  )
+
+  // 类型切换：自驾游没有强度指标（页面本来就会把强度字段清空），切回爬山按标题重新填一遍
+  const switchCtx = {
+    data: {
+      form: { type: 'hiking', title: '夜爬峨眉山', difficulty: 3, distance: '', elevationGain: '' },
+      errors: {},
+      showMetrics: true,
+      showTags: true,
+      tagOptions: [],
+      difficultyIndex: 2,
+      difficultyLabel: DIFFICULTY_OPTIONS[2].label,
+    },
+    setData(patch) {
+      Object.keys(patch).forEach((key) => {
+        const parts = key.split('.')
+        let target = this.data
+        for (let i = 0; i < parts.length - 1; i += 1) {
+          if (!target[parts[i]]) target[parts[i]] = {}
+          target = target[parts[i]]
+        }
+        target[parts[parts.length - 1]] = patch[key]
+      })
+    },
+  }
+  Object.keys(page).forEach((key) => {
+    if (typeof page[key] === 'function') switchCtx[key] = page[key].bind(switchCtx)
+  })
+  page.loadLineLibrary.call(switchCtx, false)
+  page.applyLineMatch.call(switchCtx, '夜爬峨眉山')
+  log(switchCtx.data.form.distance === '21.5', '发布页：爬山类型下标题命中后按词库填强度字段')
+  page.onTypeTap.call(switchCtx, { currentTarget: { dataset: { type: 'driving' } } })
+  log(switchCtx.data.showMetrics === false, '发布页：切到自驾游后隐藏强度指标')
+  page.onTypeTap.call(switchCtx, { currentTarget: { dataset: { type: 'climbing' } } })
+  log(
+    switchCtx.data.showMetrics === true && switchCtx.data.difficultyIndex === 3 && switchCtx.data.form.distance === '21.5',
+    '发布页：切回爬山按标题重新匹配一次（不用再改标题）'
+  )
+
+  // 词库里字段缺失的线路（原表写「未知」的那 4 条）整条被剔除：标题命中它们时什么都不填
+  const droppedCtx = {
+    data: {
+      form: { type: 'hiking', title: '周末天牙峰', difficulty: 3, distance: '', elevationGain: '' },
+      errors: {},
+      showMetrics: true,
+      showTags: true,
+      tagOptions: [],
+      difficultyIndex: 2,
+      difficultyLabel: DIFFICULTY_OPTIONS[2].label,
+    },
+    setData(patch) {
+      Object.keys(patch).forEach((key) => {
+        const parts = key.split('.')
+        let target = this.data
+        for (let i = 0; i < parts.length - 1; i += 1) {
+          if (!target[parts[i]]) target[parts[i]] = {}
+          target = target[parts[i]]
+        }
+        target[parts[parts.length - 1]] = patch[key]
+      })
+    },
+  }
+  Object.keys(page).forEach((key) => {
+    if (typeof page[key] === 'function') droppedCtx[key] = page[key].bind(droppedCtx)
+  })
+  page.loadLineLibrary.call(droppedCtx, false)
+  page.applyLineMatch.call(droppedCtx, '周末天牙峰')
+  log(
+    droppedCtx.data.difficultyIndex === 2 &&
+      droppedCtx.data.form.distance === '' &&
+      droppedCtx.data.form.elevationGain === '',
+    '发布页：字段缺失被剔除的线路不会填任何一项（不补默认值）'
+  )
+
+  // 编辑模式：原活动的强度指标是用户填的，标题匹配不许动
+  const editCtx = {
+    data: {
+      form: { type: 'hiking', title: '夜爬峨眉山', difficulty: 6, distance: '9', elevationGain: '800' },
+      errors: {},
+      showMetrics: true,
+      showTags: true,
+      difficultyIndex: 5,
+      difficultyLabel: '6星',
+    },
+    setData(patch) {
+      Object.keys(patch).forEach((key) => {
+        if (key.indexOf('.') > -1) return
+        this.data[key] = patch[key]
+      })
+    },
+  }
+  Object.keys(page).forEach((key) => {
+    if (typeof page[key] === 'function') editCtx[key] = page[key].bind(editCtx)
+  })
+  page.loadLineLibrary.call(editCtx, true)
+  page.applyLineMatch.call(editCtx, '夜爬峨眉山')
+  log(
+    editCtx.data.form.difficulty === 6 &&
+      editCtx.data.form.distance === '9' &&
+      editCtx.data.form.elevationGain === '800',
+    '发布页：编辑已有活动时标题匹配不覆盖原活动的强度指标'
+  )
+
+  // 服务层：Mock 模式下发内置词库（深拷贝，页面改不坏常量）
+  const api = require(path.join(ROOT, 'services/api'))
+  return api.lines().then((list) => {
+    log(
+      list.length === LINE_LIBRARY.length && list !== LINE_LIBRARY,
+      '服务层：Mock 模式下发内置词库，且是深拷贝'
+    )
+  })
 }
 
 /* ---------------------- 提审演示数据（cloudfunctions/seed） ----------------------
@@ -4287,6 +4567,7 @@ return checkDeleteAccount()
   .then(() => checkUserIcons())
   .then(() => checkDetailComments())
   .then(() => checkMessagePage())
+  .then(() => checkLineLibrary())
   .then(() => checkSeedData())
 })
 .then(() => {

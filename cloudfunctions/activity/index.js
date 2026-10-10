@@ -36,6 +36,8 @@ const { MISSING, inspectFiles, collectFileIDs, resolveMedia } = require('./lib/m
 const { TTL_MS, DAY_MS, startOfDay, isExpired, expireTimeOf, isPastStart } = require('./lib/expire')
 // 默认昵称与默认头像配色：注册时随机生成，见 lib/nickname.js
 const { randomNickName, avatarColorOf, isDefaultNick } = require('./lib/nickname')
+// 线路词库：发布页按标题自动填「难度 / 全程长度 / 累计爬升」用（见 scripts/extract-lines.js）
+const { LINE_LIBRARY } = require('./lib/lines')
 const {
   LIMITS,
   fail,
@@ -59,6 +61,8 @@ const feedbacks = db.collection('feedback')
 const auditLogs = db.collection('activity_audits')
 const comments = db.collection('activity_comments')
 const notifications = db.collection('notifications')
+/** 线路词库：以数据库 lines 集合为准（后台可维护），集合还没建或为空时回退内置词库 */
+const lines = db.collection('lines')
 
 const RECRUITING = 'recruiting'
 const CLOSED = 'closed'
@@ -72,6 +76,8 @@ const START_JOIN_TEXT = '活动集合时间已过，已自动关闭，无法报�
 const START_TOGGLE_TEXT = '活动集合时间已过，已自动关闭，无法重新打开'
 const DEFAULT_PAGE_SIZE = 10
 const MAX_PAGE_SIZE = 100
+/** 一次返回的线路词库条数上限：词库是几百条的小表，不做分页，一次取完 */
+const LINE_QUERY_LIMIT = 500
 // 一天的毫秒数（DAY_MS）与当天 00:00（startOfDay）都取自 lib/expire.js：广场的日期筛选、
 // 「关闭当天可见」与两条自动关闭规则必须共用同一口径
 /** 我的活动一次最多返回的条数（云函数端单次查询上限 100） */
@@ -1581,12 +1587,39 @@ async function runExpireJob() {
  */
 const KEEP_WARM_TRIGGER = 'keepWarm'
 
+/* ------------------------------ 线路词库 ------------------------------ */
+
+/**
+ * 线路词库：发布活动时前端按标题里的地名 / 中心词匹配，自动填难度（星级）、全程长度、累计爬升。
+ *
+ * 数据源有两个，按优先级：
+ *   1. 数据库 lines 集合 —— 权威数据，可用云开发控制台导入 scripts/seed/lines.json，
+ *      或调 admin 云函数的 linesImport 把内置词库写进去；后台改了这里立刻生效；
+ *   2. 内置词库 lib/lines.js —— lines 集合还没建 / 为空 / 读取失败时的兜底，
+ *      保证「还没导入」和「导入完」前端行为一致，只是数据来源不同。
+ * 词库是公开数据，不含任何用户信息，不加登录校验。
+ */
+async function listLines() {
+  try {
+    const res = await lines.limit(LINE_QUERY_LIMIT).get()
+    const rows = (res && res.data) || []
+    if (rows.length) {
+      return { list: rows.map(withId), total: rows.length, source: 'db' }
+    }
+  } catch (err) {
+    // 集合不存在（还没导入过）也会走到这里：这是预期内的降级，不该让发布页拿不到词库
+    console.warn('[activity] lines 集合读取失败，回退内置词库', err)
+  }
+  return { list: LINE_LIBRARY, total: LINE_LIBRARY.length, source: 'builtin' }
+}
+
 /* ------------------------------ 路由 ------------------------------ */
 
 const ACTIONS = {
   home,
   list,
   detail,
+  lines: listLines,
   media,
   create,
   update,

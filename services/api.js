@@ -5,6 +5,8 @@ const { getType, supportsTags, supportsMetrics, tagName } = require('../utils/di
 const { matchCity, normalizeCity, singleCityKey } = require('../utils/cities')
 const { delay, deepClone, formatCardDate, WEEKDAY_TEXT } = require('../utils/util')
 const { LOCATION_MAX, ADDRESS_MAX } = require('../utils/location')
+// 线路词库：发布页按标题自动填「难度 / 全程长度 / 累计爬升」用（云端以 lines 集合为准）
+const { LINE_LIBRARY } = require('../utils/lines')
 const audit = require('../utils/audit')
 // 默认昵称 / 默认头像配色：与云端 cloudfunctions/activity/lib/nickname.js 同一份口径
 const { randomNickName, avatarColorOf, isDefaultNick } = require('../utils/nickname')
@@ -424,6 +426,14 @@ const mockApi = {
     result.isOrganizer = isOrganizer
     result.full = result.joinedCount >= result.maxPeople
     return withDelay(result)
+  },
+
+  /**
+   * 线路词库：Mock 模式直接用内置词库（与云端 lines 集合同一份数据）。
+   * 发布页只用它做标题匹配，返回整份列表即可。
+   */
+  lines() {
+    return withDelay(deepClone(LINE_LIBRARY))
   },
 
   create(payload) {
@@ -1068,6 +1078,15 @@ const cloudApi = {
   },
   detail(id) {
     return callCloud('detail', { id })
+  },
+  /**
+   * 线路词库（数据库 lines 集合）。云端读不到集合 / 集合为空时自己会回退到内置词库；
+   * 这里再兜一层网络异常：拿不到就继续用前端内置的那份，标题匹配不能因为一次网络抖动失效。
+   */
+  lines() {
+    return callCloud('lines', {})
+      .then((res) => (res && res.list && res.list.length ? res.list : deepClone(LINE_LIBRARY)))
+      .catch(() => deepClone(LINE_LIBRARY))
   },
   create(payload) {
     return callCloud('create', payload)

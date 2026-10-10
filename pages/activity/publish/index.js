@@ -12,8 +12,14 @@ const ui = require('../../../utils/ui')
 const config = require('../../../services/config')
 const { parsePickedPlace, placeNameOf, LOCATION_MAX } = require('../../../utils/location')
 const { matchCity } = require('../../../utils/cities')
+// 标题 → 线路词库：命中词库里的地名 / 中心词后自动填难度、全程长度、累计爬升
+const { matchLine } = require('../../../utils/line-match')
+const { LINE_LIBRARY, LINE_LIBRARY_VERSION } = require('../../../utils/lines')
+const { KEYS, getStorage, setStorage } = require('../../../utils/storage')
 
 const LOGIN_REASON = '发布活动需要先登录，是否立即登录？'
+/** 标题输入的防抖时长：边打字边匹配，等手停下来再算，避免每个字都跑一遍词库 */
+const LINE_MATCH_DELAY = 400
 
 Page({
   behaviors: [loginBehavior],
@@ -87,6 +93,30 @@ Page({
       this.setData({ editId, pageTitle: '编辑活动', submitText: '重新提交审核' })
       this.loadActivity(editId)
     }
+    this.loadLineLibrary(!!editId)
+  },
+
+  /**
+   * 线路词库：先用本地缓存 / 内置词库（同步就有，输入标题不用等网络），
+   * 再异步拉一次云端 lines 集合覆盖 —— 后台维护过词库后，下次进发布页拿到的就是最新数据。
+   * 编辑模式带进来的是原活动的强度指标，不允许被标题匹配覆盖，所以直接标记成「用户填过」。
+   */
+  loadLineLibrary(locked) {
+    // 缓存带上内置词库的版本号：小程序更新后词库变了，老缓存直接作废
+    const cached = getStorage(KEYS.lineLib, null)
+    const usable = cached && cached.version === LINE_LIBRARY_VERSION && cached.list && cached.list.length
+    this._library = usable ? cached.list : LINE_LIBRARY
+    // 编辑已有活动时不参与自动填充：原活动的强度指标是用户自己填的，不能被标题匹配改掉
+    this._lineLocked = !!locked
+    this._metricTouched = { difficulty: !!locked, distance: !!locked, elevation: !!locked }
+    api
+      .lines()
+      .then((list) => {
+        if (!list || !list.length) return
+        this._library = list
+        setStorage(KEYS.lineLib, { version: LINE_LIBRARY_VERSION, list })
+      })
+      .catch(() => {})
   },
 
   /** 编辑模式：拉取原活动回填表单，仅发起人可进入（服务端 update 也会再校验一次） */
@@ -126,6 +156,8 @@ Page({
           DIFFICULTY_OPTIONS.findIndex((item) => item.value === difficulty)
         )
         const desc = raw.desc || ''
+        // 编辑已有活动：三项强度指标都是用户原先填过的值，标题匹配不再覆盖它们
+        this._metricTouched = { difficulty: true, distance: true, elevation: true }
         this.setData({
           form: {
             cover: raw.cover || '',
@@ -257,6 +289,8 @@ Page({
     patch.showTags = supportsTags(type)
     patch.showMetrics = supportsMetrics(type)
     this.setData(patch)
+    // 切回徒步 / 爬山时，按标题重新匹配一次（自驾游等类型不填也不提示）
+    if (supportsMetrics(type)) this.applyLineMatch(this.data.form.title)
   },
 
   toggleTag(e) {
@@ -279,8 +313,86 @@ Page({
   },
 
   onTitleInput(e) {
-    this.setData({ 'form.title': String(e.detail.value || '').slice(0, 30) })
+    const title = String(e.detail.value || '').slice(0, 30)
+    this.setData({ 'form.title': title })
     this.clearError('title')
+    this.scheduleLineMatch(title)
+  },
+
+  /** 输入结束（失焦）时立刻算一次，不等防抖：用户填完标题就去动别的字段了 */
+  onTitleBlur(e) {
+    this.cancelLineMatch()
+    this.applyLineMatch(String((e.detail && e.detail.value) || this.data.form.title || ''))
+  },
+
+  /* -------------------- 标题 → 线路词库自动填充 -------------------- */
+
+  scheduleLineMatch(title) {
+    this.cancelLineMatch()
+    this._lineTimer = setTimeout(() => {
+      this._lineTimer = null
+      this.applyLineMatch(title)
+    }, LINE_MATCH_DELAY)
+  },
+
+  cancelLineMatch() {
+    if (!this._lineTimer) return
+    clearTimeout(this._lineTimer)
+    this._lineTimer = null
+  },
+
+  /**
+   * 按标题里的地名 / 中心词匹配线路，命中就把难度（星级）、全程长度、累计爬升填上。
+   *
+   * 只填用户没自己动过的字段：填过标题又觉得匹配得不合适、手动改过某一项，
+   * 之后无论标题怎么变都不会再把那一项改回去。类型不支持强度指标（自驾游等）时不填也不提示，
+   * 切回徒步 / 爬山会按记下的这条匹配重新填一次。
+   *
+   * 匹配结果只写进表单字段，不在页面上额外提示匹配到了哪条线路：强度指标本身就是给用户确认用的，
+   * 再挂一条提示反而在表单里多出一块和发布流程无关的文字。
+   */
+  applyLineMatch(title) {
+    if (!this._library || this._lineLocked) return
+    const match = matchLine(title, this._library)
+    if (!match) {
+      this.resetAutoMetrics()
+      return
+    }
+    if (!this.data.showMetrics) return
+    const touched = this._metricTouched || {}
+    const patch = {}
+    if (!touched.difficulty && match.stars > 0) {
+      const index = Math.min(Math.max(match.stars - 1, 0), DIFFICULTY_OPTIONS.length - 1)
+      const option = DIFFICULTY_OPTIONS[index]
+      patch.difficultyIndex = index
+      patch.difficultyLabel = option.label
+      patch['form.difficulty'] = option.value
+    }
+    if (!touched.distance) {
+      // 词库里这四项都是完整的；万一库里混进脏数据（0 / 空），留空也不填 0
+      patch['form.distance'] = match.distance > 0 ? String(match.distance) : ''
+      patch['errors.distance'] = ''
+    }
+    if (!touched.elevation) {
+      patch['form.elevationGain'] = match.elevation > 0 ? String(match.elevation) : ''
+      patch['errors.elevationGain'] = ''
+    }
+    // 三项都被用户改过时 patch 是空的，不用白跑一次 setData
+    if (Object.keys(patch).length) this.setData(patch)
+  },
+
+  /** 标题不再命中任何线路：把上一次自动填进去的值收回去（用户手动改过的不动） */
+  resetAutoMetrics() {
+    const touched = this._metricTouched || {}
+    const patch = {}
+    if (!touched.difficulty) {
+      patch.difficultyIndex = 2
+      patch.difficultyLabel = DIFFICULTY_OPTIONS[2].label
+      patch['form.difficulty'] = DIFFICULTY_OPTIONS[2].value
+    }
+    if (!touched.distance) patch['form.distance'] = ''
+    if (!touched.elevation) patch['form.elevationGain'] = ''
+    this.setData(patch)
   },
 
   /** 用户重新填写后清掉对应字段的报错提示 */
@@ -368,6 +480,7 @@ Page({
   onDifficultyChange(e) {
     const index = Number(e.detail.value)
     const option = DIFFICULTY_OPTIONS[index] || DIFFICULTY_OPTIONS[2]
+    if (this._metricTouched) this._metricTouched.difficulty = true
     this.setData({
       difficultyIndex: index,
       difficultyLabel: option.label,
@@ -376,11 +489,13 @@ Page({
   },
 
   onDistanceInput(e) {
+    if (this._metricTouched) this._metricTouched.distance = true
     this.setData({ 'form.distance': e.detail.value })
     this.clearError('distance')
   },
 
   onElevationInput(e) {
+    if (this._metricTouched) this._metricTouched.elevation = true
     this.setData({ 'form.elevationGain': e.detail.value })
     this.clearError('elevationGain')
   },
@@ -634,5 +749,10 @@ Page({
 
   onLogin(e) {
     this.handleLoginSuccess(e.detail)
+  },
+
+  /** 页面退出时清掉标题匹配的防抖定时器，别让它打到已经销毁的页面上 */
+  onUnload() {
+    this.cancelLineMatch()
   },
 })

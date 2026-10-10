@@ -21,6 +21,8 @@ const store = {
   notifications: [],
   admins: [],
   activity_audits: [],
+  // 线路词库：发布页按标题自动填强度指标的数据源（见 scripts/extract-lines.js）
+  lines: [],
 }
 
 let currentOpenid = ''
@@ -529,6 +531,9 @@ const seedFn = require(path.join(ROOT, 'cloudfunctions/seed/index.js'))
 const seedData = require(path.join(ROOT, 'cloudfunctions/seed/lib/data'))
 // 默认昵称词库：注册时的随机昵称必须取自这份词库（与前端 utils/nickname.js 同一份）
 const { NICK_PREFIX, NICK_SUFFIX } = require(path.join(ROOT, 'cloudfunctions/activity/lib/nickname'))
+// 线路词库：activity 用来兜底下发，admin 用它导入 lines 集合，两份必须是同一份数据
+const { LINE_LIBRARY, LINE_LIBRARY_VERSION } = require(path.join(ROOT, 'cloudfunctions/activity/lib/lines'))
+const adminLineLibrary = require(path.join(ROOT, 'cloudfunctions/admin/lib/lines'))
 
 /** 判断昵称是不是「词库随机生成」的默认昵称，如「山野阿狼」 */
 function isPoolNickName(nickName) {
@@ -2452,6 +2457,54 @@ async function run() {
   log(
     !!rescheduledDoc && rescheduledDoc.startTime === form.startTime,
     '集合时间：改期后落库的是新的集合时间'
+  )
+
+  /* ---------- 线路词库：发布页按标题自动填强度指标的数据源 ---------- */
+  // 词库是公开数据（线路名 / 星级 / 公里数），不含用户信息，所以取词库不校验登录；
+  // 但「导入词库」是写库动作，只允许审核员调。
+  resetStore()
+  store.admins.push({ _id: 'admin_lines', openid: ADMIN, name: '运营小张' })
+  log(
+    adminLineLibrary.LINE_LIBRARY.length === LINE_LIBRARY.length &&
+      adminLineLibrary.LINE_LIBRARY_VERSION === LINE_LIBRARY_VERSION,
+    '线路词库：activity 与 admin 两个云函数用的是同一份词库'
+  )
+
+  const builtinLines = await callActivity('lines', {}, OTHER)
+  log(
+    builtinLines.source === 'builtin' && builtinLines.total === LINE_LIBRARY.length,
+    `线路词库：lines 集合还没导入时回退内置词库（${builtinLines.total} 条）`
+  )
+  log(
+    builtinLines.list.every((item) => !!item.name && item.stars > 0 && item.keys.length > 0),
+    '线路词库：每条线路都有名称 / 星级 / 至少一个匹配中心词'
+  )
+
+  const forbiddenImport = await callAdmin('linesImport', {}, OTHER)
+  log(forbiddenImport.code === 'FORBIDDEN', '线路词库：非审核员不能导入词库')
+
+  const imported = await callAdmin('linesImport', {}, ADMIN)
+  log(
+    imported.saved === LINE_LIBRARY.length && imported.version === LINE_LIBRARY_VERSION,
+    `线路词库：审核员一次导入 ${imported.saved} 条（版本 ${imported.version}）`
+  )
+  const importedAgain = await callAdmin('linesImport', {}, ADMIN)
+  log(
+    importedAgain.saved === LINE_LIBRARY.length && store.lines.length === LINE_LIBRARY.length,
+    '线路词库：导入可重复执行，不会写出重复记录'
+  )
+  const logRows = store.activity_audits.filter((item) => item.action === 'linesImport')
+  log(logRows.length === 2 && logRows[0].remark.indexOf('线路词库') > -1, '线路词库：导入动作写进审核日志，运营可追溯')
+
+  const dbLines = await callActivity('lines', {}, OTHER)
+  log(
+    dbLines.source === 'db' && dbLines.total === LINE_LIBRARY.length,
+    '线路词库：导入后活动云函数改从 lines 集合下发'
+  )
+  const emei = dbLines.list.filter((item) => item.name === '峨眉山环线100公里')
+  log(
+    emei.length === 2 && emei.every((item) => item.id && item.keys.indexOf('峨眉山') > -1),
+    '线路词库：数据库下发的记录带 id 与中心词，重复线路（7 星 / 8 星）都在'
   )
 
   /* ---------- 提审演示数据：造的数据必须真的能被审核员看到 ---------- */

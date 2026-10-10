@@ -12,6 +12,8 @@ const KEYS = {
   feedback: 'my_feedback',
   // 首页列表快照：冷启动时先渲染上一次的结果，接口回来再覆盖（纯公开数据，不含个人信息）
   homeCache: 'aa_home_cache',
+  // 线路词库快照：发布页按标题自动填强度指标用；云端 lines 集合是权威数据，这里只是省一次网络往返
+  lineLib: 'aa_line_lib',
 }
 
 function getStorage(key, fallback) {
