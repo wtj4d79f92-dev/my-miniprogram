@@ -43,7 +43,7 @@ assets/type-icons/<类型key>.jpg
 | 类型 | 图标 | 类型 | 图标 |
 | --- | --- | --- | --- |
 | hiking 徒步 | ✔ 吉祥物位图 | ball 打球 | 线性图标 |
-| climbing 爬山 | 线性图标 | pet 宠物会 | 线性图标 |
+| climbing 爬山 | ✔ 吉祥物位图 | pet 宠物会 | 线性图标 |
 | driving 自驾游 | 线性图标 | running 跑步 | 线性图标 |
 | camping 露营 | 线性图标 | swimming 游泳 | 线性图标 |
 | cycling 骑行 | 线性图标 | other 其他 | 线性图标 |
