@@ -155,6 +155,12 @@
   height: 52rpx;
 }
 
+/* 吉祥物位图自带底色、不是透明抠图：铺满整格，只留格子自己的圆角（线性图标仍居中 52rpx） */
+.type-icon-img.is-fill {
+  width: 100%;
+  height: 100%;
+}
+
 /* 只在图标解码失败时兜底显示，正常不会出现 */
 .type-icon-emoji {
   font-size: 40rpx;

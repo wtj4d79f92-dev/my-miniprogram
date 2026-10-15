@@ -220,6 +220,13 @@
   margin-right: 8rpx;
 }
 
+/* 吉祥物位图：这里是面板里的一枚小方块徽标，比线性图标大一点，缩到 30rpx 就看不出是张图了 */
+.type-panel-icon.is-tile {
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 12rpx;
+}
+
 /* 只在图标解码失败时出现：顶上图标的位置 */
 .type-panel-emoji {
   margin-right: 8rpx;

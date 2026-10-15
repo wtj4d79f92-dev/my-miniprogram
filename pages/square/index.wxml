@@ -69,10 +69,10 @@
         hover-start-time="0"
         hover-stay-time="80"
       >
-        <!-- 与首页金刚区同一套线性图标（utils/type-icons.js）；「全部类型」没有类型，自然不渲染图标 -->
+        <!-- 与首页金刚区同一套图标（utils/type-icons.js）：线性图标 / 吉祥物位图；「全部类型」没有类型，不渲染图标 -->
         <image
           wx:if="{{item.icon && !iconErrorMap[item.key]}}"
-          class="type-panel-icon"
+          class="type-panel-icon {{item.iconFill ? 'is-tile' : ''}}"
           src="{{item.icon}}"
           mode="aspectFit"
           data-key="{{item.key}}"

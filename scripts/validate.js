@@ -4429,27 +4429,45 @@ function checkTypeIcons() {
   const squareWxml = read('pages/square/index.wxml')
   const squareWxss = read('pages/square/index.wxss')
   const dict = require(path.join(ROOT, 'utils/dict'))
-  const { TYPE_ICONS, TYPE_ICON_STROKE } = require(path.join(ROOT, 'utils/type-icons'))
+  const { TYPE_ICONS, TYPE_ICON_IMAGES, TYPE_ICON_STROKE } = require(path.join(ROOT, 'utils/type-icons'))
   const types = dict.TYPE_GRID
+  const bitmapTypes = types.filter((item) => item.iconFill)
 
+  // 图标有两个来源：默认是画在代码里的线性 SVG，换上吉祥物位图的类型则是图片路径。
+  // 两种都算「挂上了图标」，但页面得分辨得出（位图自带底色、要铺满整格），所以连 iconFill 一起钉住
   log(
-    types.length === 10 && types.every((item) => item.icon && item.icon.indexOf('data:image/svg+xml') === 0),
-    '金刚区：十个玩法都挂上了 svg data URI 图标'
+    types.length === 10 &&
+      types.every((item) =>
+        item.iconFill
+          ? item.icon.indexOf('/assets/type-icons/') === 0
+          : item.icon.indexOf('data:image/svg+xml') === 0
+      ),
+    `金刚区：十个玩法都挂上了图标（线性 ${types.length - bitmapTypes.length} 个 + 吉祥物位图 ${bitmapTypes.length} 个）`
   )
   log(
-    Object.keys(TYPE_ICONS).length === types.length && types.every((item) => TYPE_ICONS[item.key] === item.icon),
+    bitmapTypes.length === Object.keys(TYPE_ICON_IMAGES).length &&
+      types.every((item) =>
+        item.iconFill ? TYPE_ICON_IMAGES[item.key] === item.icon : TYPE_ICONS[item.key] === item.icon
+      ),
     '金刚区：类型图标与 utils/type-icons.js 同源，没有各写各的'
   )
+  // 位图得真在代码包里：路径写飞了页面只会静静退回 emoji，不报错，容易一路带进线上
+  log(
+    bitmapTypes.every((item) => exists(item.icon.replace(/^\//, ''))),
+    '金刚区：吉祥物位图都在代码包里（assets/type-icons/）'
+  )
 
-  // 线性规格：不填充 + 圆角端点 + 同一描边色。面性图标会带 fill，风格立刻就分家了
+  // 线性规格：不填充 + 圆角端点 + 同一描边色。面性图标会带 fill，风格立刻就分家了。
+  // 只校验还在用线性图标的那些类型，位图不适用这套规格
   const svgs = Object.keys(TYPE_ICONS).map((key) => decodeURIComponent(TYPE_ICONS[key]))
   log(
-    svgs.every((svg) => /fill="none"/.test(svg) && /stroke-linecap="round"/.test(svg)),
-    '金刚区：十个图标都是同一套线性规格（不填充 + 圆角端点）'
+    svgs.length === types.length - bitmapTypes.length &&
+      svgs.every((svg) => /fill="none"/.test(svg) && /stroke-linecap="round"/.test(svg)),
+    '金刚区：还是线性图标的那些类型共用同一套线性规格（不填充 + 圆角端点）'
   )
   log(
     svgs.every((svg) => svg.indexOf(`stroke="${TYPE_ICON_STROKE}"`) > -1),
-    '金刚区：十个图标共用同一个描边色，功能只靠形状区分'
+    '金刚区：线性图标的描边色统一，功能只靠形状区分'
   )
 
   // 底色：页面里不再逐格上色，两个页面共用同一块极浅品牌底
@@ -4465,17 +4483,47 @@ function checkTypeIcons() {
   )
   log(
     homeWxml.indexOf('type-icon-img') > -1 && publishWxml.indexOf('type-icon-img') > -1,
-    '金刚区：首页与发布页渲染的是同一套线性图标'
+    '金刚区：首页与发布页渲染的是同一套类型图标'
+  )
+  // 位图自带底色：页面要铺满整格，否则「图里一层底 + 格子一层底」会叠成双层底色
+  log(
+    /class="type-icon-img \{\{item\.iconFill/.test(homeWxml) &&
+      /class="type-icon-img \{\{item\.iconFill/.test(publishWxml) &&
+      /\.type-icon-img\.is-fill \{/.test(homeWxss) &&
+      /\.type-icon-img\.is-fill \{/.test(publishWxss),
+    '金刚区：吉祥物位图铺满整格（页面按 iconFill 加 is-fill）'
+  )
+  // 位图吃的是代码包里的图片预算：开发者工具那条 IMAGE_AND_AUDIO_LIMIT 判的是**全包图片加总** ≤ 200KB，
+  // 十个类型逐个换下去最容易顶线，这里把总量钉住，超了先在这里红，而不是等到提审
+  const walkImages = (dir) =>
+    fs.readdirSync(path.join(ROOT, dir)).reduce((acc, name) => {
+      const rel = `${dir}/${name}`
+      if (fs.statSync(path.join(ROOT, rel)).isDirectory()) return acc.concat(walkImages(rel))
+      return /\.(png|jpe?g|gif|webp)$/i.test(name) ? acc.concat(rel) : acc
+    }, [])
+  const imageBytes = walkImages('assets').reduce(
+    (sum, rel) => sum + fs.statSync(path.join(ROOT, rel)).size,
+    0
+  )
+  log(
+    imageBytes < 200 * 1024,
+    `金刚区：代码包内图片合计 ${Math.round(imageBytes / 1024)}KB（含吉祥物位图），仍在 200KB 预算内`
   )
   // 广场的「活动类型」下拉也是同一批玩法：漏掉它就会出现「首页是线性图标、筛选里还是 emoji」
   log(
-    /class="type-panel-icon"[\s\S]*?src="\{\{item\.icon\}\}"/.test(squareWxml) &&
+    /class="type-panel-icon( \{\{item\.iconFill \? 'is-tile' : ''\}\})?"[\s\S]*?src="\{\{item\.icon\}\}"/.test(
+      squareWxml
+    ) &&
       squareWxml.indexOf("item.emoji + ' '") === -1,
-    '活动广场：类型筛选渲染的是同一套线性图标，不再拼 emoji'
+    '活动广场：类型筛选渲染的是同一套类型图标，不再拼 emoji'
   )
   log(
     (squareWxss.match(/\.type-panel-icon \{[\s\S]*?\}/) || [''])[0].indexOf('width: 30rpx') > -1,
     '活动广场：筛选里的图标按图片尺寸给宽高'
+  )
+  log(
+    squareWxss.indexOf('.type-panel-icon.is-tile') > -1,
+    '活动广场：吉祥物位图按小方块徽标渲染，不硬缩成线性图标的 30rpx'
   )
   log(
     /binderror="onTypeIconError"/.test(squareWxml) && squareWxml.indexOf('type-panel-emoji') > -1,

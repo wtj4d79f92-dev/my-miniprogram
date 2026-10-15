@@ -1,6 +1,6 @@
 // 全局字典：活动类型、标签、难度、星期筛选、默认横幅、默认文案
 
-const { TYPE_ICONS } = require('./type-icons')
+const { TYPE_ICONS, TYPE_ICON_IMAGES } = require('./type-icons')
 
 /** 活动类型字典（key / 名称 / emoji / 主题色 / 渐变） */
 const ACTIVITY_TYPE_ROWS = [
@@ -18,11 +18,13 @@ const ACTIVITY_TYPE_ROWS = [
 
 /**
  * 玩法卡片 / 筛选胶囊仍然吃 emoji 与渐变（emoji 在此处是回退素材，见页面里的图标加载失败分支），
- * 金刚区额外挂一份统一线性图标：icon 是 data URI，页面直接交给 <image>。
+ * 金刚区额外挂一份图标：默认是统一线性图标（icon 是 svg data URI），换了吉祥物位图的类型则是图片路径。
+ * 位图自带底色、要铺满整格，页面别去猜图标是哪一种，按 iconFill 判断（见 utils/type-icons.js）。
  */
-const ACTIVITY_TYPES = ACTIVITY_TYPE_ROWS.map((item) =>
-  Object.assign({}, item, { icon: TYPE_ICONS[item.key] || '' })
-)
+const ACTIVITY_TYPES = ACTIVITY_TYPE_ROWS.map((item) => {
+  const image = TYPE_ICON_IMAGES[item.key]
+  return Object.assign({}, item, { icon: image || TYPE_ICONS[item.key] || '', iconFill: !!image })
+})
 
 /** 活动标签（仅自驾游 / 徒步 / 爬山可选） */
 const ACTIVITY_TAGS = [

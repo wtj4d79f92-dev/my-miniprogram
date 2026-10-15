@@ -72,11 +72,11 @@
           hover-start-time="0"
           hover-stay-time="80"
         >
-          <!-- 图标换成统一的线性图标（utils/type-icons.js）；底色十个格子共用一套，功能只靠形状区分 -->
+          <!-- 图标来自 utils/type-icons.js：默认是统一线性图标，换了吉祥物的类型是自带底色的位图（铺满整格） -->
           <view class="type-icon">
             <image
               wx:if="{{!iconErrorMap[index]}}"
-              class="type-icon-img"
+              class="type-icon-img {{item.iconFill ? 'is-fill' : ''}}"
               src="{{item.icon}}"
               mode="aspectFit"
               data-index="{{index}}"
