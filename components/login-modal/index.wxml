@@ -63,9 +63,10 @@
           <button
             class="login-btn-reset"
             open-type="getPhoneNumber"
+            hover-class="none"
             bindgetphonenumber="onGetPhoneNumber"
           >
-            <view class="login-btn login-btn-ghost"><text>手机号快捷登录</text></view>
+            <view class="login-btn login-btn-ghost" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>手机号快捷登录</text></view>
           </button>
         </block>
       </view>

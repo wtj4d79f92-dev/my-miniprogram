@@ -1,5 +1,6 @@
 {
   "navigationBarTitleText": "旷行吖 · 同城找搭子",
+  "renderer": "webview",
   "singlePage": {
     "navigationBarFit": "squeezed"
   },

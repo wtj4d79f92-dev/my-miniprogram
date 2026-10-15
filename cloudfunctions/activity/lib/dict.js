@@ -10,7 +10,7 @@ const ACTIVITY_TYPES = [
   { key: 'camping', name: '露营', emoji: '⛺', color: '#F6D365', from: '#f6d365', to: '#fda085' },
   { key: 'cycling', name: '骑行', emoji: '🚴', color: '#44A08D', from: '#a8edea', to: '#fed6e3' },
   { key: 'ball', name: '打球', emoji: '🏀', color: '#FF8E72', from: '#FFB88C', to: '#FF8E72' },
-  { key: 'fitness', name: '健身', emoji: '💪', color: '#FA709A', from: '#ffecd2', to: '#fcb69f' },
+  { key: 'pet', name: '宠物会', emoji: '🐾', color: '#F2994A', from: '#FFD98E', to: '#F2994A' },
   { key: 'running', name: '跑步', emoji: '🏃', color: '#FFD93D', from: '#ffecd2', to: '#fcb69f' },
   { key: 'swimming', name: '游泳', emoji: '🏊', color: '#00CDAC', from: '#74ebd5', to: '#9face6' },
   { key: 'other', name: '其他', emoji: '🎉', color: '#A8DADC', from: '#E0EAFC', to: '#CFDEF3' },

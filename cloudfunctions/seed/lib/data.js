@@ -26,7 +26,7 @@ const TYPES = {
   camping: { name: '露营', emoji: '⛺', color: '#F6D365', from: '#f6d365', to: '#fda085' },
   cycling: { name: '骑行', emoji: '🚴', color: '#44A08D', from: '#a8edea', to: '#fed6e3' },
   ball: { name: '打球', emoji: '🏀', color: '#FF8E72', from: '#FFB88C', to: '#FF8E72' },
-  fitness: { name: '健身', emoji: '💪', color: '#FA709A', from: '#ffecd2', to: '#fcb69f' },
+  pet: { name: '宠物会', emoji: '🐾', color: '#F2994A', from: '#FFD98E', to: '#F2994A' },
   running: { name: '跑步', emoji: '🏃', color: '#FFD93D', from: '#ffecd2', to: '#fcb69f' },
   swimming: { name: '游泳', emoji: '🏊', color: '#00CDAC', from: '#74ebd5', to: '#9face6' },
   other: { name: '其他', emoji: '🎉', color: '#A8DADC', from: '#E0EAFC', to: '#CFDEF3' },
@@ -92,7 +92,7 @@ const DEMO_SEEDS = [
   { city: '广州', type: 'ball', title: '周六下午羽毛球双打约战', location: '天河体育中心', address: '广东省广州市天河体育中心', lat: 23.1355, lng: 113.3224, max: 9, day: 5, hour: 14, hours: 3, feeNote: '场地费 AA 均摊，人均约 25 元', joined: 6 },
   { city: '深圳', type: 'hiking', title: '梧桐山登顶（需要体力）', location: '梧桐山北门', address: '广东省深圳市梧桐山北门', lat: 22.5942, lng: 114.2026, difficulty: 5, distance: 12, climb: 700, max: 12, day: 7, hour: 7, hours: 6, tags: ['needOwner'], joined: 10 },
   { city: '深圳', type: 'cycling', title: '深圳湾夜骑 30 公里', location: '深圳湾公园日出剧场', address: '广东省深圳市深圳湾公园日出剧场', lat: 22.4806, lng: 113.9477, max: 20, day: 2, hour: 19, hours: 2.5, joined: 14 },
-  { city: '深圳', type: 'fitness', title: '健身房搭子 · 练背一起卷', location: '海岸城健身工作室', address: '广东省深圳市南山区海岸城健身工作室', lat: 22.5198, lng: 113.93, max: 6, day: 1, hour: 19, hours: 2, feeNote: '私教课费用自理，人均约 60 元', joined: 4 },
+  { city: '深圳', type: 'pet', title: '周末遛狗局 · 带毛孩子来撒欢', location: '深圳湾公园日出剧场', address: '广东省深圳市南山区深圳湾公园日出剧场', lat: 22.4806, lng: 113.9477, max: 12, day: 6, hour: 10, hours: 3, joined: 6 },
   { city: '杭州', type: 'hiking', title: '九溪—龙井—满觉陇慢走团', location: '九溪公交站', address: '浙江省杭州市九溪公交站', lat: 30.2076, lng: 120.1178, difficulty: 2, distance: 11, climb: 380, max: 18, day: 4, hour: 9, hours: 5, joined: 14 },
   { city: '杭州', type: 'camping', title: '青山湖草坪露营 · 天幕已备', location: '青山湖国家森林公园', address: '浙江省杭州市青山湖国家森林公园', lat: 30.25, lng: 119.75, max: 10, day: 6, hour: 14, hours: 20, feeNote: '营地费自理，人均约 80 元', joined: 6 },
   { city: '杭州', type: 'running', title: '西湖晨跑 10 公里', location: '断桥残雪', address: '浙江省杭州市断桥残雪', lat: 30.259, lng: 120.149, max: 20, day: 3, hour: 6, hours: 1.5, joined: 9 },
@@ -109,7 +109,7 @@ const DEMO_SEEDS = [
   { city: '长沙', type: 'hiking', title: '岳麓山—桃花岭连穿', location: '岳麓山东门', address: '湖南省长沙市岳麓山东门', lat: 28.183, lng: 112.938, difficulty: 3, distance: 12, climb: 520, max: 15, day: 3, hour: 8, hours: 5, joined: 9 },
   { city: '厦门', type: 'cycling', title: '环岛路骑行 + 看日落', location: '环岛路音乐广场', address: '福建省厦门市环岛路音乐广场', lat: 24.47, lng: 118.15, max: 18, day: 1, hour: 16, hours: 3, joined: 12 },
   { city: '厦门', type: 'camping', title: '五缘湾湿地公园野餐 · 天幕已备', location: '五缘湾湿地公园', address: '福建省厦门市五缘湾湿地公园', lat: 24.536, lng: 118.172, max: 8, day: 6, hour: 15, hours: 6, feeNote: '营地费自理，人均约 100 元', joined: 5 },
-  { city: '上海', type: 'fitness', title: '晚上撸铁搭子 · 练腿不孤单', location: '静安体育中心健身房', address: '上海市静安区体育中心健身房', lat: 31.2456, lng: 121.4499, max: 6, day: 5, hour: 19, hours: 2, feeNote: '健身卡与私教费自理，人均约 50 元', joined: 4 },
+  { city: '上海', type: 'pet', title: '猫咪社交下午茶 · 带猫来聚会', location: '静安公园', address: '上海市静安区静安公园', lat: 31.2246, lng: 121.4453, max: 10, day: 5, hour: 14, hours: 3, joined: 4 },
   { city: '广州', type: 'other', title: '珠江边野餐 + 桌游一下午', location: '二沙岛公园', address: '广东省广州市二沙岛公园', lat: 23.1166, lng: 113.3253, max: 12, day: 4, hour: 15, hours: 4, joined: 7 },
 ]
 

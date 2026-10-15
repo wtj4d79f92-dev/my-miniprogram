@@ -1,5 +1,6 @@
 {
   "navigationBarTitleText": "活动广场 · 同城找搭子",
+  "renderer": "webview",
   "usingComponents": {
     "navigation-bar": "/components/navigation-bar/navigation-bar",
     "city-picker": "/components/city-picker/index",

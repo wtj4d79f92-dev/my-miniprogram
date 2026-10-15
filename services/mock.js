@@ -37,7 +37,7 @@ const SEEDS = [
   { city: '广州', type: 'ball', title: '周六下午 羽毛球双打约战', location: '广东省广州市 天河体育中心', difficulty: 0, distance: 0, climb: 0, fee: 25, max: 8, tags: [], day: 5, hour: 14, joined: 7 },
   { city: '深圳', type: 'hiking', title: '梧桐山登顶（需体力）', location: '广东省深圳市 梧桐山北门', difficulty: 5, distance: 12, climb: 700, fee: 0, max: 12, tags: ['needOwner'], day: 7, hour: 7, joined: 10 },
   { city: '深圳', type: 'cycling', title: '深圳湾夜骑 30 公里', location: '广东省深圳市 深圳湾公园日出剧场', difficulty: 0, distance: 0, climb: 0, fee: 0, max: 20, tags: [], day: 2, hour: 19, joined: 15 },
-  { city: '深圳', type: 'fitness', title: '健身房搭子 · 练背一起卷', location: '广东省深圳市 南山区海岸城健身工作室', difficulty: 0, distance: 0, climb: 0, fee: 60, max: 6, tags: [], day: 1, hour: 19, joined: 4 },
+  { city: '深圳', type: 'pet', title: '周末遛狗局 · 带毛孩子来撒欢', location: '广东省深圳市 深圳湾公园日出剧场', difficulty: 0, distance: 0, climb: 0, fee: 0, max: 12, tags: [], day: 6, hour: 10, joined: 6 },
   { city: '杭州', type: 'hiking', title: '九溪—龙井—满觉陇 慢走团', location: '浙江省杭州市 九溪公交站', difficulty: 2, distance: 11, climb: 380, fee: 0, max: 18, tags: [], day: 4, hour: 9, joined: 14 },
   { city: '杭州', type: 'camping', title: '青山湖草坪露营 · 天幕已备', location: '浙江省杭州市 青山湖国家森林公园', difficulty: 0, distance: 0, climb: 0, fee: 80, max: 10, tags: [], day: 6, hour: 14, joined: 6 },
   { city: '杭州', type: 'running', title: '西湖晨跑 10 公里', location: '浙江省杭州市 断桥残雪', difficulty: 0, distance: 0, climb: 0, fee: 0, max: 20, tags: [], day: 0, hour: 6, joined: 9 },

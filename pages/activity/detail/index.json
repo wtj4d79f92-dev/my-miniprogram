@@ -1,5 +1,6 @@
 {
   "navigationBarTitleText": "活动详情 · 旷行吖",
+  "renderer": "webview",
   "singlePage": {
     "navigationBarFit": "squeezed"
   },

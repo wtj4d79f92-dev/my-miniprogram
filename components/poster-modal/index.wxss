@@ -13,10 +13,12 @@
   box-sizing: border-box;
 }
 
+/* 预览框的宽高比必须与画布一致（components/poster-modal/index.js 的 WIDTH / HEIGHT）：
+   image 用了 aspectFill，比例对不上会把海报裁掉一截 */
 .poster-wrap {
   position: relative;
   width: 560rpx;
-  height: 956rpx;
+  height: 1016rpx;
   border-radius: var(--radius);
   overflow: hidden;
   box-shadow: 0 20rpx 60rpx rgba(0, 0, 0, 0.25);
@@ -25,7 +27,7 @@
 .poster-img {
   display: block;
   width: 560rpx;
-  height: 956rpx;
+  height: 1016rpx;
 }
 
 .poster-loading {

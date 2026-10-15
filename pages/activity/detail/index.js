@@ -6,9 +6,19 @@ const ui = require('../../../utils/ui')
 const location = require('../../../utils/location')
 const scene = require('../../../utils/scene')
 const expire = require('../../../utils/expire')
+const posters = require('../../../utils/posters')
 
 /** 举报原因候选：与云端 activity 云函数的 REPORT_REASONS 保持一致 */
 const REPORT_REASONS = ['虚假信息或诈骗', '违法违规内容', '侵权或盗用他人内容', '广告骚扰', '其他']
+
+/**
+ * 预热活动类型对应的分享海报（云存储下载到本地临时路径），结果缓存在 utils/posters.js。
+ * 下载是异步的，这里只负责提前发起 —— 等用户真去点分享时，onShareAppMessage 里就能
+ * 同步取到结果。失败不提示用户：没有海报不是错误，分享卡片照旧回落到活动封面。
+ */
+function preparePoster(type) {
+  posters.posterFor(type).catch(() => '')
+}
 
 /**
  * 朋友圈单页模式的判定与启动参数都在 utils/scene.js（首页分享同样要用），
@@ -260,6 +270,9 @@ Page({
     activity.qrSrc = activity.qrUrl || this._mediaUrl[activity.groupQrCode] || activity.groupQrCode
     // 云端下发的成员快照只留昵称 / 头像（不带 openid），列表 key 用下标生成
     activity.joinedPeople = raw.joinedPeople || []
+    // 活动类型对应的分享海报：这里有类型了，趁渲染的空档先探测一次（异步，不阻塞），
+    // 用户点分享时 onShareAppMessage 里就能同步取到，不必等回调里再做异步
+    preparePoster(activity.type)
     activity.avatarList = activity.joinedPeople.map((member, index) =>
       Object.assign({}, member, { key: `member_${index}` })
     )
@@ -783,6 +796,12 @@ Page({
 
   /* ------------------------------ 分享 ------------------------------ */
 
+  /** 当前分享卡片该用哪张图：类型海报（云存储下载的本地临时文件）→ 活动封面 → 空 */
+  shareImage() {
+    const activity = this.data.activity || {}
+    return posters.cachedPoster(activity.type) || activity.coverSrc || activity.cover || ''
+  },
+
   openSharePanel() {
     // 单页模式不支持在小程序页面内发起分享，入口已隐藏，这里只做兜底
     if (this.data.singlePage) return
@@ -814,8 +833,9 @@ Page({
     return {
       title: `${activity.title}，一起来组队吧！`,
       path: `/pages/activity/detail/index?id=${activity.id}`,
-      // 分享卡片只认可访问的图片地址，优先用云函数换好的 https 临时链接
-      imageUrl: activity.coverSrc || activity.cover || '',
+      // 优先用该活动类型的固定海报（包内图片，出图稳定、不受云存储权限影响），
+      // 该类型还没出海报时回落到活动封面，取图口径见 shareImage()
+      imageUrl: this.shareImage(),
     }
   },
 
@@ -826,8 +846,8 @@ Page({
     return {
       title: `${activity.title}，一起来组队吧！`,
       query: `id=${activity.id}`,
-      // 朋友圈卡片的缩略图同样只认可访问的图片地址，优先用云函数换好的 https 临时链接
-      imageUrl: activity.coverSrc || activity.cover || '',
+      // 朋友圈卡片用的是 1:1 方图，运营给的海报正好是方图，不用再裁
+      imageUrl: this.shareImage(),
     }
   },
 

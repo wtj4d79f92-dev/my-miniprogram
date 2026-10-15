@@ -253,15 +253,26 @@
   min-height: 104rpx;
 }
 
+/* 登录首页：主按钮与次按钮保持同等大小，只有配色区分主次 */
+.login-actions .login-btn-ghost {
+  min-height: 128rpx;
+  font-size: 34rpx;
+}
+
 .login-btn-disabled {
   opacity: 0.45;
 }
 
-/* 云模式下的手机号授权按钮：还原 button 默认样式，样式交给内层 view */
-.login-btn-reset {
+/*
+ * 云模式下的手机号授权按钮：还原 button 默认样式，样式交给内层 view。
+ * 选择器必须带上 .login-actions 这一层 —— 基础库对 button 的默认样式是
+ * `wx-button:not([size=mini]){width:184px;margin:auto}`，权重比单个 class 高，
+ * 只写 .login-btn-reset 会被压回 184px 宽并居中。
+ */
+.login-actions .login-btn-reset {
   display: block;
   width: 100%;
-  margin: 0;
+  margin: 24rpx 0 0;
   padding: 0;
   border: none;
   background: transparent;
@@ -270,7 +281,12 @@
   color: inherit;
 }
 
-.login-btn-reset::after {
+/* 间距由外层 button 提供，内层不再自带上边距，避免 button 因 overflow 多出一段空白 */
+.login-actions .login-btn-reset .login-btn-ghost {
+  margin-top: 0;
+}
+
+.login-actions .login-btn-reset::after {
   border: none;
 }
 

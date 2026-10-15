@@ -1,5 +1,6 @@
 {
   "navigationBarTitleText": "消息 · 旷行吖",
+  "renderer": "webview",
   "usingComponents": {
     "navigation-bar": "/components/navigation-bar/navigation-bar",
     "avatar": "/components/avatar/index",
