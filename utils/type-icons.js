@@ -28,17 +28,12 @@ const { lineIcon, LINE_ICON_BRAND } = require('./line-icons')
  * 图形部分。外层的 <svg> 标签、视窗与描边属性由 buildIcon 统一补齐，
  * 这里只写形状，保证这批图标的视窗与线宽天然一致。
  *
- * 玩法的取形：跑步是人形，露营是带门帘的帐篷，骑行是自行车，打球是篮球，
+ * 玩法的取形：跑步是人形，骑行是自行车，打球是篮球，
  * 宠物会是爪印，游泳是划水的人 + 水面，其他是星芒。
- * 徒步 / 爬山 / 自驾游已改由位图吉祥物接管（见 ICON_IMAGES），这里少几个形状不影响其余图标的规格。
+ * 徒步 / 爬山 / 自驾游 / 露营已改由位图吉祥物接管（见 ICON_IMAGES），
+ * 这里少几个形状不影响其余图标的规格。
  */
 const ICON_BODIES = {
-  // 露营：带门帘的帐篷（刻意比山峰窄一号：两处都是三角剪影，靠宽高比区分）
-  camping:
-    '<path d="M12 5.6 L5.4 18.6 L18.6 18.6 Z"/>' +
-    '<path d="M12 10.8 L9.2 18.6"/>' +
-    '<path d="M12 10.8 L14.8 18.6"/>',
-
   // 骑行：自行车
   cycling:
     '<circle cx="5.8" cy="16.4" r="3.7"/>' +
@@ -100,6 +95,8 @@ const ICON_IMAGES = {
   climbing: '/assets/type-icons/climbing.jpg',
   // 自驾游：吉祥物开着小吉普，车斗里挂着背包、脚边是行李箱与地图
   driving: '/assets/type-icons/driving.jpg',
+  // 露营：吉祥物坐在折叠椅上端着两只杯子，右边是帐篷，脚边是篝火与营灯
+  camping: '/assets/type-icons/camping.jpg',
 }
 
 const TYPE_ICONS = {}
