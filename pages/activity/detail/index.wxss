@@ -122,7 +122,9 @@
 
 .organizer-date {
   font-size: 24rpx;
-  color: var(--text-sub);
+  /* 日期同列表卡片：固定字段加粗 + 深色 */
+  font-weight: 700;
+  color: var(--text);
 }
 
 .info-divider {
@@ -758,4 +760,15 @@
   color: var(--text-sub);
   font-size: 24rpx;
   line-height: 36rpx;
+}
+
+/* 固定字段标签：地点 / 全程 / 爬升、集合时间 / 返程时间 / 费用 / 人数 / 状态、
+   行前信息的集合地点等，统一加粗并压深，和动态取值区分开（取值保持常规字重和常规色）。
+   这几条写在文件末尾：上面的 .info-label / .prep-label 也声明了 color，
+   同级选择器靠后生效，放前面会被它们盖回去 */
+.field-label,
+.info-label,
+.prep-label {
+  font-weight: 700;
+  color: var(--text);
 }

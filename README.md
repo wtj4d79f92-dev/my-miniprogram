@@ -30,7 +30,8 @@ services/
   mock.js                         Mock 模型：活动生成器 + 本地缓存读写
 utils/                            字典、城市、协议文案、定位、存储、交互、审核状态、启动场景、默认昵称与头像、线路词库与标题匹配、工具函数
   lines.js                        成都周边徒步登山线路词库（由 scripts/extract-lines.js 生成）
-  line-match.js                   标题 → 线路词库的模糊匹配（自动填难度 / 全程长度 / 累计爬升）
+  line-stat.js                    标题抽中心词 + 强度样本汇总（星级 / 全程 / 爬升的沉淀口径，与云函数逐字镜像）
+  line-match.js                   标题 → 线路强度匹配（先查词库，再查用户沉淀；自动填难度 / 全程长度 / 累计爬升）
 cloudfunctions/
   activity/                       活动业务云函数（发布 / 报名 / 审核状态 / 内容安全送检）
   admin/                          审核台云函数（白名单校验、待审列表、通过 / 驳回、审核日志、线路词库导入）
@@ -47,8 +48,8 @@ scripts/seed/lines.json           线路词库的「控制台导入」文件（J
 
 `services/config.js` 中 `useMock` 控制数据来源：
 
-- `useMock: true`（演示模式）：数据由 `services/mock.js` 生成，操作结果写入本地缓存，缓存键与 PRD 5.3 一致（`aa_selected_city`、`square_pending_type`、`my_user`、`my_user_counter`、`my_published`、`my_joined`、`my_feedback`），另加 `mock_join_map`、`mock_status_map`、`mock_audit_map`、`mock_comment_map`、`mock_notifications` 五个运行期缓存键，用于记录报名成员、关闭状态与关闭时间、本地审核结果、活动留言与站内通知。首页另有一份列表快照 `aa_home_cache`（见「首屏加载」），两种模式共用。
-- `useMock: false`：走云开发，客户端调用 `activity` 云函数，action 与 PRD 8.6 一致（`home / list / detail / create / update / join / quit / toggle / mine / user / login / updateUser / qrcode / feedback / report / comments / comment / commentRemove / notifications / notificationUnread / notificationRead / notificationReadAll / deleteAccount`），审核相关调用走独立的 `admin` 云函数。
+- `useMock: true`（演示模式）：数据由 `services/mock.js` 生成，操作结果写入本地缓存，缓存键与 PRD 5.3 一致（`aa_selected_city`、`square_pending_type`、`my_user`、`my_user_counter`、`my_published`、`my_joined`、`my_feedback`），另加 `mock_join_map`、`mock_status_map`、`mock_audit_map`、`mock_comment_map`、`mock_notifications`、`mock_line_stats` 六个运行期缓存键，用于记录报名成员、关闭状态与关闭时间、本地审核结果、活动留言、站内通知与线路强度沉淀。首页另有一份列表快照 `aa_home_cache`、发布页另有一份沉淀快照 `aa_line_stats`（见「标题自动匹配线路」），两种模式共用。
+- `useMock: false`：走云开发，客户端调用 `activity` 云函数，action 与 PRD 8.6 一致（`home / list / detail / lines / lineStats / create / update / join / quit / toggle / mine / user / login / updateUser / qrcode / feedback / report / comments / comment / commentRemove / notifications / notificationUnread / notificationRead / notificationReadAll / deleteAccount`），审核相关调用走独立的 `admin` 云函数。
 
 > Mock 模式下把当前登录用户视为审核人，本地也能把「发布 → 待审 → 驳回 → 修改重提 → 通过」整条链路跑通；云端真人权限见下方「活动审核」。
 
@@ -208,19 +209,27 @@ scripts/seed/lines.json           线路词库的「控制台导入」文件（J
    - 新建 `admins` 集合，写入 `{ "openid": "...", "name": "运营昵称" }`，日常增删审核人只改这里；
 3. 可选：在审核台底部点「补齐全量审核状态」，给历史活动写入显式的 `approved`（幂等，可重复执行，不迁移也不影响展示）；
 4. 重新编译小程序，登录后「我的」页会出现「活动审核」入口（仅审核人可见）。
+5. 可选：在云开发控制台新建 `line_stats` 集合（发布时沉淀线路强度用，见「标题自动匹配线路」；集合不存在时发布页只按线路词库匹配，功能不会报错但沉淀攒不下来），权限设为「所有用户不可读写」，只通过云函数访问。
 
 配套集合：`activity_audits` 记录每次审核的动作、前后状态、原因、审核人与时间（集合不存在时会自动跳过写日志，不阻塞审核）。集合权限建议设为「仅创建者可读写」或「所有用户不可读写」，只通过云函数访问。
 
 ## 标题自动匹配线路（难度 / 全程长度 / 累计爬升）
 
-发布徒步 / 爬山活动时，标题填完（输入停顿 400ms 或输入框失焦）会拿标题里的地名 / 中心词去线路词库做模糊匹配，命中就自动填上「活动难度（星级）/ 全程长度 / 累计爬升」。例如标题「15号夜爬峨眉山」命中中心词「峨眉山」。匹配结果只写进这三项表单字段，页面上不提示匹配到了哪条线路——这三个数字本身就是给用户确认的，再挂一条提示只是往表单里多加一块和发布流程无关的文字。
+发布徒步 / 爬山活动时，标题填完（输入停顿 400ms 或输入框失焦）会拿标题里的地名 / 中心词做匹配，命中就自动填上「活动难度（星级）/ 全程长度 / 累计爬升」。例如标题「15号夜爬峨眉山」命中中心词「峨眉山」。匹配结果只写进这三项表单字段，页面上不提示匹配到了哪条线路——这三个数字本身就是给用户确认的，再挂一条提示只是往表单里多加一块和发布流程无关的文字。
+
+数据源有两个，按优先级：
+
+1. **线路词库**（`utils/lines.js`）——《成都周边徒步登山线路表》整理的权威数据，覆盖面有限（193 条，成都周边为主）；
+2. **用户沉淀**——别人发布同一地点时填过的星级 / 全程 / 爬升（云数据库 `line_stats` 集合，见下方「发布时沉淀强度数据」）。词库覆盖不到的地点，靠这一路自动填。
 
 | 环节 | 位置 | 说明 |
 | --- | --- | --- |
 | 词库数据 | `utils/lines.js`、`cloudfunctions/activity/lib/lines.js`、`cloudfunctions/admin/lib/lines.js` | 由 `scripts/extract-lines.js` 从《成都周边徒步登山线路表.xlsx》生成，193 条线路，三份逐字一致 |
-| 匹配规则 | `utils/line-match.js` | 标题包含中心词即命中；同时命中多条时取「中心词更长 → 难度更低 → 长度更短」的那条 |
-| 页面接线 | `pages/activity/publish/index.js` | 防抖 400ms + 失焦结算；只填用户没动过的字段；编辑已有活动不覆盖原值 |
+| 匹配规则 | `utils/line-match.js` | 先按词库匹配（命中多条时取「中心词更长 → 难度更低 → 长度更短」的那条），词库没命中再看沉淀（取「中心词更长 → 沉淀次数更多」的那条） |
+| 沉淀规则 | `utils/line-stat.js`（云端镜像 `cloudfunctions/activity/lib/line-stat.js`） | 标题抽中心词；三项都填了才记；三项取最近 20 条样本的中位数 |
+| 页面接线 | `pages/activity/publish/index.js` | 防抖 400ms + 失焦结算；只填用户没动过的字段；编辑已有活动不覆盖原值，也不拉沉淀数据 |
 | 数据库 | `lines` 集合 | 权威数据，导入后以它为准；云函数读不到集合或集合为空时回退内置词库 |
+| 数据库 | `line_stats` 集合 | 用户沉淀的强度数据：以中心词为文档 id，云函数读不到时下发空列表（退化成「只按词库匹配」） |
 
 规则细节：
 
@@ -231,6 +240,30 @@ scripts/seed/lines.json           线路词库的「控制台导入」文件（J
 5. 同时命中多条时按「难度低 → 长度短」取一条；
 6. 中心词是脚本从线路名里提取的地名 / 山峰名（「彭州/都江堰赵九铁单日」→ 都江堰赵九铁、赵九铁；「峨眉山大沟穿万佛顶-金顶」→ 峨眉山、大沟、万佛顶、金顶）。县名这类太泛的词（汶川、理县）不单独进词库 —— 否则标题里写个县名就会把全县几十条线路都匹配出来；
 7. 中心词都按中文比对：标题里的「15号」「！」，以及线路名里的数字（「巴朗山5072」）都不参与匹配。
+
+### 发布时沉淀强度数据（词库覆盖不到的地点也能自动填）
+
+用户在发布页填的三项强度指标，是同一地点、同一条线路上的重复输入。所以发布（含编辑重提）时云函数会顺手把它们按标题里的中心词攒起来，下次有人发布同一地点的活动，发布页就能自动填上 —— 这一路补的正是线路词库没覆盖到的那些地点。
+
+| 环节 | 位置 | 说明 |
+| --- | --- | --- |
+| 抽中心词 | `utils/line-stat.js` / `cloudfunctions/activity/lib/line-stat.js` | 只留中文 → 去掉「夜爬」「一日」「环线」这类噪音词 → 以地名后缀（山 / 沟 / 峰 / 顶 / 湖 / 海子 …）为锚点收口。两份逐字一致（`scripts/validate.js` 比对） |
+| 写库 | `cloudfunctions/activity` 的 `learnLineStat` | `create` 与 `update` 落库后各记一条；写库失败只打日志，不影响发布 |
+| 读库 | `cloudfunctions/activity` 的 `lineStats` action | 公开数据（中心词 + 三项强度 + 计数），不校验登录；集合为空 / 读失败时下发空列表 |
+| 页面 | `pages/activity/publish/index.js` | 进页面先吃本地快照 `aa_line_stats`，再异步拉云端覆盖；匹配时先词库、后沉淀 |
+
+沉淀规则：
+
+1. **三项都填了才算一条样本**：缺任何一项（0 / 空）就当作没填全，不沉淀 —— 半条数据拿去自动填比不填更容易误导人；
+2. 抽不出中心词的标题不沉淀（「周末徒步」这类）；抽出来的那一截超过 8 个字也不沉淀（多半是把描述词一起抽进来了）；
+3. 太泛的中心词不沉淀（「公园」「XX国家森林公园」）—— 这类词会把不同地方的数据串在一起，与词库「县名不进词库」同一个道理；
+4. 同一个中心词**取最近 20 条样本的中位数**，不是平均值也不是最后一次覆盖：个别填错的（把 8km 写成 80km）带不偏结果；
+5. 明显越界的值不作为样本（全程 > 500km、爬升 > 10000m）；
+6. 星级 / 全程 / 爬升三项一起沉淀、一起下发，页面按老规矩只填用户没动过的字段；
+7. 词库与沉淀都命中时以词库为准：词库是校对过的权威数据，沉淀是用户填的；
+8. 列表接口只下发聚合值，不下发原始样本（样本就是用户填的三个数字，没必要下发）。
+
+> 「有填写」的判定落在全程长度与累计爬升上：这两项默认为空，用户真去填了才算一条样本。难度星级是表单上的选择器（默认 3 星），发布出去的每条活动本来就带着一个星级值，所以沉淀记的就是这条活动实际发布出去的值 —— 用户没改星级时沉淀的是默认的 3 星，这是「这条活动对外长什么样」，不是「用户查过攻略」。
 
 ### 把词库导入数据库（落库）
 

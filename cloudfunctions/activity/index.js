@@ -38,6 +38,8 @@ const { TTL_MS, DAY_MS, startOfDay, isExpired, expireTimeOf, isPastStart } = req
 const { randomNickName, avatarColorOf, isDefaultNick } = require('./lib/nickname')
 // 线路词库：发布页按标题自动填「难度 / 全程长度 / 累计爬升」用（见 scripts/extract-lines.js）
 const { LINE_LIBRARY } = require('./lib/lines')
+// 线路强度沉淀：发布时按标题里的中心词把星级 / 全程 / 爬升记下来，下次发布同一地点自动填
+const { extractCenterWord, sampleOf, mergeStat } = require('./lib/line-stat')
 const {
   LIMITS,
   fail,
@@ -63,6 +65,8 @@ const comments = db.collection('activity_comments')
 const notifications = db.collection('notifications')
 /** 线路词库：以数据库 lines 集合为准（后台可维护），集合还没建或为空时回退内置词库 */
 const lines = db.collection('lines')
+/** 用户沉淀的线路强度：以中心词为文档 id（见 lib/line-stat.js 的 mergeStat） */
+const lineStats = db.collection('line_stats')
 
 const RECRUITING = 'recruiting'
 const CLOSED = 'closed'
@@ -78,6 +82,8 @@ const DEFAULT_PAGE_SIZE = 10
 const MAX_PAGE_SIZE = 100
 /** 一次返回的线路词库条数上限：词库是几百条的小表，不做分页，一次取完 */
 const LINE_QUERY_LIMIT = 500
+/** 一次返回的线路强度沉淀条数上限：小表，一次取完 */
+const LINE_STATS_LIMIT = 500
 // 一天的毫秒数（DAY_MS）与当天 00:00（startOfDay）都取自 lib/expire.js：广场的日期筛选、
 // 「关闭当天可见」与两条自动关闭规则必须共用同一口径
 /** 我的活动一次最多返回的条数（云函数端单次查询上限 100） */
@@ -670,6 +676,8 @@ async function create(event, openid) {
   const res = await activities.add({ data: doc })
   await writeAutoApproveLog(res._id, doc.title, auto, '')
   await writeQrRejectLog(res._id, doc.title, reject, AUDIT_PENDING)
+  // 沉淀强度数据：与发布结果无关的旁路写入，失败只打日志，不影响这条活动
+  await learnLineStat(doc)
   return publicActivity(Object.assign({}, doc, { _id: res._id }), openid)
 }
 
@@ -704,6 +712,8 @@ async function update(event, openid) {
   await activities.doc(id).update({ data: patch })
   await writeAutoApproveLog(id, patch.title, auto, auditStatusOf(doc))
   await writeQrRejectLog(id, patch.title, reject, auditStatusOf(doc))
+  // 改期 / 改线路后重新沉淀一条：原活动改过的强度指标才是用户当下认可的值
+  await learnLineStat(patch)
   return publicActivity(Object.assign({}, doc, patch), openid)
 }
 
@@ -1613,6 +1623,73 @@ async function listLines() {
   return { list: LINE_LIBRARY, total: LINE_LIBRARY.length, source: 'builtin' }
 }
 
+/* --------------------------- 线路强度沉淀 --------------------------- */
+
+/**
+ * 沉淀一条线路强度样本：标题里抽出中心词（「15号夜爬峨眉山」→ 峨眉山），把这条活动的
+ * 星级 / 全程长度 / 累计爬升记到该中心词名下。下次有人发布同一地点的活动，
+ * 发布页就能自动填上（见前端 utils/line-match.js 的 matchStat）。
+ *
+ * 只记三项都填了、且都在合理范围内的样本（见 lib/line-stat.js 的 sampleOf）；
+ * 每次都是「读出旧文档 → 合并样本 → 整份写回」，同一中心词的并发发布理论上会丢掉一两条样本，
+ * 这里要的是「大家填的值的中位数」，丢一条样本不影响结果，换成事务反而把发布流程绑在一次读改写上。
+ *
+ * 整个动作包在 try 里：沉淀只是发布流程的副产品，写不进去只打日志，绝不能让用户发不出活动。
+ */
+async function learnLineStat(doc) {
+  const key = extractCenterWord(doc && doc.title)
+  const sample = sampleOf(doc)
+  if (!key || !sample) return null
+  try {
+    let existing = null
+    try {
+      existing = (await lineStats.doc(key).get()).data
+    } catch (err) {
+      // 文档还不存在：第一次沉淀某个中心词时走的就是这条路
+      existing = null
+    }
+    const next = mergeStat(existing, key, sample, Date.now())
+    await lineStats.doc(key).set({ data: next })
+    return next
+  } catch (err) {
+    // 带上中心词：真机上写不进去（比如集合还没建）时，日志里能直接看出是哪个词、哪一步失败
+    console.warn('[activity] 线路强度沉淀失败', key, err)
+    return null
+  }
+}
+
+/** 沉淀记录的对外结构：只给聚合值，不回传原始样本（样本是用户填的三个数字，没必要下发） */
+function publicLineStat(item) {
+  const doc = item || {}
+  return {
+    key: doc.key || doc._id || '',
+    stars: Number(doc.stars) || 0,
+    distance: Number(doc.distance) || 0,
+    elevation: Number(doc.elevation) || 0,
+    sampleCount: Number(doc.sampleCount) || 0,
+    learnCount: Number(doc.learnCount) || 0,
+    updateTime: Number(doc.updateTime) || 0,
+  }
+}
+
+/**
+ * 用户沉淀的线路强度：发布页自动填强度指标的第二数据源（补线路词库覆盖不到的地点）。
+ * 是公开数据（中心词 + 星级 / 全长 / 爬升 + 提交次数），不含任何用户信息，不校验登录。
+ *
+ * 集合还没建、还没人沉淀、或读取失败时都返回空列表：发布页退化成「只按词库匹配」，
+ * 也就是这个功能上线之前的行为，不会因为这一路数据拿不到就填错或者填不了。
+ */
+async function listLineStats() {
+  try {
+    const res = await lineStats.orderBy('learnCount', 'desc').limit(LINE_STATS_LIMIT).get()
+    const rows = (res && res.data) || []
+    return { list: rows.map(publicLineStat), total: rows.length, source: 'db' }
+  } catch (err) {
+    console.warn('[activity] line_stats 集合读取失败，按「还没有沉淀数据」处理', err)
+    return { list: [], total: 0, source: 'empty' }
+  }
+}
+
 /* ------------------------------ 路由 ------------------------------ */
 
 const ACTIONS = {
@@ -1620,6 +1697,7 @@ const ACTIONS = {
   list,
   detail,
   lines: listLines,
+  lineStats: listLineStats,
   media,
   create,
   update,

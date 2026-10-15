@@ -3680,17 +3680,20 @@ function checkHardening() {
     })
 }
 
-/* ---------------------- 线路词库：标题 → 强度指标自动填充 ----------------------
+/* ---------------------- 线路强度：标题 → 自动填充与沉淀 ----------------------
  * 数据来自《成都周边徒步登山线路表.xlsx》，由 scripts/extract-lines.js 生成词库。
- * 这里钉住三件事：
+ * 这里钉住四件事：
  *   ① 词库本身：条数 / 星级 / 中心词齐全，前端与两个云函数的副本逐字一致，导出物与词库对账；
  *   ② 匹配规则：标题里的地名命中词库；同时命中多条时选难度低的、再选长度短的；
- *   ③ 页面接线：输入标题自动填三项指标、用户改过的字段不再被覆盖、编辑模式不覆盖原值。
+ *   ③ 沉淀规则：标题抽中心词 → 三项都填了才记 → 取样本中位数（utils/line-stat.js，两端逐字一致）；
+ *   ④ 页面接线：输入标题自动填三项指标、词库优先于沉淀、用户改过的字段不再被覆盖、编辑模式不覆盖原值。
  */
 function checkLineLibrary() {
   const lines = require(path.join(ROOT, 'utils/lines'))
   const { LINE_LIBRARY, LINE_LIBRARY_VERSION } = lines
-  const { matchLine, normalizeText } = require(path.join(ROOT, 'utils/line-match'))
+  const { matchLine, matchStat } = require(path.join(ROOT, 'utils/line-match'))
+  const stat = require(path.join(ROOT, 'utils/line-stat'))
+  const { normalizeText, extractCenterWord, medianOf, sampleOf, mergeStat, MAX_SAMPLES } = stat
   const { DIFFICULTY_OPTIONS } = require(path.join(ROOT, 'utils/dict'))
 
   const frontText = fs.readFileSync(path.join(ROOT, 'utils/lines.js'), 'utf8')
@@ -3770,7 +3773,125 @@ function checkLineLibrary() {
     '标题匹配：字段缺失被剔除的线路（天牙峰 / 长年峰）不再能被匹配到'
   )
 
-  // ③ 页面接线
+  // ③ 沉淀规则：发布时从标题抽中心词，把三项强度按中心词攒起来（utils/line-stat.js）
+  const statFrontText = fs.readFileSync(path.join(ROOT, 'utils/line-stat.js'), 'utf8')
+  const statCloudText = fs.readFileSync(path.join(ROOT, 'cloudfunctions/activity/lib/line-stat.js'), 'utf8')
+  log(
+    statFrontText === statCloudText,
+    '线路沉淀：前端与 activity 云函数的两份抽取 / 汇总实现逐字一致（发布当刻由云函数抽词，页面用的是同一份规则）'
+  )
+
+  const wordCases = [
+    ['15号夜爬峨眉山', '峨眉山'],
+    ['周六云中牧场一日徒步', '云中牧场'],
+    ['周末都江堰赵九铁拉练', '都江堰赵九铁'],
+    ['青城后山徒步', '青城后山'],
+    ['峨眉山看日出', '峨眉山'],
+    ['巴朗山下雪了', '巴朗山'],
+    ['赵公山AB线', '赵公山'],
+    ['阿坝州小金县四姑娘山', '四姑娘山'],
+  ]
+  const wordDiff = wordCases.filter((item) => extractCenterWord(item[0]) !== item[1])
+  log(
+    wordDiff.length === 0,
+    `线路沉淀：标题抽中心词 ${wordCases.length} 组${
+      wordDiff.length
+        ? `，差异：${wordDiff.map((item) => `「${item[0]}」→「${extractCenterWord(item[0])}」期望「${item[1]}」`).join('；')}`
+        : ''
+    }`
+  )
+  log(
+    extractCenterWord('周末徒步') === '' && extractCenterWord('活动') === '' && extractCenterWord('') === '',
+    '线路沉淀：标题里没有地点时抽不出中心词，这条活动不沉淀'
+  )
+  log(
+    extractCenterWord('周末去公园') === '' && extractCenterWord('龙池国家森林公园') === '',
+    '线路沉淀：太泛的中心词（「公园」「XX国家森林公园」）不沉淀，免得把不同地方的数据串在一起'
+  )
+  log(
+    extractCenterWord('周末约上朋友一起走赵九铁') === '',
+    '线路沉淀：抽出来的那截超过 8 个字时不沉淀（长多半是把描述词一起抽进来了）'
+  )
+  log(
+    sampleOf({ difficulty: 3, distance: 8, elevationGain: 700 }) !== null &&
+      sampleOf({ difficulty: 0, distance: 8, elevationGain: 700 }) === null &&
+      sampleOf({ difficulty: 3, distance: 0, elevationGain: 700 }) === null &&
+      sampleOf({ difficulty: 3, distance: 8, elevationGain: 0 }) === null,
+    '线路沉淀：三项都填了才产生样本，缺一项就不沉淀'
+  )
+  log(
+    sampleOf({ difficulty: 3, distance: 800, elevationGain: 700 }) === null &&
+      sampleOf({ difficulty: 3, distance: 8, elevationGain: 70000 }) === null,
+    '线路沉淀：明显填错的值（800km / 70000m）不产生样本'
+  )
+  log(
+    medianOf([8, 80, 9], false) === 9 && medianOf([3, 5, 4], true) === 4,
+    '线路沉淀：星级 / 长度 / 爬升都取样本中位数（个别填错的带不偏结果）'
+  )
+  const firstStat = mergeStat(null, '云中牧场', { stars: 3, distance: 8, elevation: 700 }, 1000)
+  const secondStat = mergeStat(firstStat, '云中牧场', { stars: 4, distance: 9, elevation: 800 }, 2000)
+  log(
+    firstStat.key === '云中牧场' &&
+      firstStat.sampleCount === 1 &&
+      firstStat.learnCount === 1 &&
+      firstStat.createTime === 1000 &&
+      firstStat.samples[0].time === 1000,
+    '线路沉淀：第一次沉淀建文档，样本窗口里记下这一条'
+  )
+  log(
+    secondStat.sampleCount === 2 &&
+      secondStat.learnCount === 2 &&
+      secondStat.stars === 4 &&
+      secondStat.distance === 8.5 &&
+      secondStat.elevation === 750 &&
+      secondStat.createTime === 1000 &&
+      secondStat.updateTime === 2000,
+    '线路沉淀：同一个中心词再来一条就并进样本窗口，三项取中位数'
+  )
+  let windowedStat = mergeStat(null, '滑动窗口', { stars: 3, distance: 8, elevation: 700 }, 1000)
+  for (let i = 0; i < 25; i += 1) {
+    windowedStat = mergeStat(windowedStat, '滑动窗口', { stars: 3, distance: 8, elevation: 700 }, 1000 + i)
+  }
+  log(
+    windowedStat.learnCount === 26 &&
+      windowedStat.sampleCount === MAX_SAMPLES &&
+      windowedStat.samples.length === MAX_SAMPLES,
+    `线路沉淀：每个中心词只留最近 ${MAX_SAMPLES} 条样本，累计次数照记（${windowedStat.learnCount} 次）`
+  )
+
+  const stats = [
+    { key: '云中牧场', stars: 3, distance: 8, elevation: 700, sampleCount: 2, learnCount: 2 },
+    { key: '牧场', stars: 1, distance: 2, elevation: 100, sampleCount: 1, learnCount: 1 },
+    { key: '峨眉山', stars: 9, distance: 99, elevation: 9999, sampleCount: 1, learnCount: 1 },
+  ]
+  const statMatch = matchStat('周六云中牧场一日徒步', stats)
+  log(
+    !!statMatch &&
+      statMatch.key === '云中牧场' &&
+      statMatch.stars === 3 &&
+      statMatch.distance === 8 &&
+      statMatch.elevation === 700 &&
+      statMatch.learned === true,
+    '标题匹配：词库没命中时按用户沉淀的中心词匹配，三项都直接可用'
+  )
+  log(
+    matchStat('云中牧场', stats).key === '云中牧场',
+    '标题匹配：沉淀里同时有「云中牧场」与「牧场」时取更具体的那个中心词'
+  )
+  log(
+    matchStat('周末去四姑娘山', stats) === null && matchStat('', stats) === null && matchStat('云中牧场', []) === null,
+    '标题匹配：沉淀里没有这个地点 / 空标题 / 还没有沉淀数据时都不匹配'
+  )
+  log(
+    matchStat('峨眉山徒步', [{ key: '峨眉山', stars: 0, distance: 0, elevation: 0 }]) === null,
+    '标题匹配：只有中心词没有强度值的脏数据不拿来填'
+  )
+  log(
+    !((matchLine('15号夜爬峨眉山') || matchStat('15号夜爬峨眉山', stats)).learned),
+    '标题匹配：词库与沉淀都命中时以词库为准（词库是校对过的权威数据）'
+  )
+
+  // ④ 页面接线
   const pageOptions = []
   global.Page = (options) => pageOptions.push(options)
   delete require.cache[path.join(ROOT, 'pages/activity/publish/index.js')]
@@ -3804,7 +3925,7 @@ function checkLineLibrary() {
     if (typeof page[key] === 'function') ctx[key] = page[key].bind(ctx)
   })
 
-  page.loadLineLibrary.call(ctx, false)
+  page.loadLineSources.call(ctx, false)
   log(
     Array.isArray(ctx._library) && ctx._library.length === LINE_LIBRARY.length,
     '发布页：进页面就先拿到词库，输入标题不用等网络'
@@ -3875,7 +3996,7 @@ function checkLineLibrary() {
   Object.keys(page).forEach((key) => {
     if (typeof page[key] === 'function') switchCtx[key] = page[key].bind(switchCtx)
   })
-  page.loadLineLibrary.call(switchCtx, false)
+  page.loadLineSources.call(switchCtx, false)
   page.applyLineMatch.call(switchCtx, '夜爬峨眉山')
   log(switchCtx.data.form.distance === '21.5', '发布页：爬山类型下标题命中后按词库填强度字段')
   page.onTypeTap.call(switchCtx, { currentTarget: { dataset: { type: 'driving' } } })
@@ -3912,7 +4033,7 @@ function checkLineLibrary() {
   Object.keys(page).forEach((key) => {
     if (typeof page[key] === 'function') droppedCtx[key] = page[key].bind(droppedCtx)
   })
-  page.loadLineLibrary.call(droppedCtx, false)
+  page.loadLineSources.call(droppedCtx, false)
   page.applyLineMatch.call(droppedCtx, '周末天牙峰')
   log(
     droppedCtx.data.difficultyIndex === 2 &&
@@ -3941,7 +4062,7 @@ function checkLineLibrary() {
   Object.keys(page).forEach((key) => {
     if (typeof page[key] === 'function') editCtx[key] = page[key].bind(editCtx)
   })
-  page.loadLineLibrary.call(editCtx, true)
+  page.loadLineSources.call(editCtx, true)
   page.applyLineMatch.call(editCtx, '夜爬峨眉山')
   log(
     editCtx.data.form.difficulty === 6 &&
@@ -3950,14 +4071,130 @@ function checkLineLibrary() {
     '发布页：编辑已有活动时标题匹配不覆盖原活动的强度指标'
   )
 
+  // 页面：官方词库没覆盖到的地点，用用户沉淀的数据自动填（发布页读的是同一份缓存快照）
+  const { KEYS: STORAGE_KEYS } = require(path.join(ROOT, 'utils/storage'))
+  global.wx.storage[STORAGE_KEYS.lineStats] = [
+    { key: '云中牧场', stars: 3, distance: 8, elevation: 700, sampleCount: 2, learnCount: 2 },
+    { key: '峨眉山', stars: 9, distance: 99, elevation: 9999, sampleCount: 1, learnCount: 1 },
+  ]
+  const statCtx = {
+    data: {
+      form: { type: 'hiking', title: '', difficulty: 3, distance: '', elevationGain: '' },
+      errors: {},
+      showMetrics: true,
+      showTags: true,
+      tagOptions: [],
+      difficultyIndex: 2,
+      difficultyLabel: DIFFICULTY_OPTIONS[2].label,
+    },
+    setData(patch) {
+      Object.keys(patch).forEach((key) => {
+        const parts = key.split('.')
+        let target = this.data
+        for (let i = 0; i < parts.length - 1; i += 1) {
+          if (!target[parts[i]]) target[parts[i]] = {}
+          target = target[parts[i]]
+        }
+        target[parts[parts.length - 1]] = patch[key]
+      })
+    },
+    clearError() {},
+  }
+  Object.keys(page).forEach((key) => {
+    if (typeof page[key] === 'function') statCtx[key] = page[key].bind(statCtx)
+  })
+  page.loadLineSources.call(statCtx, false)
+  log(
+    Array.isArray(statCtx._stats) && statCtx._stats.length === 2,
+    '发布页：进页面先拿本地那份沉淀快照（云端 line_stats 是权威数据，稍后再覆盖）'
+  )
+  page.applyLineMatch.call(statCtx, '周六云中牧场一日徒步')
+  log(
+    statCtx.data.form.difficulty === 3 &&
+      statCtx.data.form.distance === '8' &&
+      statCtx.data.form.elevationGain === '700',
+    '发布页：词库没命中的地点按用户沉淀自动填星级 / 长度 / 爬升'
+  )
+  page.applyLineMatch.call(statCtx, '15号夜爬峨眉山')
+  log(
+    statCtx.data.form.difficulty === 4 &&
+      statCtx.data.form.distance === '21.5' &&
+      statCtx.data.form.elevationGain === '1368',
+    '发布页：词库与沉淀都命中时填词库的值（沉淀里峨眉山是 9 星 99km，不应被采用）'
+  )
+
   // 服务层：Mock 模式下发内置词库（深拷贝，页面改不坏常量）
   const api = require(path.join(ROOT, 'services/api'))
-  return api.lines().then((list) => {
-    log(
-      list.length === LINE_LIBRARY.length && list !== LINE_LIBRARY,
-      '服务层：Mock 模式下发内置词库，且是深拷贝'
-    )
-  })
+  return api
+    .lines()
+    .then((list) => {
+      log(
+        list.length === LINE_LIBRARY.length && list !== LINE_LIBRARY,
+        '服务层：Mock 模式下发内置词库，且是深拷贝'
+      )
+      // 服务层：Mock 模式的沉淀与云端同一套口径 —— 发布时按中心词落一条，lineStats() 再读回来
+      return api.create({
+        form: {
+          type: 'hiking',
+          title: '周六云中牧场一日徒步',
+          location: '四川省成都市 云中牧场',
+          startTime: Date.now() + 86400000,
+          endTime: Date.now() + 2 * 86400000,
+          difficulty: 3,
+          distance: 8,
+          elevationGain: 700,
+          feeMode: 'aa',
+          maxPeople: 6,
+          tags: [],
+          groupQrCode: '',
+          desc: '',
+        },
+      })
+    })
+    .then((activity) => {
+      log(
+        !!activity && activity.title === '周六云中牧场一日徒步',
+        '服务层：Mock 发布活动成功（沉淀用例的前置）'
+      )
+      return api.lineStats()
+    })
+    .then((list) => {
+      const item = (list || []).filter((row) => row.key === '云中牧场')[0]
+      log(
+        !!item && item.stars === 3 && item.distance === 8 && item.elevation === 700 && item.learnCount === 1,
+        '服务层：Mock 模式发布后按标题里的中心词沉淀强度数据'
+      )
+      log(
+        !!item && item.samples === undefined && item.createTime === undefined,
+        '服务层：沉淀对外只给聚合值，不下发原始样本'
+      )
+      // 第二次发布同一个地点，但星级没填（0）：这一条不产生样本
+      return api.create({
+        form: {
+          type: 'hiking',
+          title: '云中牧场环线',
+          location: '四川省成都市 云中牧场',
+          startTime: Date.now() + 86400000,
+          endTime: Date.now() + 2 * 86400000,
+          difficulty: 0,
+          distance: 9,
+          elevationGain: 800,
+          feeMode: 'aa',
+          maxPeople: 6,
+          tags: [],
+          groupQrCode: '',
+          desc: '',
+        },
+      })
+    })
+    .then(() => api.lineStats())
+    .then((list) => {
+      const item = (list || []).filter((row) => row.key === '云中牧场')[0]
+      log(
+        !!item && item.learnCount === 1 && item.sampleCount === 1 && item.distance === 8,
+        '服务层：星级没填的那次发布不产生样本，同一中心词还是原来那一条'
+      )
+    })
 }
 
 /* ---------------------- 提审演示数据（cloudfunctions/seed） ----------------------

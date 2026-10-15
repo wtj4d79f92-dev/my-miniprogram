@@ -436,6 +436,19 @@ const mockApi = {
     return withDelay(deepClone(LINE_LIBRARY))
   },
 
+  /**
+   * 用户沉淀的线路强度：Mock 用本地缓存模拟云端 line_stats 集合，
+   * 排序与对外结构（不返回原始样本）都跟云端 listLineStats 保持一致。
+   */
+  lineStats() {
+    const list = mock
+      .lineStatsList()
+      .slice()
+      .sort((a, b) => (Number(b.learnCount) || 0) - (Number(a.learnCount) || 0))
+      .map(mock.publicLineStat)
+    return withDelay(deepClone(list))
+  },
+
   create(payload) {
     const user = mock.currentUser()
     if (!user) return fail('UNAUTHORIZED', '请先登录')
@@ -464,6 +477,8 @@ const mockApi = {
     const published = getStorage(KEYS.published, []) || []
     published.unshift(activity)
     setStorage(KEYS.published, published)
+    // 发布成功顺带沉淀强度数据：与云端 create 里的 learnLineStat 同一时机、同一口径
+    mock.learnLineStat(activity)
     return withDelay(activity)
   },
 
@@ -496,6 +511,8 @@ const mockApi = {
     if (index > -1) {
       published[index] = Object.assign({}, published[index], patch)
       setStorage(KEYS.published, published)
+      // 编辑也是一次「用户确认过的强度数据」，与云端 update 一样重新沉淀一条
+      mock.learnLineStat(published[index])
     }
     // 审核结果存在独立的覆盖表里，重提时同步覆盖掉上一次的审核结论（机审通过则直接放行）
     mock.saveAudit(id, Object.assign({ submitTime: Date.now() }, audit, reject))
@@ -1087,6 +1104,16 @@ const cloudApi = {
     return callCloud('lines', {})
       .then((res) => (res && res.list && res.list.length ? res.list : deepClone(LINE_LIBRARY)))
       .catch(() => deepClone(LINE_LIBRARY))
+  },
+  /**
+   * 用户沉淀的线路强度（数据库 line_stats 集合）。集合还没建 / 还没人沉淀时返回空数组，
+   * 发布页按「只有词库这一路数据源」处理（少一路数据源只是少填几个字段，不拦发布）；
+   * 网络异常时返回 null，与「云端就是空的」区分开，页面据此保留手上的那份缓存。
+   */
+  lineStats() {
+    return callCloud('lineStats', {})
+      .then((res) => (res && res.list) || [])
+      .catch(() => null)
   },
   create(payload) {
     return callCloud('create', payload)

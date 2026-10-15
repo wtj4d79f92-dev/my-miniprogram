@@ -14,6 +14,8 @@ const KEYS = {
   homeCache: 'aa_home_cache',
   // 线路词库快照：发布页按标题自动填强度指标用；云端 lines 集合是权威数据，这里只是省一次网络往返
   lineLib: 'aa_line_lib',
+  // 用户沉淀的线路强度快照（中心词 → 星级 / 全程 / 爬升）：同上，云端 line_stats 集合是权威数据
+  lineStats: 'aa_line_stats',
 }
 
 function getStorage(key, fallback) {

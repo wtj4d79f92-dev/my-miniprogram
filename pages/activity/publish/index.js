@@ -12,8 +12,8 @@ const ui = require('../../../utils/ui')
 const config = require('../../../services/config')
 const { parsePickedPlace, placeNameOf, LOCATION_MAX } = require('../../../utils/location')
 const { matchCity } = require('../../../utils/cities')
-// 标题 → 线路词库：命中词库里的地名 / 中心词后自动填难度、全程长度、累计爬升
-const { matchLine } = require('../../../utils/line-match')
+// 标题 → 线路强度：命中词库（官方线路表）或用户沉淀的中心词后自动填难度、全程长度、累计爬升
+const { matchLine, matchStat } = require('../../../utils/line-match')
 const { LINE_LIBRARY, LINE_LIBRARY_VERSION } = require('../../../utils/lines')
 const { KEYS, getStorage, setStorage } = require('../../../utils/storage')
 
@@ -93,15 +93,18 @@ Page({
       this.setData({ editId, pageTitle: '编辑活动', submitText: '重新提交审核' })
       this.loadActivity(editId)
     }
-    this.loadLineLibrary(!!editId)
+    this.loadLineSources(!!editId)
   },
 
   /**
-   * 线路词库：先用本地缓存 / 内置词库（同步就有，输入标题不用等网络），
-   * 再异步拉一次云端 lines 集合覆盖 —— 后台维护过词库后，下次进发布页拿到的就是最新数据。
-   * 编辑模式带进来的是原活动的强度指标，不允许被标题匹配覆盖，所以直接标记成「用户填过」。
+   * 强度数据源，两路：
+   *   1. 官方线路词库 —— 先用本地缓存 / 内置词库（同步就有，输入标题不用等网络），
+   *      再异步拉一次云端 lines 集合覆盖；后台维护过词库后，下次进发布页拿到的就是最新数据；
+   *   2. 用户沉淀 —— 别人发布同一地点时填过的星级 / 全程 / 爬升，同样先吃缓存再拉云端。
+   * 编辑模式带进来的是原活动的强度指标，不允许被标题匹配覆盖，所以直接标记成「用户填过」，
+   * 同时连沉淀数据也不拉了：这一趟根本不会用到它。
    */
-  loadLineLibrary(locked) {
+  loadLineSources(locked) {
     // 缓存带上内置词库的版本号：小程序更新后词库变了，老缓存直接作废
     const cached = getStorage(KEYS.lineLib, null)
     const usable = cached && cached.version === LINE_LIBRARY_VERSION && cached.list && cached.list.length
@@ -109,12 +112,26 @@ Page({
     // 编辑已有活动时不参与自动填充：原活动的强度指标是用户自己填的，不能被标题匹配改掉
     this._lineLocked = !!locked
     this._metricTouched = { difficulty: !!locked, distance: !!locked, elevation: !!locked }
+    // 用户沉淀：本地只是一份快照，云端 line_stats 集合才是权威数据，所以下面还要拉一次
+    const cachedStats = getStorage(KEYS.lineStats, null)
+    this._stats = Array.isArray(cachedStats) ? cachedStats : []
     api
       .lines()
       .then((list) => {
         if (!list || !list.length) return
         this._library = list
         setStorage(KEYS.lineLib, { version: LINE_LIBRARY_VERSION, list })
+      })
+      .catch(() => {})
+    if (locked) return
+    api
+      .lineStats()
+      .then((list) => {
+        // 云端明确回空列表（还没人沉淀）时也要覆盖本地快照：别人清过的数据不该继续用；
+        // 回 null 表示这一次没拿到（网络异常），那就先用手上的缓存，别把它抹掉
+        if (!Array.isArray(list)) return
+        this._stats = list
+        setStorage(KEYS.lineStats, this._stats)
       })
       .catch(() => {})
   },
@@ -344,6 +361,9 @@ Page({
   /**
    * 按标题里的地名 / 中心词匹配线路，命中就把难度（星级）、全程长度、累计爬升填上。
    *
+   * 先查官方词库，词库没命中再看用户沉淀的数据（别人发布同一地点时填过的值）：
+   * 词库是校对过的权威数据，沉淀是用户填的，两者口径不一致时以词库为准。
+   *
    * 只填用户没自己动过的字段：填过标题又觉得匹配得不合适、手动改过某一项，
    * 之后无论标题怎么变都不会再把那一项改回去。类型不支持强度指标（自驾游等）时不填也不提示，
    * 切回徒步 / 爬山会按记下的这条匹配重新填一次。
@@ -352,8 +372,8 @@ Page({
    * 再挂一条提示反而在表单里多出一块和发布流程无关的文字。
    */
   applyLineMatch(title) {
-    if (!this._library || this._lineLocked) return
-    const match = matchLine(title, this._library)
+    if (this._lineLocked) return
+    const match = matchLine(title, this._library) || matchStat(title, this._stats)
     if (!match) {
       this.resetAutoMetrics()
       return

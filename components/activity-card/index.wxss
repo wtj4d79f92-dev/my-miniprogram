@@ -112,14 +112,18 @@
 .act-date {
   flex: none;
   font-size: 24rpx;
-  color: var(--text-sub);
+  /* 日期是卡片里的固定字段，和左侧「地点 / 全程 / 爬升」一样加粗加深，跟动态取值拉开层次 */
+  font-weight: 700;
+  color: var(--text);
 }
 
+/* 固定字段标签：加粗 + 深色，让「地点 / 全程 / 爬升」与右侧取值一眼可分 */
 .act-label {
   flex: none;
   width: 76rpx;
   font-size: 24rpx;
-  color: var(--text-sub);
+  font-weight: 700;
+  color: var(--text);
 }
 
 .act-label.gap {

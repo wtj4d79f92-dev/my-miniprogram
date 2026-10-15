@@ -23,6 +23,8 @@ const store = {
   activity_audits: [],
   // 线路词库：发布页按标题自动填强度指标的数据源（见 scripts/extract-lines.js）
   lines: [],
+  // 用户沉淀的线路强度：中心词 → 星级 / 全程 / 爬升（见 cloudfunctions/activity/lib/line-stat.js）
+  line_stats: [],
 }
 
 let currentOpenid = ''
@@ -520,6 +522,17 @@ async function silenceErrors(task) {
     return await task()
   } finally {
     console.error = original
+  }
+}
+
+/** 同上：线路沉淀的降级路径打的是 console.warn */
+async function silenceWarns(task) {
+  const original = console.warn
+  console.warn = () => {}
+  try {
+    return await task()
+  } finally {
+    console.warn = original
   }
 }
 
@@ -2505,6 +2518,146 @@ async function run() {
   log(
     emei.length === 2 && emei.every((item) => item.id && item.keys.indexOf('峨眉山') > -1),
     '线路词库：数据库下发的记录带 id 与中心词，重复线路（7 星 / 8 星）都在'
+  )
+
+  /* ---------- 线路强度沉淀：发布时按标题里的中心词攒数据，下次发布自动填 ---------- */
+  // 沉淀是「用户填的值」按中心词攒出来的：发布页拿它补线路词库覆盖不到的地点
+  // （见 cloudfunctions/activity/lib/line-stat.js 与前端 utils/line-match.js 的 matchStat）。
+  // 只要还没有人沉淀过，集合是空的，发布页退化成「只按词库匹配」，也就是这个功能上线前的行为。
+  seedUser(ORGANIZER, '发起人')
+  delete store.line_stats
+  const noStatsYet = await silenceWarns(() => callActivity('lineStats', {}, OTHER))
+  log(
+    noStatsYet.list.length === 0 && noStatsYet.total === 0,
+    '线路沉淀：line_stats 集合还没建 / 还没有数据时下发空列表（拿不到就当没有，不影响发布）'
+  )
+  store.line_stats = []
+
+  const statForm = (title, extra) =>
+    Object.assign({}, form, { title, groupQrCode: '', desc: '' }, extra || {})
+  // 云端每次沉淀都是「读出来 → 合并 → 整份写回」（DocRef.set 会换掉整个文档对象），
+  // 断言时每次重新取，不抓住第一次那个引用
+  const statOf = (key) => store.line_stats.filter((item) => item.key === key)[0]
+
+  const firstLearn = await callActivity(
+    'create',
+    { form: statForm('周六云中牧场一日徒步', { difficulty: 3, distance: 8, elevationGain: 700 }) },
+    ORGANIZER
+  )
+  log(
+    !!firstLearn &&
+      !firstLearn.code &&
+      store.line_stats.length === 1 &&
+      !!statOf('云中牧场') &&
+      statOf('云中牧场')._id === '云中牧场',
+    '线路沉淀：发布徒步活动时按标题里的中心词落库（「周六云中牧场一日徒步」→ 云中牧场）'
+  )
+  const firstDoc = statOf('云中牧场')
+  log(
+    firstDoc.stars === 3 &&
+      firstDoc.distance === 8 &&
+      firstDoc.elevation === 700 &&
+      firstDoc.sampleCount === 1 &&
+      firstDoc.learnCount === 1 &&
+      firstDoc.samples.length === 1,
+    '线路沉淀：星级 / 全程 / 爬升 + 样本窗口一起写进该中心词名下'
+  )
+
+  await callActivity(
+    'create',
+    { form: statForm('云中牧场环线', { difficulty: 5, distance: 10, elevationGain: 900 }) },
+    ORGANIZER
+  )
+  const secondDoc = statOf('云中牧场')
+  log(
+    store.line_stats.length === 1 &&
+      secondDoc.learnCount === 2 &&
+      secondDoc.sampleCount === 2 &&
+      secondDoc.stars === 4 &&
+      secondDoc.distance === 9 &&
+      secondDoc.elevation === 800,
+    '线路沉淀：同一中心词的第二条发布并进样本窗口，三项取中位数（3★/5★ → 4★）'
+  )
+
+  const partialForm = await callActivity(
+    'create',
+    { form: statForm('云中牧场看雪', { difficulty: 3, distance: 0, elevationGain: 700 }) },
+    ORGANIZER
+  )
+  log(
+    !!partialForm && !partialForm.code && statOf('云中牧场').learnCount === 2,
+    '线路沉淀：三项缺一项（全程没填）的发布不产生样本'
+  )
+
+  const drivingForm = await callActivity(
+    'create',
+    { form: statForm('云中牧场自驾', { type: 'driving', difficulty: 6, distance: 30, elevationGain: 1200 }) },
+    ORGANIZER
+  )
+  log(
+    !!drivingForm && drivingForm.difficulty === 0 && statOf('云中牧场').learnCount === 2,
+    '线路沉淀：自驾游等没有强度指标的类型不产生样本'
+  )
+
+  const editedLearn = await callActivity(
+    'update',
+    { id: partialForm.id, form: statForm('周六云中牧场一日徒步', { difficulty: 5, distance: 10, elevationGain: 900 }) },
+    ORGANIZER
+  )
+  const editedDoc = statOf('云中牧场')
+  log(
+    !!editedLearn &&
+      !editedLearn.code &&
+      editedDoc.learnCount === 3 &&
+      editedDoc.sampleCount === 3 &&
+      editedDoc.stars === 5 &&
+      editedDoc.distance === 10 &&
+      editedDoc.elevation === 900,
+    '线路沉淀：编辑活动（改了强度再提交）同样算一条样本'
+  )
+
+  await callActivity(
+    'create',
+    { form: statForm('周末徒步', { difficulty: 3, distance: 8, elevationGain: 700 }) },
+    ORGANIZER
+  )
+  await callActivity(
+    'create',
+    { form: statForm('周末去公园', { difficulty: 3, distance: 8, elevationGain: 700 }) },
+    ORGANIZER
+  )
+  log(store.line_stats.length === 1, '线路沉淀：标题里抽不出中心词 / 中心词太泛时什么都不记')
+
+  const publicStats = await callActivity('lineStats', {}, '')
+  const statItem = publicStats.list[0]
+  log(
+    publicStats.total === 1 && publicStats.list.length === 1 && statItem.key === '云中牧场' && statItem.learnCount === 3,
+    '线路沉淀：lineStats 下发沉淀数据（公开数据，不校验登录）'
+  )
+  log(
+    statItem.samples === undefined &&
+      statItem._id === undefined &&
+      statItem.sampleCount === 3 &&
+      statItem.distance === 10 &&
+      statItem.elevation === 900 &&
+      statItem.updateTime > 0,
+    '线路沉淀：对外只给聚合值，原始样本与文档 id 不下发'
+  )
+
+  // 沉淀是发布流程的旁路动作：写不进去（这里是集合被拿掉）只记日志，活动照样发得出去
+  const keptStats = store.line_stats
+  delete store.line_stats
+  const learnFailed = await silenceWarns(() =>
+    callActivity(
+      'create',
+      { form: statForm('云中牧场雨后', { difficulty: 3, distance: 8, elevationGain: 700 }) },
+      ORGANIZER
+    )
+  )
+  store.line_stats = keptStats
+  log(
+    !!learnFailed && !learnFailed.code && learnFailed.title === '云中牧场雨后',
+    '线路沉淀：沉淀写库失败不影响发布本身（旁路动作只打日志）'
   )
 
   /* ---------- 提审演示数据：造的数据必须真的能被审核员看到 ---------- */

@@ -3,6 +3,8 @@ const { KEYS, getStorage, setStorage } = require('../utils/storage')
 const { getType, DEFAULT_BANNERS, tagName } = require('../utils/dict')
 const { createRandom, pickInt, deepClone, startOfDay } = require('../utils/util')
 const { filterCityKeys } = require('../utils/cities')
+// 线路强度沉淀：与云端 lib/line-stat.js 同一套抽取与汇总函数（跨两端的小工具，逐字镜像）
+const { extractCenterWord, sampleOf, mergeStat } = require('../utils/line-stat')
 // 自动关闭：展示期届满（发布满 7 天）、集合时间已过的活动从首页 / 广场消失（与云函数 lib/expire.js 同一口径）
 const { isExpired, isPastStart, pastStartTimeOf } = require('../utils/expire')
 
@@ -15,6 +17,8 @@ const MOCK_COMMENT_MAP = 'mock_comment_map'
 // 站内通知：通知数组，与云端 notifications 集合同一套字段口径
 // （新留言通知发起人、回复通知被回复人，见 services/api.js 的 mockNotifyForComment）
 const MOCK_NOTIFY_LIST = 'mock_notifications'
+// 用户沉淀的线路强度：数组，每项一个中心词（与云端 line_stats 集合同一套字段口径）
+const MOCK_LINE_STATS = 'mock_line_stats'
 /** 关闭当天的判定精度：自然日（当天 00:00 之后关闭的活动当天还留在广场） */
 const DAY_MS = 86400000
 
@@ -292,6 +296,49 @@ function saveNotifications(list) {
   setStorage(MOCK_NOTIFY_LIST, list)
 }
 
+/* --------------------- 用户沉淀的线路强度（line_stats） --------------------- */
+
+/** 本地沉淀列表：与云端 line_stats 集合同一套字段，按中心词唯一 */
+function lineStatsList() {
+  const list = getStorage(MOCK_LINE_STATS, [])
+  return Array.isArray(list) ? list : []
+}
+
+function saveLineStats(list) {
+  setStorage(MOCK_LINE_STATS, list)
+}
+
+/**
+ * 发布 / 编辑活动后沉淀一条强度样本，与云端 activity 云函数的 learnLineStat 同一口径：
+ * 标题抽中心词 → 三项都填了才记 → 中位数汇总。中心词抽不出来或字段没填全时什么都不做。
+ */
+function learnLineStat(activity) {
+  const key = extractCenterWord(activity && activity.title)
+  const sample = sampleOf(activity)
+  if (!key || !sample) return null
+  const list = lineStatsList()
+  const index = list.findIndex((item) => item.key === key)
+  const next = mergeStat(index > -1 ? list[index] : null, key, sample, Date.now())
+  if (index > -1) list[index] = next
+  else list.push(next)
+  saveLineStats(list)
+  return next
+}
+
+/** 对外的沉淀结构：与云端 publicLineStat 一致，只给聚合值，不回传原始样本 */
+function publicLineStat(item) {
+  const doc = item || {}
+  return {
+    key: doc.key || '',
+    stars: Number(doc.stars) || 0,
+    distance: Number(doc.distance) || 0,
+    elevation: Number(doc.elevation) || 0,
+    sampleCount: Number(doc.sampleCount) || 0,
+    learnCount: Number(doc.learnCount) || 0,
+    updateTime: Number(doc.updateTime) || 0,
+  }
+}
+
 function memberOf(user) {
   return {
     openid: user.openid,
@@ -323,6 +370,7 @@ module.exports = {
   MOCK_AUDIT_MAP,
   MOCK_COMMENT_MAP,
   MOCK_NOTIFY_LIST,
+  MOCK_LINE_STATS,
   DEFAULT_BANNERS,
   buildBaseActivities,
   allActivities,
@@ -337,6 +385,10 @@ module.exports = {
   saveComments,
   notificationList,
   saveNotifications,
+  lineStatsList,
+  saveLineStats,
+  learnLineStat,
+  publicLineStat,
   memberOf,
   cityFilter,
   normalizeCityName,
