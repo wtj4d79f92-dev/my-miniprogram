@@ -442,6 +442,29 @@ const fakeCloud = {
         }
       },
     },
+    ocr: {
+      // 活动二维码图片文字识别：text 返回「界面文案 + 进群要求」| empty 没文字 | null 接口失败
+      async printedText(params) {
+        ocrCalls.push({ imgUrl: (params && params.imgUrl) || '' })
+        if (!securityBehavior.ocr) {
+          const err = new Error('api unauthorized')
+          err.errCode = 48001
+          throw err
+        }
+        if (securityBehavior.ocr === 'empty') return { errCode: 0, items: [] }
+        return {
+          errCode: 0,
+          items: [
+            { text: '微信扫一扫', pos: { top: 0, left: 0 } },
+            { text: '集合时间：周六 7:30', pos: { top: 20, left: 10 } },
+            { text: '进群要求：进群请备注昵称', pos: { top: 60, left: 10 } },
+            // 真实 OCR 会把「重新进入将更新」拆成两行，验证跨行过滤
+            { text: '该二维码7天内（10月25日前）有效，重新进入将更', pos: { top: 100, left: 10 } },
+            { text: '新', pos: { top: 120, left: 10 } },
+          ],
+        }
+      },
+    },
   },
 }
 
@@ -457,12 +480,14 @@ const securityBehavior = {
   imageFailOnce: false,
   textEmpty: false,
   qrcode: 'group',
+  ocr: 'text',
   label: 0,
   textDelay: 0,
   imageDelay: 0,
 }
 const securityCalls = []
 const qrCalls = []
+const ocrCalls = []
 const mediaTraceIds = []
 /** 注销时云存储被删掉的文件，按调用顺序记录 */
 const deletedFiles = []
@@ -476,12 +501,14 @@ function resetSecurity(behavior) {
   securityBehavior.imageFailOnce = false
   securityBehavior.textEmpty = false
   securityBehavior.qrcode = 'group'
+  securityBehavior.ocr = 'text'
   securityBehavior.label = 0
   securityBehavior.textDelay = 0
   securityBehavior.imageDelay = 0
   Object.assign(securityBehavior, behavior || {})
   securityCalls.length = 0
   qrCalls.length = 0
+  ocrCalls.length = 0
   imageCallSeq = 0
 }
 
@@ -1455,6 +1482,55 @@ async function run() {
     ORGANIZER
   )
   log(noQrEdit.auditStatus === 'approved', '二维码选填：编辑重提时删掉二维码同样能通过')
+
+  /* ---------- 二维码图片文字识别（发布页回填活动介绍，不参与审核） ---------- */
+  resetSecurity()
+  const ocrAnonymous = await callActivity(
+    'ocrQr',
+    { fileID: 'cloud://test-env/activity/qrcode-draft/a.png' },
+    ''
+  )
+  log(ocrAnonymous.code === 'UNAUTHORIZED', '二维码文字识别：未登录不能调用 OCR')
+  const ocrResult = await callActivity(
+    'ocrQr',
+    { fileID: 'cloud://test-env/activity/qrcode-draft/a.png' },
+    ORGANIZER
+  )
+  log(
+    ocrCalls.length === 1 && /^https:\/\//.test(ocrCalls[0].imgUrl),
+    '二维码文字识别：先把云存储文件换成 https 临时链接再调 OCR'
+  )
+  log(
+    ocrResult.status === 'ok' && ocrResult.text.indexOf('进群要求') > -1,
+    '二维码文字识别：返回截图里的进群要求等正文'
+  )
+  log(
+    ocrResult.text.indexOf('微信扫一扫') === -1 &&
+      ocrResult.text.indexOf('该二维码') === -1 &&
+      ocrResult.text.indexOf('重新进入将更新') === -1,
+    '二维码文字识别：跨行过滤「扫一扫」「二维码有效期」这类界面文案'
+  )
+  log(
+    ocrResult.length === ocrResult.text.length && ocrResult.length <= 1200,
+    '二维码文字识别：返回长度与文本一致，且不超过 OCR 原文 1200 字上限'
+  )
+  resetSecurity({ ocr: 'empty' })
+  const ocrEmpty = await callActivity(
+    'ocrQr',
+    { fileID: 'cloud://test-env/activity/qrcode-draft/empty.png' },
+    ORGANIZER
+  )
+  log(ocrEmpty.status === 'empty' && ocrEmpty.text === '', '二维码文字识别：图上没字时返回 empty，不报错')
+  resetSecurity({ ocr: null })
+  const ocrFailed = await callActivity(
+    'ocrQr',
+    { fileID: 'cloud://test-env/activity/qrcode-draft/error.png' },
+    ORGANIZER
+  )
+  log(
+    ocrFailed.status === 'failed' && ocrFailed.text === '' && !ocrFailed.code,
+    '二维码文字识别：接口异常时降级为 failed，不阻塞发布'
+  )
 
   /* ---------- 机审：活动二维码识别（只认微信群邀请码与个人微信二维码） ---------- */
   resetSecurity()

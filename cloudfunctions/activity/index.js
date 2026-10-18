@@ -32,6 +32,8 @@ const {
   summarize,
 } = require('./lib/contentCheck')
 const { MISSING, inspectFiles, collectFileIDs, resolveMedia } = require('./lib/media')
+// 活动二维码图片文字识别：发布页选好图后先把群公告 / 进群要求提出来，回填活动介绍
+const { recognizeText } = require('./lib/ocrText')
 // 自动关闭：展示期届满（发布满 7 天）、集合时间已过，首页 / 广场不再展示（见 lib/expire.js）
 const { TTL_MS, DAY_MS, startOfDay, isExpired, expireTimeOf, isPastStart } = require('./lib/expire')
 // 默认昵称与默认头像配色：注册时随机生成，见 lib/nickname.js
@@ -1493,6 +1495,20 @@ async function media(event) {
   return { media: await resolveMedia(list) }
 }
 
+/**
+ * 活动二维码图片文字识别（发布页选图后调用）。
+ * 只识别文字，不改审核结论；接口失败返回 status=failed，前端提示手写即可，不拦发布。
+ * 需要登录：OCR 是有配额的云调用，别让未登录调用方拿发布页当免费 OCR。
+ */
+async function ocrQr(event, openid) {
+  if (!openid) return fail('UNAUTHORIZED', '请先登录')
+  const user = await findUser(openid)
+  if (!user) return fail('UNAUTHORIZED', '请先登录')
+  const fileID = text((event && event.fileID) || '', LIMITS.url)
+  if (!fileID) return fail('INVALID_PARAM', '请先上传二维码图片')
+  return recognizeText(fileID)
+}
+
 /* ---------------------------- 定时自动关闭 ---------------------------- */
 
 /**
@@ -1699,6 +1715,7 @@ const ACTIONS = {
   lines: listLines,
   lineStats: listLineStats,
   media,
+  ocrQr,
   create,
   update,
   join,

@@ -16,7 +16,7 @@ pages/
   home/home                       首页：定位、横幅、玩法入口、热门 / 最新、分享给好友 / 朋友圈
   square/index                    活动广场：活动类型 / 城市 / 星期 / 具体日期 / 排序 / 搜索 / 分页
   activity/detail/index           活动详情：报名退出、发起人修改 / 关闭 / 打开活动、协议、活动二维码、分享、海报
-  activity/publish/index          发布活动：表单校验、自研日历、地图选点、类型联动
+  activity/publish/index          发布活动：表单校验、自研日历、地图选点、类型联动、二维码 OCR 自动填标题 / 时间 / 强度 / 介绍
   usercenter/index                个人中心：登录、资料编辑、手机号绑定、入口聚合
   user/activity-list/index        我的活动：我参与的 / 我发布的（修改、关闭、打开）
   feedback/index                  意见反馈
@@ -32,6 +32,7 @@ utils/                            字典、城市、协议文案、定位、存�
   lines.js                        成都周边徒步登山线路词库（由 scripts/extract-lines.js 生成）
   line-stat.js                    标题抽中心词 + 强度样本汇总（星级 / 全程 / 爬升的沉淀口径，与云函数逐字镜像）
   line-match.js                   标题 → 线路强度匹配（先查词库，再查用户沉淀；自动填难度 / 全程长度 / 累计爬升）
+  qr-text.js                      二维码截图文字解析（群名地点、集合时间、全程 / 爬升、介绍回填建议）
 cloudfunctions/
   activity/                       活动业务云函数（发布 / 报名 / 审核状态 / 内容安全送检）
   admin/                          审核台云函数（白名单校验、待审列表、通过 / 驳回、审核日志、线路词库导入）
@@ -49,7 +50,7 @@ scripts/seed/lines.json           线路词库的「控制台导入」文件（J
 `services/config.js` 中 `useMock` 控制数据来源：
 
 - `useMock: true`（演示模式）：数据由 `services/mock.js` 生成，操作结果写入本地缓存，缓存键与 PRD 5.3 一致（`aa_selected_city`、`square_pending_type`、`my_user`、`my_user_counter`、`my_published`、`my_joined`、`my_feedback`），另加 `mock_join_map`、`mock_status_map`、`mock_audit_map`、`mock_comment_map`、`mock_notifications`、`mock_line_stats` 六个运行期缓存键，用于记录报名成员、关闭状态与关闭时间、本地审核结果、活动留言、站内通知与线路强度沉淀。首页另有一份列表快照 `aa_home_cache`、发布页另有一份沉淀快照 `aa_line_stats`（见「标题自动匹配线路」），两种模式共用。
-- `useMock: false`：走云开发，客户端调用 `activity` 云函数，action 与 PRD 8.6 一致（`home / list / detail / lines / lineStats / create / update / join / quit / toggle / mine / user / login / updateUser / qrcode / feedback / report / comments / comment / commentRemove / notifications / notificationUnread / notificationRead / notificationReadAll / deleteAccount`），审核相关调用走独立的 `admin` 云函数。
+- `useMock: false`：走云开发，客户端调用 `activity` 云函数，action 与 PRD 8.6 一致（`home / list / detail / lines / lineStats / create / update / join / quit / toggle / mine / user / login / updateUser / qrcode / ocrQr / feedback / report / comments / comment / commentRemove / notifications / notificationUnread / notificationRead / notificationReadAll / deleteAccount`），审核相关调用走独立的 `admin` 云函数。
 
 > Mock 模式下把当前登录用户视为审核人，本地也能把「发布 → 待审 → 驳回 → 修改重提 → 通过」整条链路跑通；云端真人权限见下方「活动审核」。
 
@@ -61,6 +62,7 @@ scripts/seed/lines.json           线路词库的「控制台导入」文件（J
 4. 创建集合 `activities`、`users`、`banners`、`feedback`、`activity_comments`、`notifications`，权限按 PRD 8.7 设置（用户举报与意见反馈都落在 `feedback`，用 `kind` 区分：`feedback` / `report`；活动留言落在 `activity_comments`，站内通知落在 `notifications`，三者都只允许云函数读写，客户端不得直连）；
 5. 新建 `cloudfunctions/activity` 云函数（Node.js），按 `services/api.js` 中 `cloudApi` 的 action 名实现路由，返回结构失败为 `{ code, message }`、成功为业务数据；
 6. 在 `project.config.json` 中补充 `"cloudfunctionRoot": "cloudfunctions/"` 后部署云函数。
+7. 二维码文字识别依赖云开发「服务市场」的文字识别 OCR 额度：在云开发控制台开通/续购 OCR 套餐；错误 `101003 not enough market quota` 表示额度不足，此时发布页静默降级为手写，不展示失败文案，不影响发布。
 
 前端页面逻辑不依赖具体数据来源，切换开关即可，无需改动页面代码。
 
@@ -79,6 +81,7 @@ scripts/seed/lines.json           线路词库的「控制台导入」文件（J
 9. **活动二维码是选填的补充渠道，不做强制引流**：这一版曾按「小程序内服务强制引流至其他渠道才能体验」被驳回（发布必传二维码 + 报名成功当刻强弹二维码弹窗，审核员看到的链路只剩「去微信群」）。现在的口径是：发布页与云函数都不把二维码当必填（`normalizeForm` 不再校验 `groupQrCode`），没上传时机审写 `machineCheck.qrcode.status = 'skipped'` 且不阻断自动放行；报名成功后只 Toast「报名成功」，详情页出现「行前信息」卡（集合时间 / 地点导航 / 费用 / 同行成员 / 退出活动都在小程序内完成）。发起人上传过二维码时，已报名用户的底部操作区多一个「查看二维码」按钮（在「退出活动」左边，用户主动点才弹出，弹窗标题写明「（可选）」），发起人没上传就不出现这个按钮。**不要再把二维码改回必填、也不要在报名成功时自动弹码或把进群写成体验前提**（`scripts/validate.js` 有对应断言）。
 10. **活动留言是参与者可见的站内 UGC**：只有发起人与已报名的人能看能发，退出活动即失去访问；内容与昵称 / 反馈共用同一套文本内容安全，删除是保留原文的软删除，别人的留言可举报（`kind: 'report'` + `target: 'comment'`）。留言是「不用跳去微信群也能约上事」的那条闭环，也是审核眼里「小程序内有实质功能」的证据。**不要把它开放成公开社区，也不要在留言里做任何站外导流的引导**（`scripts/validate.js` 有对应断言）。
 11. **昵称头像只能由用户点选，不能静默获取**：微信自 2021-04-13 起 `wx.getUserInfo`、2022-10-25 起 `wx.getUserProfile` 都只返回「微信用户」+ 灰色默认头像，唯一可用的官方能力是「头像昵称填写能力」（`<button open-type="chooseAvatar">` + `<input type="nickname">`），必须用户点一次，**不要再退回 `getUserProfile`**（`scripts/validate.js` 有对应断言）。产品口径是：新注册用户登录成功后自动进一次「完善头像昵称」步骤（可「暂不完善」，不阻断登录），老用户仍从「我的 → 完善头像昵称」入口主动改。`chooseAvatar` / `chooseMedia` 返回的 `http://tmp/...`、`wxfile://...` 都是本机临时路径，**云模式必须先 `wx.cloud.uploadFile` 换成 `cloud://` 文件 ID 再落库**，否则别人打开活动看到的是空白头像（统一走 `utils/profile.js` 的 `uploadAvatar`）。历史版本已经用临时路径落过库的账号，头像本身是坏的：`utils/profile.js` 的 `usableAvatar()` 把这类路径按「没有头像」处理，因此会重新出现完善提示、两个资料弹窗也不预填它，用户重选一次即自动修好（不必做数据迁移）。
+12. **二维码 OCR 是图片处理用途，不是新的权限项**：`wx.chooseMedia` 原本就已用于封面 / 二维码，「选中的照片或视频信息」应在后台指引里声明；新增 OCR 后要把用途补成「识别图片文字以辅助填写活动标题 / 集合时间 / 全程 / 爬升 / 介绍」，并说明识别结果只回填表单、用户可修改、不参与审核放行。识别过程对用户完全静默：不展示识别中 / 识别结果 / 自动填入摘要，不弹 Toast；失败或额度不足时也不展示文案，只保留手写入口。群聊名称只用于标题解析，不写入活动介绍；二维码自带的「该二维码 N 天内……有效，重新进入将更新」也要剔除（含 OCR 跨行拆字）。站内《隐私政策》与后台指引必须同步。
 
 ## 注销账号
 

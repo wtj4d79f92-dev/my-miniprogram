@@ -92,6 +92,12 @@ const MOCK_REVIEW_WORDS = ['疑似', '兼职']
 const MOCK_QR_NO_CODE = 'noqrcode'
 const MOCK_QR_NOT_WECHAT = 'notwechat'
 const MOCK_QR_PERSONAL = 'personqr'
+/** Mock 二维码文字识别：文件名带 ocrtext 时返回一段模拟文字，其余按「没识别到文字」处理 */
+const MOCK_QR_TEXT_FLAG = 'ocrtext'
+const MOCK_QR_OCR_TEXT =
+  '集合时间：周六 7:30，地铁口 A 口集合\n' +
+  '进群要求：报名后扫码进群，进群请备注昵称\n' +
+  '装备：登山鞋、饮用水、雨具，全程约 8 公里'
 
 /** 举报原因候选：与云端 activity 云函数的 REPORT_REASONS 保持一致 */
 const REPORT_REASONS = ['虚假信息或诈骗', '违法违规内容', '侵权或盗用他人内容', '广告骚扰', '其他']
@@ -720,6 +726,21 @@ const mockApi = {
     return withDelay({ fileID: activity.miniQrCode || '' })
   },
 
+  /** 活动二维码文字识别：Mock 不做真实 OCR，只有文件名带 ocrtext 时给一段示例文字 */
+  ocrQr(fileID) {
+    const value = String(fileID || '')
+    if (value.indexOf(MOCK_QR_TEXT_FLAG) === -1) {
+      return withDelay({ status: 'empty', ok: false, text: '', length: 0, message: '没有识别到可用的文字' })
+    }
+    return withDelay({
+      status: 'ok',
+      ok: true,
+      text: MOCK_QR_OCR_TEXT,
+      length: MOCK_QR_OCR_TEXT.length,
+      message: '识别到图片文字',
+    })
+  },
+
   feedback(payload) {
     const content = String((payload && payload.content) || '').slice(0, 1000)
     // 反馈不公开展示，但仍是用户提交的文本；与云端 feedback 一致先过内容安全
@@ -1144,6 +1165,10 @@ const cloudApi = {
   },
   qrcode(id) {
     return callCloud('qrcode', { id })
+  },
+  /** 活动二维码图片文字识别：发布页选图后回填活动介绍 */
+  ocrQr(fileID) {
+    return callCloud('ocrQr', { fileID })
   },
   feedback(payload) {
     return callCloud('feedback', payload)

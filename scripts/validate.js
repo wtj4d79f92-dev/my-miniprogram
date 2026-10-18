@@ -25,6 +25,184 @@ function exists(relative) {
   return fs.existsSync(path.join(ROOT, relative))
 }
 
+/* ---------- 二维码截图解析：群名 / 时间 / 全程 / 爬升 ---------- */
+function checkQrTextParsing() {
+  const { parseQrFields, stripGroupName, stripQrHints } = require(path.join(ROOT, 'utils/qr-text.js'))
+  // 固定在 2026-10-18 09:00（周日），避免测试结果随当前日期漂移
+  const now = new Date(2026, 9, 18, 9, 0).getTime()
+  const full = parseQrFields(
+    '群聊名称\n云中牧场徒步群\n集合时间：10月24日 7:30\n全程约8.5公里，累计爬升700米',
+    now
+  )
+  log(full.title === '云中牧场' && full.location === '云中牧场', '二维码解析：群名里的活动地点填进标题')
+  const fullDate = new Date(full.startTime)
+  log(
+    fullDate.getMonth() === 9 && fullDate.getDate() === 24 && full.clockText === '07:30',
+    '二维码解析：10月24日 7:30 → 集合时间选到 10 月 24 日'
+  )
+  log(full.distance === 8.5 && full.elevation === 700, '二维码解析：全程 8.5km / 爬升 700m')
+
+  const weekday = parseQrFields(
+    '群聊名称：峨眉山夜爬群\n集合：周六早上7点半\n10km 爬升800m',
+    now
+  )
+  const weekdayDate = new Date(weekday.startTime)
+  log(
+    weekdayDate.getDate() === 24 && weekday.clockText === '07:30',
+    '二维码解析：周六 7:30 → 取下一个周六（今天周日 → 10 月 24 日）'
+  )
+
+  const dayOnly = parseQrFields('云中牧场徒步群(23)\n20号 7:30集合\n8公里 爬升700米', now)
+  const dayOnlyDate = new Date(dayOnly.startTime)
+  log(
+    dayOnly.title === '云中牧场' &&
+      dayOnlyDate.getMonth() === 9 &&
+      dayOnlyDate.getDate() === 20,
+    '二维码解析：只有日没有月份时默认当月，群名尾部的成员数不影响识别'
+  )
+
+  const compact = parseQrFields('群聊名称：云中牧场徒步群\n8.5km + 700m', now)
+  log(compact.elevation === 700, '二维码解析：8.5km + 700m 也能识别累计爬升')
+
+  const past = parseQrFields('群聊名称：云中牧场徒步群\n10月1日 7:30集合', now)
+  log(past.timePast === true && past.startTime === 0, '二维码解析：已经过去的时间不自动填入')
+
+  const groupChat = parseQrFields(
+    '26号成行早上出发\n差一位女生\n群聊: 成都温泉群 26-29\n该二维码7天内(10月24日前)有效，重新进入将更新',
+    now
+  )
+  const groupChatDate = new Date(groupChat.startTime)
+  log(
+    groupChat.groupName === '成都温泉群 26-29' &&
+      groupChat.title === '成都温泉' &&
+      groupChatDate.getMonth() === 9 &&
+      groupChatDate.getDate() === 26,
+    '二维码解析：支持「群聊: 成都温泉群 26-29」写法，26 号默认当月'
+  )
+
+  const descText = stripGroupName(
+    '群聊名称\n党龄重装 26-29\n26号成都早上出发\n差一位车主',
+    '党龄重装 26-29'
+  )
+  log(
+    descText === '26号成都早上出发\n差一位车主',
+    '二维码解析：群聊名称只用于标题，不进入活动介绍'
+  )
+
+  const hintText = stripQrHints(
+    'AA出行\n该二维码7天内(10月25日前)有效，重新进入将更\n新'
+  )
+  log(hintText === 'AA出行', '二维码解析：跨行去掉「该二维码…重新进入将更新」模板文案')
+}
+
+/** 发布页回填：只填空 / 未被用户改过的字段，截图里的距离与爬升优先 */
+function checkQrAutoFill() {
+  const pagePath = path.join(ROOT, 'pages/activity/publish/index.js')
+  const { parseQrFields } = require(path.join(ROOT, 'utils/qr-text.js'))
+  const pageOptions = []
+  const originPage = global.Page
+  global.Page = (options) => pageOptions.push(options)
+  delete require.cache[pagePath]
+  require(pagePath)
+  global.Page = originPage
+  const page = pageOptions[0]
+  if (!page) {
+    log(false, '二维码回填：取不到发布页')
+    return
+  }
+
+  const make = () => {
+    const ctx = Object.assign({}, page, {
+      data: JSON.parse(JSON.stringify(page.data)),
+      setData(patch) {
+        Object.keys(patch).forEach((key) => {
+          const parts = key.split('.')
+          let target = this.data
+          for (let i = 0; i < parts.length - 1; i += 1) target = target[parts[i]]
+          target[parts[parts.length - 1]] = patch[key]
+        })
+      },
+      clearError() {},
+      cancelLineMatch() {},
+    })
+    // 非空词库但故意不命中，避免测试受内置线路数据影响
+    ctx._library = [{ id: 'no_match', name: '不存在的线路', keys: ['不存在的线路'], stars: 0, distance: 0, elevation: 0 }]
+    ctx._stats = []
+    ctx._lineLocked = false
+    ctx._metricTouched = { difficulty: false, distance: false, elevation: false }
+    ctx._metricByUser = { difficulty: false, distance: false, elevation: false }
+    ctx._titleTouched = false
+    ctx._titleFromOcr = false
+    ctx._startTouched = false
+    ctx._endTouched = false
+    return ctx
+  }
+
+  const now = new Date(2026, 9, 18, 9, 0).getTime()
+  const text =
+    '群聊名称：峨眉山夜爬群\n集合时间：10月24日 7:30\n全程8.5公里，累计爬升700米'
+  const ctx = make()
+  const filled = ctx.applyQrFields(parseQrFields(text, now))
+  log(
+    ctx.data.form.title === '峨眉山夜爬' &&
+      ctx.data.startLabel === '10月24日 周六' &&
+      ctx.data.form.distance === '8.5' &&
+      ctx.data.form.elevationGain === '700',
+    '二维码回填：标题 / 集合时间 / 全程 / 爬升一起填进表单'
+  )
+  log(filled.filled.length >= 4, '二维码回填：内部记录本次自动填入的字段')
+
+  // 识别成功也不应弹 Toast 或生成任何 OCR 状态文案
+  const silent = make()
+  const toasts = []
+  const originToast = global.wx.showToast
+  global.wx.showToast = (options) => toasts.push((options && options.title) || '')
+  silent.applyQrOcr({
+    status: 'ok',
+    text: '群聊: 成都温泉群\n全程8公里，累计爬升700米',
+  })
+  global.wx.showToast = originToast
+  log(
+    toasts.length === 0 &&
+      silent.data.form.title === '成都温泉' &&
+      silent.data.form.distance === '8' &&
+      silent.data.form.elevationGain === '700' &&
+      silent.data.form.desc.indexOf('群聊') === -1 &&
+      silent.data.form.desc.indexOf('成都温泉群') === -1,
+    '二维码回填：后台静默填写，不弹 Toast、不生成识别状态，群名不进介绍'
+  )
+
+  const cleanup = make()
+  cleanup.data.form.desc =
+    'AA出行\n群聊: 党龄重装 26-29\n该二维码7天内(10月25日前)有效，重新进入将更\n新'
+  cleanup.applyQrOcr({
+    status: 'ok',
+    text: cleanup.data.form.desc,
+  })
+  log(
+    cleanup.data.form.desc === 'AA出行',
+    '二维码回填：已填介绍里的群名与二维码有效期文案也会被清掉'
+  )
+
+  const kept = make()
+  kept.data.form.title = '自己写的标题'
+  kept.data.form.distance = '9'
+  kept.data.form.startTime = 123
+  kept.data.startLabel = '原有日期'
+  kept._metricByUser.distance = true
+  kept._startTouched = true
+  kept.applyQrFields(parseQrFields(text, now))
+  log(
+    kept.data.form.title === '自己写的标题' &&
+      kept.data.form.distance === '9' &&
+      kept.data.form.startTime === 123 &&
+      kept.data.startLabel === '原有日期',
+    '二维码回填：用户已填的标题 / 日期 / 距离不被截图覆盖'
+  )
+
+  delete require.cache[pagePath]
+}
+
 /* ---------------------- 1. 页面 / 组件文件完整性 ---------------------- */
 
 const appJson = readJSON(path.join(ROOT, 'app.json'))
@@ -2501,6 +2679,13 @@ function checkDeleteAccount() {
         policy.indexOf('封面图') > -1 && policy.indexOf('活动二维码') > -1 && policy.indexOf('不传二维码也可以发布活动') > -1,
         '隐私政策：写明发布时选择的图片用途，并标明活动二维码为选填'
       )
+      log(
+        policy.indexOf('识别二维码图片上的文字') > -1 &&
+          policy.indexOf('集合时间') > -1 &&
+          policy.indexOf('全程长度') > -1 &&
+          policy.indexOf('累计爬升') > -1,
+        '隐私政策：写明二维码 OCR 的用途与回填字段，不只是活动介绍'
+      )
       log(policy.indexOf('相册（仅写入）权限') > -1, '隐私政策：写明相册仅写入权限')
       log(policy.indexOf('设备信息') > -1, '隐私政策：写明设备信息用途')
       log(policy.indexOf('剪切板（仅写入）') > -1, '隐私政策：写明剪切板仅写入且不读取')
@@ -4853,6 +5038,8 @@ return checkDeleteAccount()
   .then(() => checkDetailComments())
   .then(() => checkMessagePage())
   .then(() => checkLineLibrary())
+  .then(() => checkQrTextParsing())
+  .then(() => checkQrAutoFill())
   .then(() => checkSeedData())
 })
 .then(() => {

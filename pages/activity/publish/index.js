@@ -15,11 +15,40 @@ const { matchCity } = require('../../../utils/cities')
 // 标题 → 线路强度：命中词库（官方线路表）或用户沉淀的中心词后自动填难度、全程长度、累计爬升
 const { matchLine, matchStat } = require('../../../utils/line-match')
 const { LINE_LIBRARY, LINE_LIBRARY_VERSION } = require('../../../utils/lines')
+const { parseQrFields, stripGroupName, stripQrHints } = require('../../../utils/qr-text')
 const { KEYS, getStorage, setStorage } = require('../../../utils/storage')
 
 const LOGIN_REASON = '发布活动需要先登录，是否立即登录？'
 /** 标题输入的防抖时长：边打字边匹配，等手停下来再算，避免每个字都跑一遍词库 */
 const LINE_MATCH_DELAY = 400
+/** 提交时最多等 OCR 这么久：识别慢不能拖着发布按钮一直转圈 */
+const QR_OCR_WAIT = 2500
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * 上传单张图片到云存储。
+ * 没选图、已经是云存储文件、或本来就是 https 远程图时直接返回原值。
+ * 注意：chooseMedia 选出来的本机临时路径是 http://tmp/xxx 这种形式，
+ * 不能按 http 前缀放过，否则落库的是本机路径，别人打开活动只能看到空白图。
+ */
+function uploadImage(path, name) {
+  const source = String(path || '')
+  if (!source || source.indexOf('cloud://') === 0 || source.indexOf('https://') === 0) {
+    return Promise.resolve(source)
+  }
+  const ext = (source.match(/\.([a-zA-Z0-9]+)$/) || [])[1] || 'png'
+  return new Promise((resolve, reject) => {
+    wx.cloud.uploadFile({
+      cloudPath: `activity/${name}/${Date.now()}-${Math.floor(Math.random() * 100000)}.${ext}`,
+      filePath: source,
+      success: (res) => resolve(res.fileID),
+      fail: () => reject(new Error('图片上传失败，请检查网络后重试')),
+    })
+  })
+}
 
 Page({
   behaviors: [loginBehavior],
@@ -82,6 +111,13 @@ Page({
     const startTime = addDays(today, 1)
     const endTime = addDays(today, 2)
     const editId = (options && options.id) || ''
+    // 用户是否自己改过这些字段：OCR 只填没被用户动过的，重传二维码时可更新上一次 OCR 的值；
+    // 编辑已有活动时一律按「已改过」处理，不让截图改掉原活动的标题 / 日期
+    this._titleTouched = !!editId
+    this._titleFromOcr = false
+    this._startTouched = !!editId
+    this._endTouched = !!editId
+    this._qrNeedsLogin = false
     this.setData({
       user: app.globalData.user,
       'form.startTime': startTime,
@@ -112,6 +148,8 @@ Page({
     // 编辑已有活动时不参与自动填充：原活动的强度指标是用户自己填的，不能被标题匹配改掉
     this._lineLocked = !!locked
     this._metricTouched = { difficulty: !!locked, distance: !!locked, elevation: !!locked }
+    // OCR 填的强度字段也算「已定值」，但不等于用户手填：下一张二维码可以覆盖它
+    this._metricByUser = { difficulty: !!locked, distance: !!locked, elevation: !!locked }
     // 用户沉淀：本地只是一份快照，云端 line_stats 集合才是权威数据，所以下面还要拉一次
     const cachedStats = getStorage(KEYS.lineStats, null)
     this._stats = Array.isArray(cachedStats) ? cachedStats : []
@@ -175,6 +213,11 @@ Page({
         const desc = raw.desc || ''
         // 编辑已有活动：三项强度指标都是用户原先填过的值，标题匹配不再覆盖它们
         this._metricTouched = { difficulty: true, distance: true, elevation: true }
+        // 编辑模式同样不拿二维码截图去改标题 / 集合时间 / 返程时间
+        this._titleTouched = true
+        this._titleFromOcr = false
+        this._startTouched = true
+        this._endTouched = true
         this.setData({
           form: {
             cover: raw.cover || '',
@@ -331,6 +374,8 @@ Page({
 
   onTitleInput(e) {
     const title = String(e.detail.value || '').slice(0, 30)
+    this._titleTouched = true
+    this._titleFromOcr = false
     this.setData({ 'form.title': title })
     this.clearError('title')
     this.scheduleLineMatch(title)
@@ -438,6 +483,7 @@ Page({
     const timestamp = e.detail.timestamp
     const form = this.data.form
     if (this._dateField === 'startTime') {
+      this._startTouched = true
       // 返程时间不得早于集合时间，集合时间后移时自动顺延返程
       const endTime = form.endTime && form.endTime >= timestamp ? form.endTime : timestamp
       this.setData({
@@ -450,6 +496,7 @@ Page({
       })
       return
     }
+    this._endTouched = true
     this.setData({
       'form.endTime': timestamp,
       endLabel: formatCardDate(timestamp),
@@ -501,6 +548,7 @@ Page({
     const index = Number(e.detail.value)
     const option = DIFFICULTY_OPTIONS[index] || DIFFICULTY_OPTIONS[2]
     if (this._metricTouched) this._metricTouched.difficulty = true
+    if (this._metricByUser) this._metricByUser.difficulty = true
     this.setData({
       difficultyIndex: index,
       difficultyLabel: option.label,
@@ -510,12 +558,14 @@ Page({
 
   onDistanceInput(e) {
     if (this._metricTouched) this._metricTouched.distance = true
+    if (this._metricByUser) this._metricByUser.distance = true
     this.setData({ 'form.distance': e.detail.value })
     this.clearError('distance')
   },
 
   onElevationInput(e) {
     if (this._metricTouched) this._metricTouched.elevation = true
+    if (this._metricByUser) this._metricByUser.elevation = true
     this.setData({ 'form.elevationGain': e.detail.value })
     this.clearError('elevationGain')
   },
@@ -550,23 +600,192 @@ Page({
       sizeType: ['compressed'],
       success: (res) => {
         const file = res.tempFiles && res.tempFiles[0]
-        if (file) {
-          this.setData({ 'form.groupQrCode': file.tempFilePath })
-          this.clearError('groupQrCode')
-        }
+        if (!file) return
+        const path = file.tempFilePath
+        // 换图时把上一张还没提交的草稿删掉，避免云存储里越堆越多
+        this.discardQrDraft()
+        this._qrNeedsLogin = false
+        this.setData({ 'form.groupQrCode': path })
+        this.clearError('groupQrCode')
+        this.readQrText(path)
       },
     })
   },
 
   removeGroupQr() {
     ui.confirm({ title: '删除二维码', content: '确定删除已上传的活动二维码吗？' }).then((ok) => {
-      if (ok) this.setData({ 'form.groupQrCode': '' })
+      if (!ok) return
+      this.discardQrDraft()
+      // 让还在路上的识别结果作废，别把已删除二维码的文字填进介绍
+      this._qrSeq = (this._qrSeq || 0) + 1
+      this._qrNeedsLogin = false
+      this.setData({ 'form.groupQrCode': '' })
     })
+  },
+
+  /**
+   * 选好二维码后：登录 → 上传临时文件 → 云函数 OCR → 回填活动介绍。
+   * 二维码图片本来要等到提交才上传；这里先传一份草稿，提交时直接复用同一个 fileID，
+   * 不会重复上传，也不会因为 OCR 失败让用户发不出去。
+   */
+  readQrText(path) {
+    const seq = (this._qrSeq = (this._qrSeq || 0) + 1)
+    const draft = { path, fileID: '', used: false, task: null }
+    this._qrDraft = draft
+    draft.task = this.whenUserReady()
+      .then(() => {
+        if (seq !== this._qrSeq) return null
+        if (!this.currentUser()) {
+          // 登录后再补跑；选图这一步不打断用户，也不展示任何状态
+          this._qrNeedsLogin = true
+          return null
+        }
+        const file = config.useMock ? Promise.resolve(path) : uploadImage(path, 'qrcode-draft')
+        return file
+          .then((fileID) => {
+            // 上传过程中换了图 / 删了图 / 离开页面：这份草稿已经没人引用，顺手删掉
+            if (seq !== this._qrSeq || draft !== this._qrDraft) {
+              if (!config.useMock && fileID && wx.cloud && wx.cloud.deleteFile) {
+                wx.cloud.deleteFile({ fileList: [fileID], fail: () => {} })
+              }
+              return ''
+            }
+            draft.fileID = fileID
+            return fileID
+          })
+          .then((fileID) => (fileID ? api.ocrQr(fileID) : null))
+      })
+      .then((res) => {
+        if (!res || seq !== this._qrSeq || this._unloaded) return
+        this.applyQrOcr(res)
+      })
+      .catch(() => {
+        // 识别失败静默处理：保留手写入口，不向用户展示失败状态
+      })
+  },
+
+  /**
+   * 从 OCR 文本里解析标题 / 集合时间 / 全程 / 爬升并回填。
+   * 只填用户没手动改过的字段；截图里明确写的距离 / 爬升优先于线路词库。
+   */
+  applyQrFields(parsed) {
+    const data = parsed || {}
+    const form = this.data.form
+    const patch = {}
+    const filled = []
+    let titleForMatch = ''
+
+    // 标题：空标题直接填；上一次是 OCR 填的、用户没改过时，换图可以更新
+    const currentTitle = String(form.title || '').trim()
+    const canTitle = !currentTitle || (this._titleFromOcr && !this._titleTouched)
+    if (data.title && canTitle) {
+      const title = String(data.title).slice(0, 30)
+      if (title !== currentTitle) {
+        this.cancelLineMatch()
+        patch['form.title'] = title
+        patch['errors.title'] = ''
+        filled.push(`标题「${title}」`)
+      }
+      this._titleFromOcr = true
+      titleForMatch = title
+    }
+
+    // 集合时间：用户自己点过日历后保留用户的选择
+    if (data.startTime && !this._startTouched) {
+      const startTime = Number(data.startTime)
+      if (startTime && startTime !== form.startTime) {
+        patch['form.startTime'] = startTime
+        patch.startLabel = formatCardDate(startTime)
+        patch['errors.startTime'] = ''
+        if (!this._endTouched && form.endTime && form.endTime < startTime) {
+          const endTime = startOfDay(startTime) + 86400000
+          patch['form.endTime'] = endTime
+          patch.endLabel = formatCardDate(endTime)
+          patch['errors.endTime'] = ''
+        }
+        const clock = data.clockText ? ` ${data.clockText}` : ''
+        filled.push(`集合时间 ${formatCardDate(startTime)}${clock}`)
+      }
+    }
+
+    // 强度字段：截图里写明的值优先；标成已定值后，线路词库不会再改它
+    const metricPatch = {}
+    if (this.data.showMetrics) {
+      const byUser = this._metricByUser || {}
+      if (data.distance > 0 && !byUser.distance) {
+        const value = String(data.distance)
+        if (String(form.distance || '') !== value) {
+          metricPatch['form.distance'] = value
+          metricPatch['errors.distance'] = ''
+          filled.push(`全程 ${value}km`)
+        }
+        if (this._metricTouched) this._metricTouched.distance = true
+      }
+      if (data.elevation > 0 && !byUser.elevation) {
+        const value = String(data.elevation)
+        if (String(form.elevationGain || '') !== value) {
+          metricPatch['form.elevationGain'] = value
+          metricPatch['errors.elevationGain'] = ''
+          filled.push(`爬升 ${value}m`)
+        }
+        if (this._metricTouched) this._metricTouched.elevation = true
+      }
+    }
+
+    // 标题补上后再按词库 / 历史沉淀补剩下的强度字段；截图明确写出的值已经保护起来
+    if (titleForMatch) this.applyLineMatch(titleForMatch)
+    if (Object.keys(patch).length || Object.keys(metricPatch).length) {
+      this.setData(Object.assign(patch, metricPatch))
+    }
+
+    return { filled }
+  },
+
+  /**
+   * OCR 结果落到表单：全程静默。
+   * 只填空标题 / 未被用户改过的日期与强度；介绍为空时自动带入，已有内容时保持原样。
+   */
+  applyQrOcr(res) {
+    const raw = String((res && res.text) || '').trim()
+    if (!raw) return
+    // 字段解析用完整 OCR 原文，活动介绍本身仍按 500 字上限截断
+    const parsed = parseQrFields(raw, Date.now())
+    this.applyQrFields(parsed)
+    const current = String(this.data.form.desc || '').trim()
+    // 已经自动填过的介绍里如果残留二维码有效期 / 群名，也一并清掉
+    const cleanedCurrent = stripGroupName(stripQrHints(current), parsed.groupName).trim()
+    if (!cleanedCurrent) {
+      // 群聊名称只用于标题解析，不写进活动介绍
+      const text = stripGroupName(stripQrHints(raw), parsed.groupName).slice(0, 500)
+      if (text) this.setData({ 'form.desc': text, descCount: text.length })
+      return
+    }
+    if (cleanedCurrent !== current) {
+      this.setData({ 'form.desc': cleanedCurrent, descCount: cleanedCurrent.length })
+    }
+  },
+
+  /** 删除还没提交的二维码草稿；已经提交引用的文件不能删 */
+  discardQrDraft() {
+    const draft = this._qrDraft
+    this._qrDraft = null
+    if (!draft || !draft.fileID || draft.used || config.useMock) return
+    if (!wx.cloud || typeof wx.cloud.deleteFile !== 'function') return
+    wx.cloud.deleteFile({ fileList: [draft.fileID], fail: () => {} })
   },
 
   onDescInput(e) {
     const value = String(e.detail.value || '').slice(0, 500)
     this.setData({ 'form.desc': value, descCount: value.length })
+  },
+
+  /** 登录成功：如果选图时还没登录，这里补跑一次文字识别 */
+  onUserChanged() {
+    if (!this._qrNeedsLogin) return
+    const path = this.data.form.groupQrCode
+    if (!path) return
+    this._qrNeedsLogin = false
+    this.readQrText(path)
   },
 
   toggleAgree() {
@@ -743,36 +962,40 @@ Page({
    * Mock 模式直接透传，保持本地流程不变
    */
   uploadFiles(payload) {
-    if (config.useMock) return Promise.resolve(payload)
-    const upload = (path, name) => {
-      const source = String(path || '')
-      // 没选图、已经是云存储文件、或本来就是 https 远程图，直接返回
-      // 注意：chooseMedia 选出来的本机临时路径是 http://tmp/xxx 这种形式，
-      // 不能按 http 前缀放过，否则落库的是本机路径，别人打开活动只能看到空白封面
-      if (!source || source.indexOf('cloud://') === 0 || source.indexOf('https://') === 0) {
-        return Promise.resolve(source)
-      }
-      const ext = (source.match(/\.([a-zA-Z0-9]+)$/) || [])[1] || 'png'
-      return new Promise((resolve, reject) => {
-        wx.cloud.uploadFile({
-          cloudPath: `activity/${name}/${Date.now()}-${Math.floor(Math.random() * 100000)}.${ext}`,
-          filePath: source,
-          success: (res) => resolve(res.fileID),
-          fail: () => reject(new Error('图片上传失败，请检查网络后重试')),
-        })
+    // 提交时 OCR 可能还在跑：最多等一小会儿，让「识别后自动填介绍」赶在落库前生效；
+    // 超时就按当前表单提交，识别晚到也不影响发布
+    const draft = this._qrDraft
+    const pending =
+      draft && draft.path === payload.groupQrCode && draft.task
+        ? Promise.race([draft.task.catch(() => {}), delay(QR_OCR_WAIT)])
+        : Promise.resolve()
+    return pending.then(() => {
+      // 等待期间 OCR 可能刚把文字填进介绍，所以 payload 里的 desc 取提交这一刻的值
+      const live = this.data && this.data.form
+      const form = Object.assign({}, payload)
+      if (live && live.desc !== undefined) form.desc = String(live.desc || '')
+      if (config.useMock) return form
+      const latest = this._qrDraft
+      const reusable =
+        latest && latest.path === form.groupQrCode && latest.fileID ? latest.fileID : ''
+      const qrUpload = reusable
+        ? Promise.resolve(reusable)
+        : uploadImage(form.groupQrCode, 'qrcode')
+      return Promise.all([uploadImage(form.cover, 'cover'), qrUpload]).then((res) => {
+        if (reusable && latest) latest.used = true
+        return Object.assign({}, form, { cover: res[0], groupQrCode: res[1] })
       })
-    }
-    return Promise.all([upload(payload.cover, 'cover'), upload(payload.groupQrCode, 'qrcode')]).then(
-      (res) => Object.assign({}, payload, { cover: res[0], groupQrCode: res[1] })
-    )
+    })
   },
 
   onLogin(e) {
     this.handleLoginSuccess(e.detail)
   },
 
-  /** 页面退出时清掉标题匹配的防抖定时器，别让它打到已经销毁的页面上 */
+  /** 页面退出时清掉标题匹配的防抖定时器与未提交的二维码草稿 */
   onUnload() {
+    this._unloaded = true
     this.cancelLineMatch()
+    this.discardQrDraft()
   },
 })

@@ -5,7 +5,8 @@
       "wxacode.getUnlimited",
       "security.msgSecCheck",
       "security.mediaCheckAsync",
-      "img.scanQRCode"
+      "img.scanQRCode",
+      "ocr.printedText"
     ]
   },
   "triggers": [
