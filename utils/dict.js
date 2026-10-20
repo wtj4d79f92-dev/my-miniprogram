@@ -102,10 +102,14 @@ const DEFAULT_BANNERS = [
 const TEXTS = {
   appName: '旷行吖',
   slogan: '和志同道合的人一起出发',
-  searchPlaceholderHome: '搜活动、地点，加入旷行吖',
+  // 首页跑马灯文案：增删或修改数组项即可调整；1 条左右滚动，2 条及以上上下轮播
+  homeMarqueeTexts: [
+    '同城找搭子 · 周末一起出发',
+    '联系客服，加入本地活动群！',
+    '发布活动，召集你的户外搭子',
+  ],
   searchPlaceholderSquare: '搜索活动、地点',
   footer: '— 和志同道合的人一起出发 —',
-  version: '旷行吖 v1.2.0',
   about:
     '旷行吖是一款户外运动组队小程序，支持自驾游、徒步、打球、骑行、宠物会、游泳、露营等玩法，一键发起活动、快速摇人组队。',
   coastSlogan: '和志同道合的人一起出发',

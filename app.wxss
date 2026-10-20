@@ -112,7 +112,6 @@ page {
 .act-card,
 .msg-item,
 .audit-card,
-.search-entry,
 .user-card,
 .stats,
 .entry-group,

@@ -4,6 +4,7 @@ const { KEYS, getStorage, setStorage, setStorageAsync } = require('../../utils/s
 const loginBehavior = require('../../behaviors/login-behavior')
 const ui = require('../../utils/ui')
 const scene = require('../../utils/scene')
+const { normalizeMarqueeTexts, MARQUEE_ICON } = require('../../utils/marquee')
 
 /**
  * 分享卡片用代码包里的品牌图，而不是等微信截页面——首屏还没加载完就转发时，截图可能是空白的。
@@ -13,6 +14,7 @@ const scene = require('../../utils/scene')
 const SHARE_IMAGE = '/assets/share-home.png'
 const TIMELINE_IMAGE = '/assets/logo.png'
 const SHARE_TITLE = `${TEXTS.appName} · 同城找搭子，一起出发`
+const HOME_MARQUEE_TEXTS = normalizeMarqueeTexts(TEXTS.homeMarqueeTexts)
 
 /**
  * 首页列表本地快照的有效期。冷启动时先用快照把活动渲染出来，接口返回后再覆盖，
@@ -54,6 +56,9 @@ Page({
   data: {
     texts: TEXTS,
     typeGrid: TYPE_GRID,
+    marqueeIcon: MARQUEE_ICON,
+    homeMarqueeTexts: HOME_MARQUEE_TEXTS,
+    homeMarqueeHasMultiple: HOME_MARQUEE_TEXTS.length > 1,
     // 金刚区图标按格子下标记失败状态：data URI 正常不会失败，留一手兜底，格子不至于空着
     iconErrorMap: {},
     city: '',
@@ -264,16 +269,6 @@ Page({
     if (type) {
       setStorage(KEYS.pendingType, type)
     }
-    wx.switchTab({ url: '/pages/square/index' })
-  },
-
-  /**
-   * 点搜索框：进广场并把搜索输入框自动聚焦（弹起键盘），
-   * 让「首页点搜索 → 广场直接输入」连成一步，和广场内的搜索体验一致。
-   */
-  onSearchTap() {
-    if (this.data.singlePage) return
-    setStorage(KEYS.pendingSearch, true)
     wx.switchTab({ url: '/pages/square/index' })
   },
 

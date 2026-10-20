@@ -109,7 +109,8 @@ Page({
     const app = getApp()
     const today = startOfDay(Date.now())
     const startTime = addDays(today, 1)
-    const endTime = addDays(today, 2)
+    // 新建活动默认当天往返；返程时间被用户主动修改前，继续跟随集合日期
+    const endTime = startTime
     const editId = (options && options.id) || ''
     // 用户是否自己改过这些字段：OCR 只填没被用户动过的，重传二维码时可更新上一次 OCR 的值；
     // 编辑已有活动时一律按「已改过」处理，不让截图改掉原活动的标题 / 日期
@@ -484,8 +485,8 @@ Page({
     const form = this.data.form
     if (this._dateField === 'startTime') {
       this._startTouched = true
-      // 返程时间不得早于集合时间，集合时间后移时自动顺延返程
-      const endTime = form.endTime && form.endTime >= timestamp ? form.endTime : timestamp
+      // 用户尚未单独选择返程日期时默认当天往返；已单独选择时只保证不早于集合时间
+      const endTime = this._endTouched && form.endTime && form.endTime >= timestamp ? form.endTime : timestamp
       this.setData({
         'form.startTime': timestamp,
         startLabel: formatCardDate(timestamp),
@@ -697,10 +698,9 @@ Page({
         patch['form.startTime'] = startTime
         patch.startLabel = formatCardDate(startTime)
         patch['errors.startTime'] = ''
-        if (!this._endTouched && form.endTime && form.endTime < startTime) {
-          const endTime = startOfDay(startTime) + 86400000
-          patch['form.endTime'] = endTime
-          patch.endLabel = formatCardDate(endTime)
+        if (!this._endTouched) {
+          patch['form.endTime'] = startTime
+          patch.endLabel = formatCardDate(startTime)
           patch['errors.endTime'] = ''
         }
         const clock = data.clockText ? ` ${data.clockText}` : ''

@@ -25,10 +25,37 @@
         </view>
       </view>
 
-      <!-- 搜索入口：极简仿搜索框，整框可点，点击进入活动广场搜索 -->
-      <view class="search-entry" bindtap="onSearchTap" hover-class="card-press" hover-start-time="0" hover-stay-time="80">
-        <text class="search-icon">🔍</text>
-        <text class="search-placeholder">{{texts.searchPlaceholderHome}}</text>
+      <!-- 首页跑马灯：文案统一在 utils/dict.js 的 homeMarqueeTexts 中调整 -->
+      <view wx:if="{{homeMarqueeTexts.length}}" class="home-marquee" aria-label="{{homeMarqueeTexts[0]}}">
+        <image class="home-marquee-icon" src="{{marqueeIcon}}" mode="aspectFit" />
+        <view class="home-marquee-window">
+          <!-- 多条文案：每条向上轮播展示 -->
+          <swiper
+            wx:if="{{homeMarqueeHasMultiple}}"
+            class="home-marquee-swiper"
+            vertical="{{true}}"
+            autoplay="{{true}}"
+            circular="{{true}}"
+            interval="3000"
+            duration="500"
+          >
+            <swiper-item wx:for="{{homeMarqueeTexts}}" wx:key="*this">
+              <view class="home-marquee-slide">
+                <text class="home-marquee-vertical-text">{{item}}</text>
+              </view>
+            </swiper-item>
+          </swiper>
+          <!-- 单条文案：保留原来的左右循环滚动 -->
+          <view wx:else class="home-marquee-horizontal">
+            <view class="home-marquee-track">
+              <!-- 文案渲染两遍，滚动到一半时无缝回到起点 -->
+              <view class="home-marquee-group" wx:for="{{[0, 1]}}" wx:key="*this">
+                <text class="home-marquee-text">{{homeMarqueeTexts[0]}}</text>
+                <text class="home-marquee-dot">·</text>
+              </view>
+            </view>
+          </view>
+        </view>
       </view>
 
       <!-- 横幅轮播 -->

@@ -1,5 +1,6 @@
 const api = require('../../services/api')
 const { TEXTS } = require('../../utils/dict')
+const { VERSION_TEXT } = require('../../utils/version')
 const config = require('../../services/config')
 const loginBehavior = require('../../behaviors/login-behavior')
 const ui = require('../../utils/ui')
@@ -11,6 +12,7 @@ Page({
 
   data: {
     texts: TEXTS,
+    versionText: VERSION_TEXT,
     aboutText: TEXTS.about,
     // 功能入口图标：与首页金刚区同一套线性图标（utils/user-icons.js），按入口 key 取
     entryIcons: USER_ICONS,

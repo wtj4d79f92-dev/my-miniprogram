@@ -3,21 +3,6 @@
 
   <scroll-view class="page-scroll" scroll-y>
     <view class="scroll-body">
-      <!-- 封面 -->
-      <view class="card">
-        <view class="form-head"><text class="form-title">活动封面</text><text class="form-sub">选填</text></view>
-        <view class="cover-upload">
-          <view wx:if="{{form.cover}}" class="cover-preview">
-            <image class="cover-img" src="{{form.cover}}" mode="aspectFill"></image>
-            <view class="cover-remove" catchtap="removeCover" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>✕</text></view>
-          </view>
-          <view wx:else class="cover-add" bindtap="chooseCover" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
-            <text class="cover-add-icon">＋</text>
-            <text class="cover-add-text">上传封面</text>
-          </view>
-        </view>
-      </view>
-
       <!-- 活动类型 -->
       <view class="card">
         <view class="form-head"><text class="form-title">活动类型 <text class="required">*</text></text></view>
@@ -201,6 +186,21 @@
         />
       </view>
 
+      <!-- 封面 -->
+      <view class="card">
+        <view class="form-head"><text class="form-title">活动封面</text><text class="form-sub">选填</text></view>
+        <view class="cover-upload">
+          <view wx:if="{{form.cover}}" class="cover-preview">
+            <image class="cover-img" src="{{form.cover}}" mode="aspectFill"></image>
+            <view class="cover-remove" catchtap="removeCover" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>✕</text></view>
+          </view>
+          <view wx:else class="cover-add" bindtap="chooseCover" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
+            <text class="cover-add-icon">＋</text>
+            <text class="cover-add-text">上传封面</text>
+          </view>
+        </view>
+      </view>
+
       <!-- 发布协议 -->
       <view class="agree-row">
         <view class="checkbox {{agreed ? 'checked' : ''}}" bindtap="toggleAgree"><text wx:if="{{agreed}}">✓</text></view>
@@ -208,12 +208,6 @@
         <text class="agree-link" catchtap="openPublishAgreement">《活动发布免责协议》</text>
       </view>
       <text wx:if="{{errors.agreement}}" class="form-error agree-error">{{errors.agreement}}</text>
-
-      <!-- 审核说明：只告知用户会进入审核，不区分机审 / 人工 -->
-      <view class="audit-tip">
-        <text>{{editId ? '保存修改后活动会重新进入审核，审核期间仅你自己可见，通过后恢复广场展示。' : '提交后进入审核，通过后将展示在广场，审核期间仅你自己可见。'}}</text>
-        <text>活动发布后在广场展示 7 天，到期自动关闭；需要继续组队请重新发布。</text>
-      </view>
     </view>
   </scroll-view>
 

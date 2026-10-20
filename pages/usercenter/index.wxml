@@ -110,7 +110,7 @@
         </view>
       </view>
 
-      <view class="version"><text>{{texts.version}}</text></view>
+      <view class="version"><text>{{versionText}}</text></view>
     </view>
   </scroll-view>
 
@@ -142,7 +142,7 @@
             <text class="entry-arrow">›</text>
           </view>
         </view>
-        <view class="settings-version"><text>{{texts.version}}</text></view>
+        <view class="settings-version"><text>{{versionText}}</text></view>
       </view>
     </scroll-view>
   </view>

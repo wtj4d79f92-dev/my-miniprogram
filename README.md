@@ -8,6 +8,10 @@
 2. 直接编译即可，首页会自动生成 Mock 活动数据；
 3. 需要真机预览时，工具菜单「预览」扫码即可。
 
+## 版本信息维护
+
+小程序版本号由开发者在代码中维护，不通过后台或运行时接口修改。发版时只需修改 `utils/version.js` 里 `APP_VERSION.number` 的值；应用名继续复用 `utils/dict.js` 的全局名称。格式化后的版本信息会同步展示在「我的」页底部和「我的 → 设置」页，避免两处文案不一致。
+
 ## 目录结构
 
 ```
@@ -29,6 +33,7 @@ services/
   api.js                          统一服务层，Mock 与云函数接口签名一致
   mock.js                         Mock 模型：活动生成器 + 本地缓存读写
 utils/                            字典、城市、协议文案、定位、存储、交互、审核状态、启动场景、默认昵称与头像、线路词库与标题匹配、工具函数
+  version.js                      小程序版本信息（开发者随代码包手动维护）
   lines.js                        成都周边徒步登山线路词库（由 scripts/extract-lines.js 生成）
   line-stat.js                    标题抽中心词 + 强度样本汇总（星级 / 全程 / 爬升的沉淀口径，与云函数逐字镜像）
   line-match.js                   标题 → 线路强度匹配（先查词库，再查用户沉淀；自动填难度 / 全程长度 / 累计爬升）
@@ -42,6 +47,7 @@ scripts/validate.js               静态检查 + Mock 业务链路冒烟测试
 scripts/cloud-validate.js         云函数离线校验（内存数据库跑 activity / admin / contentCheck 链路）
 scripts/seed-data.js              导出提审演示数据（生成云开发控制台「导入」用的文件）
 scripts/extract-lines.js          从《成都周边徒步登山线路表.xlsx》生成线路词库
+scripts/version.test.js           版本配置与页面展示回归测试
 scripts/seed/lines.json           线路词库的「控制台导入」文件（JSON Lines）
 ```
 

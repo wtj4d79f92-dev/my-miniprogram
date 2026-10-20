@@ -66,19 +66,6 @@
   line-height: 1.5;
 }
 
-
-.audit-tip {
-  display: flex;
-  flex-direction: column;
-  margin: 24rpx 8rpx 0;
-  padding: 20rpx 24rpx;
-  border-radius: var(--radius-sm);
-  background: var(--brand-soft);
-  color: var(--text-sub);
-  font-size: 24rpx;
-  line-height: 34rpx;
-}
-
 .cover-upload {
   display: flex;
 }
