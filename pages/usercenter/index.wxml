@@ -20,25 +20,25 @@
           <text class="user-arrow">›</text>
         </view>
         <view wx:if="{{!user}}" class="btn-primary login-btn" bindtap="onLoginTap" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>微信一键登录</text></view>
+
+        <!-- 统计数并入用户卡片：点击统计项进入对应活动列表 -->
+        <view class="stats">
+          <view class="stat-item" data-tab="joined" bindtap="goActivityList" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
+            <text class="stat-value">{{joinedCount}}</text>
+            <text class="stat-label">我参与的</text>
+          </view>
+          <view class="stat-divider"></view>
+          <view class="stat-item" data-tab="published" bindtap="goActivityList" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
+            <text class="stat-value">{{publishedCount}}</text>
+            <text class="stat-label">我发布的</text>
+          </view>
+        </view>
       </view>
 
       <!-- 完善资料提示 -->
       <view wx:if="{{needProfile}}" class="profile-tip" bindtap="openProfile" hover-class="card-press" hover-start-time="0" hover-stay-time="80">
         <text class="profile-tip-text">完善头像昵称，让好友认出你</text>
         <text class="profile-tip-arrow">›</text>
-      </view>
-
-      <!-- 统计区 -->
-      <view class="stats card">
-        <view class="stat-item" data-tab="joined" bindtap="goActivityList" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
-          <text class="stat-value">{{joinedCount}}</text>
-          <text class="stat-label">我参与的</text>
-        </view>
-        <view class="stat-divider"></view>
-        <view class="stat-item" data-tab="published" bindtap="goActivityList" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
-          <text class="stat-value">{{publishedCount}}</text>
-          <text class="stat-label">我发布的</text>
-        </view>
       </view>
 
       <!-- 功能入口 -->
@@ -57,18 +57,6 @@
             <text class="entry-title">绑定手机号（可选）</text>
             <text class="entry-desc">用于找回账号与活动联系</text>
           </view>
-          <text class="entry-arrow">›</text>
-        </view>
-        <view class="entry" data-tab="joined" bindtap="goActivityList" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
-          <image wx:if="{{!iconErrorMap.joined}}" class="entry-icon" src="{{entryIcons.joined}}" mode="aspectFit" data-key="joined" binderror="onEntryIconError" />
-          <text wx:else class="entry-icon entry-icon-emoji">🎒</text>
-          <text class="entry-title">我的参与</text>
-          <text class="entry-arrow">›</text>
-        </view>
-        <view class="entry" data-tab="published" bindtap="goActivityList" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
-          <image wx:if="{{!iconErrorMap.published}}" class="entry-icon" src="{{entryIcons.published}}" mode="aspectFit" data-key="published" binderror="onEntryIconError" />
-          <text wx:else class="entry-icon entry-icon-emoji">📣</text>
-          <text class="entry-title">我的发布</text>
           <text class="entry-arrow">›</text>
         </view>
         <view class="entry" bindtap="goPublish" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
@@ -113,30 +101,11 @@
           <text class="entry-title">关于旷行吖</text>
           <text class="entry-arrow">›</text>
         </view>
-        <!-- 协议常驻入口：登录页 / 绑定手机号之外也能随时查看，审核与合规都要求可达 -->
-        <view class="entry" bindtap="openService" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
-          <image wx:if="{{!iconErrorMap.service}}" class="entry-icon" src="{{entryIcons.service}}" mode="aspectFit" data-key="service" binderror="onEntryIconError" />
-          <text wx:else class="entry-icon entry-icon-emoji">📄</text>
-          <text class="entry-title">用户服务协议</text>
-          <text class="entry-arrow">›</text>
-        </view>
-        <view class="entry" bindtap="openPrivacy" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
-          <image wx:if="{{!iconErrorMap.privacy}}" class="entry-icon" src="{{entryIcons.privacy}}" mode="aspectFit" data-key="privacy" binderror="onEntryIconError" />
-          <text wx:else class="entry-icon entry-icon-emoji">🔒</text>
-          <text class="entry-title">隐私政策</text>
-          <text class="entry-arrow">›</text>
-        </view>
-      </view>
-
-      <!-- 注销账号：破坏性操作单独一组，与常规功能入口区分开 -->
-      <view wx:if="{{user}}" class="entry-group card">
-        <view class="entry entry-danger" bindtap="deleteAccount" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
-          <image wx:if="{{!iconErrorMap.remove}}" class="entry-icon" src="{{entryIcons.remove}}" mode="aspectFit" data-key="remove" binderror="onEntryIconError" />
-          <text wx:else class="entry-icon entry-icon-emoji">🗑️</text>
-          <view class="entry-main">
-            <text class="entry-title">注销账号</text>
-            <text class="entry-desc">删除账号与全部相关数据，不可恢复</text>
-          </view>
+        <!-- 设置入口：并入功能卡片，协议与账号管理在设置页统一展示 -->
+        <view class="entry" bindtap="openSettings" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
+          <image wx:if="{{!iconErrorMap.settings}}" class="entry-icon" src="{{entryIcons.settings}}" mode="aspectFit" data-key="settings" binderror="onEntryIconError" />
+          <text wx:else class="entry-icon entry-icon-emoji">⚙️</text>
+          <text class="entry-title">设置</text>
           <text class="entry-arrow">›</text>
         </view>
       </view>
@@ -144,6 +113,39 @@
       <view class="version"><text>{{texts.version}}</text></view>
     </view>
   </scroll-view>
+
+  <!-- 设置页：全屏覆盖，避免与底部 tabBar 和半屏弹层叠加 -->
+  <view wx:if="{{showSettings}}" class="settings-page">
+    <navigation-bar title="设置" back="{{true}}" color="#2D3748" background="#BFAF92" bindback="closeSettings"></navigation-bar>
+    <scroll-view class="settings-page-scroll" scroll-y>
+      <view class="settings-content">
+        <view class="entry-group card">
+          <view class="settings-row" bindtap="openServiceFromSettings" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
+            <image wx:if="{{!iconErrorMap.service}}" class="entry-icon" src="{{entryIcons.service}}" mode="aspectFit" data-key="service" binderror="onEntryIconError" />
+            <text wx:else class="entry-icon entry-icon-emoji">📄</text>
+            <text class="settings-title">用户服务协议</text>
+            <text class="entry-arrow">›</text>
+          </view>
+          <view class="settings-row" bindtap="openPrivacyFromSettings" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
+            <image wx:if="{{!iconErrorMap.privacy}}" class="entry-icon" src="{{entryIcons.privacy}}" mode="aspectFit" data-key="privacy" binderror="onEntryIconError" />
+            <text wx:else class="entry-icon entry-icon-emoji">🔒</text>
+            <text class="settings-title">隐私政策</text>
+            <text class="entry-arrow">›</text>
+          </view>
+          <view wx:if="{{user}}" class="settings-row settings-row-danger" bindtap="deleteAccountFromSettings" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
+            <image wx:if="{{!iconErrorMap.remove}}" class="entry-icon" src="{{entryIcons.remove}}" mode="aspectFit" data-key="remove" binderror="onEntryIconError" />
+            <text wx:else class="entry-icon entry-icon-emoji">🗑️</text>
+            <view class="settings-row-main">
+              <text class="settings-title">注销账号</text>
+              <text class="settings-desc">删除账号与全部相关数据，不可恢复</text>
+            </view>
+            <text class="entry-arrow">›</text>
+          </view>
+        </view>
+        <view class="settings-version"><text>{{texts.version}}</text></view>
+      </view>
+    </scroll-view>
+  </view>
 
   <!-- 资料编辑弹窗 -->
   <view wx:if="{{showProfile}}">

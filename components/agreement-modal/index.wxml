@@ -1,5 +1,5 @@
 <view wx:if="{{visible}}">
-  <view class="mask" bindtap="close"></view>
+  <view class="mask agreement-mask" bindtap="close"></view>
   <view class="sheet agreement-sheet" catchtap="noop">
     <view class="sheet-head">
       <text class="sheet-title">{{title}}</text>

@@ -1,7 +1,12 @@
+.agreement-mask {
+  z-index: 1300;
+}
+
 .agreement-sheet {
   display: flex;
   flex-direction: column;
   height: 78vh;
+  z-index: 1301;
   padding-bottom: env(safe-area-inset-bottom);
 }
 

@@ -39,6 +39,8 @@ Page({
     phoneInput: '',
     phoneAgreed: false,
     binding: false,
+    // 设置页：统一收纳协议与账号管理，打开时隐藏底部 tabBar 并整页覆盖
+    showSettings: false,
     // 注销进行中：防重复提交，也用来禁用入口
     deleting: false,
   },
@@ -328,6 +330,36 @@ Page({
     wx.navigateTo({ url: '/pages/feedback/index' })
   },
 
+  setSettingsVisible(visible) {
+    if (this.getTabBar) {
+      const tabBar = this.getTabBar()
+      if (tabBar) tabBar.setData({ hidden: visible })
+    }
+    this.setData({ showSettings: visible })
+  },
+
+  openSettings() {
+    this.setSettingsVisible(true)
+  },
+
+  closeSettings() {
+    this.setSettingsVisible(false)
+  },
+
+  openServiceFromSettings() {
+    this.openService()
+  },
+
+  openPrivacyFromSettings() {
+    this.openPrivacy()
+  },
+
+  deleteAccountFromSettings() {
+    if (!this.data.user) return
+    this.closeSettings()
+    this.deleteAccount()
+  },
+
   /** 消息中心：新留言 / 回复通知的落点，红点数字来自 notificationUnread */
   goMessage() {
     this.ensureLogin('查看消息需要先登录，是否立即登录？').then((user) => {
@@ -410,6 +442,7 @@ Page({
       isAdmin: false,
       showProfile: false,
       showPhone: false,
+      showSettings: false,
     })
     ui.toast('账号已注销', 'success')
   },

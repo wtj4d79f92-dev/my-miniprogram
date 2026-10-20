@@ -2659,8 +2659,8 @@ function checkDeleteAccount() {
       const wxml = fs.readFileSync(path.join(ROOT, 'pages/usercenter/index.wxml'), 'utf8')
       const js = fs.readFileSync(path.join(ROOT, 'pages/usercenter/index.js'), 'utf8')
       log(
-        wxml.indexOf('bindtap="deleteAccount"') > -1 && wxml.indexOf('注销账号') > -1,
-        '注销：个人中心提供「注销账号」入口'
+        wxml.indexOf('bindtap="deleteAccountFromSettings"') > -1 && wxml.indexOf('注销账号') > -1,
+        '注销：个人中心设置内提供「注销账号」入口'
       )
       const start = js.indexOf('  deleteAccount() {')
       const body = start === -1 ? '' : js.slice(start, js.indexOf('\n  },', start))
@@ -2690,7 +2690,7 @@ function checkDeleteAccount() {
       log(policy.indexOf('设备信息') > -1, '隐私政策：写明设备信息用途')
       log(policy.indexOf('剪切板（仅写入）') > -1, '隐私政策：写明剪切板仅写入且不读取')
       log(
-        policy.indexOf('注销账号') > -1 && policy.indexOf('个人中心底部') > -1,
+        policy.indexOf('注销账号') > -1 && policy.indexOf('个人中心 → 设置') > -1,
         '隐私政策：注销途径指向个人中心的自助入口'
       )
       log(policy.indexOf('不会读取') > -1, '隐私政策：明确不会读取相册与剪切板内容')
@@ -4726,7 +4726,7 @@ function checkTypeIcons() {
 /* -------------- 「我的」功能入口：与金刚区共用同一套线性图标 -------------- */
 /**
  * 「我的」入口原来是一排 emoji，跟首页金刚区是两个物种。
- * 换成线性图标后钉住几件事：① 13 个入口都挂上了图标，且与 utils/user-icons.js 同源；
+ * 换成线性图标后钉住几件事：① 12 个入口都挂上了图标，且与 utils/user-icons.js 同源；
  * ② 与金刚区共用 utils/line-icons.js 这份外壳（视窗 / 线宽 / 圆角 / 不填充），两处风格不会分家；
  * ③ 常规入口共用品牌色，只有注销账号走警示色；④ 解码失败要能退回 emoji。
  */
@@ -4743,7 +4743,11 @@ function checkUserIcons() {
   const svgs = keys.map((key) => decodeURIComponent(USER_ICONS[key]))
   const typeSvgs = Object.keys(TYPE_ICONS).map((key) => decodeURIComponent(TYPE_ICONS[key]))
 
-  log(keys.length === 13, `「我的」入口：13 个入口图标齐全（当前 ${keys.length} 个）`)
+  log(keys.length === 12, `「我的」入口：12 个入口图标齐全（当前 ${keys.length} 个）`)
+  log(
+    keys.indexOf('joined') === -1 && keys.indexOf('published') === -1,
+    '「我的」入口：重复的参与 / 发布入口图标已删除'
+  )
   log(
     keys.every((key) => USER_ICONS[key].indexOf('data:image/svg+xml') === 0),
     '「我的」入口：图标都是 svg data URI'
@@ -4789,6 +4793,163 @@ function checkUserIcons() {
     (pageWxss.match(/\.entry-icon \{[\s\S]*?\}/) || [''])[0].indexOf('width: 40rpx') > -1,
     '「我的」入口：图标按图片尺寸给宽高（不再是固定宽度的文字槽）'
   )
+}
+
+/* -------------- 「我的」顶部资料：头像与统计合并为一张卡片 -------------- */
+/**
+ * 统计项本身保留跳转能力，但不再在功能列表中重复出现“我的参与 / 我的发布”。
+ * 这里同时钉住视觉结构：头像和两个统计数必须在同一张用户卡片内。
+ */
+function checkUserSummary() {
+  const wxml = fs.readFileSync(path.join(ROOT, 'pages/usercenter/index.wxml'), 'utf8')
+  const userCardStart = wxml.indexOf('<view class="user-card card"')
+  const profileTipStart = wxml.indexOf('<!-- 完善资料提示 -->')
+  const summaryMarkup =
+    userCardStart === -1 || profileTipStart === -1 ? '' : wxml.slice(userCardStart, profileTipStart)
+
+  log(
+    summaryMarkup.indexOf('class="stats"') > -1 &&
+      summaryMarkup.indexOf('class="stats card"') === -1,
+    '「我的」顶部：头像资料与统计数在同一张卡片内'
+  )
+  log(
+    (wxml.match(/data-tab="joined"/g) || []).length === 1 &&
+      (wxml.match(/data-tab="published"/g) || []).length === 1 &&
+      summaryMarkup.indexOf('bindtap="goActivityList"') > -1,
+    '「我的」顶部：统计项仍可进入我的活动，功能列表不再重复入口'
+  )
+  log(
+    wxml.indexOf('<text class="entry-title">我的参与</text>') === -1 &&
+      wxml.indexOf('<text class="entry-title">我的发布</text>') === -1,
+    '「我的」功能列表：删除冗余的参与 / 发布入口'
+  )
+}
+
+/* -------------- 「我的」设置入口：并入功能卡片，设置页全屏展示 -------------- */
+/**
+ * 钉住用户可见的入口结构：
+ * ① 「设置」作为主功能卡片的最后一行，不再单独占用一个板块；
+ * ② 点击后展示覆盖整页的设置页，协议、隐私政策与已登录可见的注销账号都在其中；
+ * ③ 协议弹窗盖在设置页上方，关闭后仍停留在设置页；注销时再收起设置页。
+ */
+function checkUserSettings() {
+  const pagePath = path.join(ROOT, 'pages/usercenter/index.js')
+  const pageOptions = []
+  const originPage = global.Page
+  global.Page = (options) => pageOptions.push(options)
+  delete require.cache[pagePath]
+  require(pagePath)
+  global.Page = originPage
+
+  const page = pageOptions[0]
+  if (!page) {
+    log(false, '「我的」设置：取不到个人中心页逻辑')
+    return
+  }
+
+  const openedAgreements = []
+  const tabBar = { hidden: false }
+  const ctx = Object.assign({}, page, {
+    data: JSON.parse(JSON.stringify(page.data)),
+    setData(patch) {
+      Object.assign(this.data, patch)
+    },
+    getTabBar() {
+      return {
+        setData(patch) {
+          Object.assign(tabBar, patch)
+        },
+      }
+    },
+    selectComponent(selector) {
+      if (selector !== '#agreement-modal') return null
+      return {
+        open(key) {
+          openedAgreements.push(key)
+        },
+      }
+    },
+  })
+
+  log(ctx.data.showSettings === false, '「我的」设置：默认收起')
+  if (typeof ctx.openSettings === 'function') ctx.openSettings()
+  log(
+    ctx.data.showSettings === true && tabBar.hidden === true,
+    '「我的」设置：点击入口后全屏打开并隐藏底部 tabBar'
+  )
+  if (typeof ctx.closeSettings === 'function') ctx.closeSettings()
+  log(
+    ctx.data.showSettings === false && tabBar.hidden === false,
+    '「我的」设置：返回后收起设置页并恢复底部 tabBar'
+  )
+
+  ctx.data.showSettings = true
+  tabBar.hidden = true
+  if (typeof ctx.openServiceFromSettings === 'function') ctx.openServiceFromSettings()
+  if (typeof ctx.openPrivacyFromSettings === 'function') ctx.openPrivacyFromSettings()
+  log(
+    openedAgreements.join(',') === 'service,privacy' &&
+      ctx.data.showSettings === true &&
+      tabBar.hidden === true,
+    '「我的」设置：查看协议时保留设置页，关闭协议后仍停留在设置页'
+  )
+
+  const wxml = fs.readFileSync(path.join(ROOT, 'pages/usercenter/index.wxml'), 'utf8')
+  const settingsTrigger = wxml.indexOf('bindtap="openSettings"')
+  const version = wxml.indexOf('class="version"')
+  const settingsStart = wxml.indexOf('wx:if="{{showSettings}}"')
+  const mainMarkup = settingsStart === -1 ? wxml : wxml.slice(0, settingsStart)
+  log(
+    settingsTrigger > -1 &&
+      version > settingsTrigger &&
+      (mainMarkup.match(/class="entry-group card"/g) || []).length === 1,
+    '「我的」设置：入口并入主功能卡片，不再单独占用一个板块'
+  )
+
+  const settingsEnd = wxml.indexOf('<agreement-modal', settingsStart)
+  const settingsMarkup =
+    settingsStart === -1 || settingsEnd === -1 ? '' : wxml.slice(settingsStart, settingsEnd)
+  const pageWxss = fs.readFileSync(path.join(ROOT, 'pages/usercenter/index.wxss'), 'utf8')
+  const agreementWxml = fs.readFileSync(path.join(ROOT, 'components/agreement-modal/index.wxml'), 'utf8')
+  const agreementWxss = fs.readFileSync(path.join(ROOT, 'components/agreement-modal/index.wxss'), 'utf8')
+  const fullScreenStyle = (pageWxss.match(/\.settings-page \{[\s\S]*?\}/) || [''])[0]
+  log(
+    settingsMarkup.indexOf('用户服务协议') > -1 &&
+      settingsMarkup.indexOf('隐私政策') > -1 &&
+      settingsMarkup.indexOf('注销账号') > -1 &&
+      settingsMarkup.indexOf('wx:if="{{user}}"') > -1 &&
+      settingsMarkup.indexOf('bindtap="deleteAccountFromSettings"') > -1,
+    '「我的」设置：三项功能进入设置页，注销仅登录后展示'
+  )
+  log(
+    settingsMarkup.indexOf('class="settings-page"') > -1 &&
+      settingsMarkup.indexOf('title="设置"') > -1 &&
+      settingsMarkup.indexOf('bindback="closeSettings"') > -1 &&
+      settingsMarkup.indexOf('class="sheet settings-sheet"') === -1,
+    '「我的」设置：使用带返回导航的全屏设置页，不再使用半屏面板'
+  )
+  log(
+    fullScreenStyle.indexOf('position: fixed') > -1 &&
+      fullScreenStyle.indexOf('top: 0') > -1 &&
+      fullScreenStyle.indexOf('bottom: 0') > -1,
+    '「我的」设置：全屏覆盖页面与底部导航'
+  )
+  log(
+    agreementWxml.indexOf('class="mask agreement-mask"') > -1 &&
+      agreementWxml.indexOf('class="sheet agreement-sheet"') > -1 &&
+      agreementWxss.indexOf('z-index: 1300') > -1 &&
+      agreementWxss.indexOf('z-index: 1301') > -1,
+    '「我的」设置：协议弹窗层级高于全屏设置页'
+  )
+  log(
+    wxml.indexOf('bindtap="openService"') === -1 &&
+      wxml.indexOf('bindtap="openPrivacy"') === -1 &&
+      (wxml.match(/bindtap="deleteAccount"/g) || []).length === 0,
+    '「我的」设置：主页不再直接散落协议与注销入口'
+  )
+
+  const { USER_ICONS } = require(path.join(ROOT, 'utils/user-icons'))
+  log(!!USER_ICONS.settings, '「我的」设置：底部入口使用同体系线性图标')
 }
 
 /* -------------- 活动留言：详情页只给参与者渲染，发送 / 删除即时生效 -------------- */
@@ -5035,6 +5196,8 @@ return checkDeleteAccount()
   .then(() => checkBannerImage())
   .then(() => checkTypeIcons())
   .then(() => checkUserIcons())
+  .then(() => checkUserSummary())
+  .then(() => checkUserSettings())
   .then(() => checkDetailComments())
   .then(() => checkMessagePage())
   .then(() => checkLineLibrary())

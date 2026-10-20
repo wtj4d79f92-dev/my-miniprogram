@@ -67,7 +67,8 @@
   display: flex;
   align-items: center;
   margin-top: 24rpx;
-  padding: 30rpx 0;
+  padding: 28rpx 0 4rpx;
+  border-top: 2rpx solid var(--line);
 }
 
 .stat-item {
@@ -199,8 +200,73 @@
   text-align: center;
 }
 
-/* 注销账号：破坏性操作，文案用警示色与常规入口区分 */
-.entry-danger .entry-title {
+/* 设置页：整页覆盖，层级高于自定义 tabBar */
+.settings-page {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  background: var(--page-bg);
+}
+
+.settings-page-scroll {
+  flex: 1;
+  height: 0;
+}
+
+.settings-content {
+  padding: 24rpx;
+}
+
+.settings-version {
+  padding: 50rpx 0 calc(24rpx + env(safe-area-inset-bottom));
+  text-align: center;
+}
+
+.settings-version text {
+  font-size: 22rpx;
+  color: var(--text-on-bg-sub);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  padding: 28rpx 4rpx;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.settings-row:last-child {
+  border-bottom: none;
+}
+
+.settings-row-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-title {
+  flex: 1;
+  font-size: 28rpx;
+  color: var(--text);
+}
+
+.settings-row-main .settings-title {
+  flex: none;
+}
+
+.settings-desc {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: var(--text-light);
+}
+
+/* 注销账号：破坏性操作，文案用警示色与常规设置区分 */
+.settings-row-danger .settings-title {
   color: #e5484d;
 }
 
