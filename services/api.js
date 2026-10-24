@@ -1,7 +1,14 @@
 // 统一服务层：Mock 与云开发模式接口签名完全一致，通过 config.useMock 切换
 const config = require('./config')
 const { KEYS, getStorage, setStorage, removeStorage } = require('../utils/storage')
-const { getType, supportsTags, supportsMetrics, tagName } = require('../utils/dict')
+const {
+  activityTypeFields,
+  activityHasType,
+  normalizeActivityTypes,
+  supportsTags,
+  supportsMetrics,
+  tagName,
+} = require('../utils/dict')
 const { matchCity, normalizeCity, singleCityKey } = require('../utils/cities')
 const { delay, deepClone, formatCardDate, WEEKDAY_TEXT } = require('../utils/util')
 const { LOCATION_MAX, ADDRESS_MAX } = require('../utils/location')
@@ -45,13 +52,9 @@ function mockCoord(value, kind) {
 
 /** Mock 模式：表单 -> 活动字段，发布与编辑共用（云模式对应云函数的 normalizeForm） */
 function mockFormFields(form) {
-  const type = getType(form.type)
-  return {
-    type: type.key,
-    typeName: type.name,
-    emoji: type.emoji,
-    color: type.color,
-    bg: `linear-gradient(135deg, ${type.from} 0%, ${type.to} 100%)`,
+  const typeFields = activityTypeFields(form)
+  const types = typeFields.types
+  return Object.assign({}, typeFields, {
     title: String(form.title || '').slice(0, 30),
     cover: form.cover || '',
     groupQrCode: form.groupQrCode || '',
@@ -68,15 +71,15 @@ function mockFormFields(form) {
     startTime: form.startTime,
     endTime: form.endTime,
     startWeekday: new Date(form.startTime).getDay(),
-    difficulty: supportsMetrics(type.key) ? form.difficulty || 0 : 0,
-    distance: supportsMetrics(type.key) ? form.distance || 0 : 0,
-    elevationGain: supportsMetrics(type.key) ? form.elevationGain || 0 : 0,
+    difficulty: types.some((key) => supportsMetrics(key)) ? form.difficulty || 0 : 0,
+    distance: types.some((key) => supportsMetrics(key)) ? form.distance || 0 : 0,
+    elevationGain: types.some((key) => supportsMetrics(key)) ? form.elevationGain || 0 : 0,
     // 费用只做信息说明：AA 制 / 非 AA 制由发起人选择，非 AA 制附一段文字说明，平台不参与任何资金流转
     feeMode: form.feeMode === 'nonAA' || form.feeMode === 'fixed' ? 'nonAA' : 'aa',
     feeNote: form.feeMode === 'nonAA' || form.feeMode === 'fixed' ? form.feeNote || '' : '',
     maxPeople: form.maxPeople || 10,
-    tags: supportsTags(type.key) ? form.tags || [] : [],
-  }
+    tags: types.some((key) => supportsTags(key)) ? form.tags || [] : [],
+  })
 }
 
 /**
@@ -377,7 +380,7 @@ const mockApi = {
       list = mock.cityFilter(list, query.city)
     }
     if (query.type && query.type !== 'all') {
-      list = list.filter((item) => item.type === query.type)
+      list = list.filter((item) => activityHasType(item, query.type))
     }
     if (typeof query.weekday === 'number' && query.weekday >= 0) {
       list = list.filter((item) => item.startWeekday === query.weekday)
@@ -1282,7 +1285,7 @@ function decorate(activity) {
   item.startPassed = !!item.startPassed || expire.isPastStart(item)
   item.isClosed = item.status === 'closed' || item.expired || item.startPassed
   item.isFull = item.joinedCount >= item.maxPeople
-  item.showMetrics = supportsMetrics(item.type)
+  item.showMetrics = normalizeActivityTypes(item).some((key) => supportsMetrics(key))
   // 全程长度 / 累计爬升为非必填，未填写（0）时详情页不展示对应行
   item.hasDistance = item.distance > 0
   item.hasElevationGain = item.elevationGain > 0

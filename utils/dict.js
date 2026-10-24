@@ -173,6 +173,49 @@ function supportsMetrics(key) {
   return METRIC_TYPES.indexOf(key) > -1
 }
 
+/**
+ * 活动类型归一：新数据优先读 types 数组，旧数据回退到单值 type。
+ * 同一类型只保留第一次出现的位置，未知值直接丢弃。
+ */
+function normalizeActivityTypes(source) {
+  const doc = source || {}
+  const candidates = Array.isArray(doc.types) && doc.types.length ? doc.types : [doc.type]
+  const selected = []
+  candidates.forEach((key) => {
+    if (TYPE_MAP[key] && selected.indexOf(key) === -1) selected.push(key)
+  })
+  if (!selected.length && TYPE_MAP[doc.type]) selected.push(doc.type)
+  return selected
+}
+
+/** 多个活动类型的展示名称，例如「徒步 / 露营」。 */
+function activityTypeLabel(keys) {
+  return (keys || [])
+    .map((key) => (TYPE_MAP[key] && TYPE_MAP[key].name) || '')
+    .filter(Boolean)
+    .join(' / ')
+}
+
+/** 活动类型的存储快照：types 保序，单值字段取第一个类型以兼容旧展示与主题素材。 */
+function activityTypeFields(source) {
+  const types = normalizeActivityTypes(source)
+  const primary = getType(types[0])
+  return {
+    types,
+    typeNames: types.map((key) => getType(key).name),
+    type: primary.key,
+    typeName: activityTypeLabel(types),
+    emoji: primary.emoji,
+    color: primary.color,
+    bg: typeGradient(primary.key),
+  }
+}
+
+/** 活动是否包含某个类型，新旧数据结构使用同一判断口径。 */
+function activityHasType(source, key) {
+  return normalizeActivityTypes(source).indexOf(key) > -1
+}
+
 function tagName(key) {
   return (TAG_MAP[key] && TAG_MAP[key].name) || ''
 }
@@ -198,5 +241,9 @@ module.exports = {
   typeGradient,
   supportsTags,
   supportsMetrics,
+  normalizeActivityTypes,
+  activityTypeLabel,
+  activityTypeFields,
+  activityHasType,
   tagName,
 }

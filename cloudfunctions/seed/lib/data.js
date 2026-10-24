@@ -181,6 +181,8 @@ function buildDocs(now, options) {
       // 清理 / 统计只认这个标记，不碰真实用户发布的活动
       isDemo: true,
       type: seed.type,
+      types: [seed.type],
+      typeNames: [type.name],
       typeName: type.name,
       emoji: type.emoji,
       color: type.color,

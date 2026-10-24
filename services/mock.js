@@ -115,6 +115,8 @@ function buildBaseActivities() {
       id: `mock_act_${index + 1}`,
       _id: `mock_act_${index + 1}`,
       type: seed.type,
+      types: [seed.type],
+      typeNames: [type.name],
       typeName: type.name,
       emoji: type.emoji,
       color: type.color,

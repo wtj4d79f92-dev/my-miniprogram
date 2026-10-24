@@ -36,6 +36,8 @@ const LIST_FIELDS = {
   title: true,
   type: true,
   typeName: true,
+  types: true,
+  typeNames: true,
   emoji: true,
   color: true,
   bg: true,

@@ -3,6 +3,7 @@ const {
   TYPE_GRID,
   ACTIVITY_TAGS,
   DIFFICULTY_OPTIONS,
+  normalizeActivityTypes,
   supportsTags,
   supportsMetrics,
 } = require('../../../utils/dict')
@@ -26,6 +27,12 @@ const QR_OCR_WAIT = 2500
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** 类型网格的选中态预先算好：WXML 表达式不支持 indexOf。 */
+function typeGridWithSelected(selected) {
+  const keys = selected || []
+  return TYPE_GRID.map((item) => Object.assign({}, item, { active: keys.indexOf(item.key) > -1 }))
 }
 
 /**
@@ -54,7 +61,7 @@ Page({
   behaviors: [loginBehavior],
 
   data: {
-    typeGrid: TYPE_GRID,
+    typeGrid: typeGridWithSelected(['hiking']),
     // 类型图标按格子下标记失败状态：data URI 正常不会失败，留一手兜底，格子不至于空着
     iconErrorMap: {},
     // 标签的选中态在 js 里算好：WXML 表达式不支持调用 indexOf 之类的方法
@@ -82,6 +89,7 @@ Page({
     form: {
       cover: '',
       type: 'hiking',
+      types: ['hiking'],
       tags: [],
       title: '',
       startTime: 0,
@@ -206,6 +214,7 @@ Page({
           return
         }
         const tags = raw.tags || []
+        const types = normalizeActivityTypes(raw)
         const difficulty = Number(raw.difficulty) || 0
         const difficultyIndex = Math.max(
           0,
@@ -222,7 +231,8 @@ Page({
         this.setData({
           form: {
             cover: raw.cover || '',
-            type: raw.type,
+            type: types[0],
+            types,
             tags,
             title: raw.title || '',
             startTime: raw.startTime,
@@ -244,8 +254,9 @@ Page({
           },
           difficultyIndex,
           difficultyLabel: (DIFFICULTY_OPTIONS[difficultyIndex] || DIFFICULTY_OPTIONS[2]).label,
-          showTags: supportsTags(raw.type),
-          showMetrics: supportsMetrics(raw.type),
+          typeGrid: typeGridWithSelected(types),
+          showTags: types.some((key) => supportsTags(key)),
+          showMetrics: types.some((key) => supportsMetrics(key)),
           tagOptions: ACTIVITY_TAGS.map((item) => ({
             key: item.key,
             name: item.name,
@@ -334,24 +345,39 @@ Page({
 
   onTypeTap(e) {
     const type = e.currentTarget.dataset.type
-    if (type === this.data.form.type) return
-    const patch = { 'form.type': type }
-    // 切换类型时清理不适用字段
-    if (!supportsTags(type)) {
+    const selected = normalizeActivityTypes(this.data.form)
+    const index = selected.indexOf(type)
+    if (index > -1) {
+      if (selected.length === 1) {
+        ui.toast('请至少保留一个活动类型')
+        return
+      }
+      selected.splice(index, 1)
+    } else {
+      selected.push(type)
+    }
+    const primaryType = selected[0]
+    const patch = {
+      'form.type': primaryType,
+      'form.types': selected,
+      typeGrid: typeGridWithSelected(selected),
+    }
+    // 清理所有已选类型都不支持的字段
+    if (!selected.some((key) => supportsTags(key))) {
       patch['form.tags'] = []
       patch.tagOptions = this.data.tagOptions.map((item) => ({ key: item.key, name: item.name, active: false }))
     }
-    if (!supportsMetrics(type)) {
+    if (!selected.some((key) => supportsMetrics(key))) {
       patch['form.distance'] = ''
       patch['form.elevationGain'] = ''
       patch['errors.distance'] = ''
       patch['errors.elevationGain'] = ''
     }
-    patch.showTags = supportsTags(type)
-    patch.showMetrics = supportsMetrics(type)
+    patch.showTags = selected.some((key) => supportsTags(key))
+    patch.showMetrics = selected.some((key) => supportsMetrics(key))
     this.setData(patch)
     // 切回徒步 / 爬山时，按标题重新匹配一次（自驾游等类型不填也不提示）
-    if (supportsMetrics(type)) this.applyLineMatch(this.data.form.title)
+    if (patch.showMetrics) this.applyLineMatch(this.data.form.title)
   },
 
   toggleTag(e) {
@@ -810,6 +836,7 @@ Page({
     const form = this.data.form
     const errors = {}
     if (!this.data.agreed) errors.agreement = '请先阅读并勾选《活动发布免责协议》'
+    if (!normalizeActivityTypes(form).length) errors.type = '请至少选择一个活动类型'
     if (!String(form.title).trim()) errors.title = '请填写活动标题'
     if (!form.startTime) errors.startTime = '请选择集合时间'
     if (!form.endTime) errors.endTime = '请选择返程时间'
@@ -833,6 +860,7 @@ Page({
     // 与表单从上到下的顺序保持一致，提示第一条
     const order = [
       'agreement',
+      'type',
       'title',
       'startTime',
       'endTime',

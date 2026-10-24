@@ -9,7 +9,13 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 const db = cloud.database()
 const _ = db.command
 
-const { getType, typeGradient, supportsTags, supportsMetrics, sanitizeTags, DEFAULT_BANNERS } = require('./lib/dict')
+const {
+  activityTypeFields,
+  supportsTags,
+  supportsMetrics,
+  sanitizeTags,
+  DEFAULT_BANNERS,
+} = require('./lib/dict')
 const { matchCity, filterCityKeys, singleCityKey } = require('./lib/cities')
 const {
   PENDING: AUDIT_PENDING,
@@ -192,7 +198,11 @@ function buildConditions(query) {
   const conditions = [auditVisibleWhere(), notExpiredWhere()]
   const city = cityCondition(query.city)
   if (city) conditions.push(city)
-  if (query.type && query.type !== 'all') conditions.push({ type: String(query.type) })
+  if (query.type && query.type !== 'all') {
+    const type = String(query.type)
+    // types 匹配新活动；type 兼容没有 types 字段的历史活动
+    conditions.push(_.or([{ type }, { types: _.in([type]) }]))
+  }
   const weekday = num(query.weekday, -1)
   if (weekday >= 0 && weekday <= 6) conditions.push({ startWeekday: weekday })
   // 广场的「具体日期」筛选：date 是客户端算好的当天 00:00 时间戳，这里换算成 [当天, 次日) 区间
@@ -446,7 +456,8 @@ async function detail(event, openid) {
  * 避免两条路径的规则慢慢跑偏。校验失败返回 { error }，成功返回 { data }。
  */
 function normalizeForm(form) {
-  const type = getType(form.type)
+  const typeFields = activityTypeFields(form)
+  const types = typeFields.types
   const title = text(form.title, LIMITS.title)
   const location = text(form.location, LIMITS.location)
   const locationAddress = text(form.locationAddress, LIMITS.locationAddress)
@@ -454,6 +465,7 @@ function normalizeForm(form) {
   const startTime = num(form.startTime, 0)
   const endTime = num(form.endTime, 0)
 
+  if (!types.length) return { error: fail('INVALID_PARAM', '请至少选择一个活动类型') }
   if (!title) return { error: fail('INVALID_PARAM', '请填写活动标题') }
   if (!location) return { error: fail('INVALID_PARAM', '请填写集合地点') }
   if (!startTime || !endTime) return { error: fail('INVALID_PARAM', '请选择活动时间') }
@@ -473,11 +485,13 @@ function normalizeForm(form) {
   const feeMode = rawFeeMode
   return {
     data: {
-      type: type.key,
-      typeName: type.name,
-      emoji: type.emoji,
-      color: type.color,
-      bg: typeGradient(type.key),
+      types: typeFields.types,
+      typeNames: typeFields.typeNames,
+      type: typeFields.type,
+      typeName: typeFields.typeName,
+      emoji: typeFields.emoji,
+      color: typeFields.color,
+      bg: typeFields.bg,
       title,
       cover: text(form.cover, LIMITS.url),
       groupQrCode,
@@ -496,13 +510,15 @@ function normalizeForm(form) {
       startTime,
       endTime,
       startWeekday: new Date(startTime).getDay(),
-      difficulty: supportsMetrics(type.key) ? limitRange(Math.floor(num(form.difficulty, 0)), 0, 10) : 0,
-      distance: supportsMetrics(type.key) ? num(form.distance, 0) : 0,
-      elevationGain: supportsMetrics(type.key) ? num(form.elevationGain, 0) : 0,
+      difficulty: types.some((key) => supportsMetrics(key))
+        ? limitRange(Math.floor(num(form.difficulty, 0)), 0, 10)
+        : 0,
+      distance: types.some((key) => supportsMetrics(key)) ? num(form.distance, 0) : 0,
+      elevationGain: types.some((key) => supportsMetrics(key)) ? num(form.elevationGain, 0) : 0,
       feeMode,
       feeNote: feeMode === 'nonAA' ? feeNote : '',
       maxPeople: limitRange(Math.floor(num(form.maxPeople, 10)), 2, 100),
-      tags: supportsTags(type.key) ? sanitizeTags(form.tags) : [],
+      tags: types.some((key) => supportsTags(key)) ? sanitizeTags(form.tags) : [],
     },
   }
 }

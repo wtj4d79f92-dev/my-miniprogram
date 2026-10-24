@@ -5,10 +5,13 @@
     <view class="scroll-body">
       <!-- 活动类型 -->
       <view class="card">
-        <view class="form-head"><text class="form-title">活动类型 <text class="required">*</text></text></view>
+        <view class="form-head">
+          <text class="form-title">活动类型 <text class="required">*</text></text>
+          <text class="form-sub">可多选</text>
+        </view>
         <view class="type-grid">
           <view
-            class="type-item {{form.type === item.key ? 'active' : ''}}"
+            class="type-item {{item.active ? 'active' : ''}}"
             wx:for="{{typeGrid}}"
             wx:key="key"
             data-type="{{item.key}}"
@@ -32,6 +35,7 @@
             <text class="type-name">{{item.name}}</text>
           </view>
         </view>
+        <text wx:if="{{errors.type}}" class="form-error">{{errors.type}}</text>
       </view>
 
       <!-- 基础信息 -->
@@ -212,6 +216,7 @@
   </scroll-view>
 
   <view class="submit-bar">
+    <text wx:if="{{editId}}" class="edit-audit-tip">保存修改后活动会重新进入审核</text>
     <view class="btn-primary submit-btn {{submitting || published ? 'disabled' : ''}}" bindtap="submit" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
       <text>{{published ? '已提交审核' : (submitting ? '提交中…' : submitText)}}</text>
     </view>

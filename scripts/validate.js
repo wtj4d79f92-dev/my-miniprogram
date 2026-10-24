@@ -4184,8 +4184,14 @@ function checkLineLibrary() {
   page.loadLineSources.call(switchCtx, false)
   page.applyLineMatch.call(switchCtx, '夜爬峨眉山')
   log(switchCtx.data.form.distance === '21.5', '发布页：爬山类型下标题命中后按词库填强度字段')
+  switchCtx.data.form.types = ['hiking']
   page.onTypeTap.call(switchCtx, { currentTarget: { dataset: { type: 'driving' } } })
-  log(switchCtx.data.showMetrics === false, '发布页：切到自驾游后隐藏强度指标')
+  log(
+    switchCtx.data.form.types.join(',') === 'hiking,driving' && switchCtx.data.showMetrics === true,
+    '发布页：继续选择自驾游时保留爬山类型与强度指标'
+  )
+  page.onTypeTap.call(switchCtx, { currentTarget: { dataset: { type: 'hiking' } } })
+  log(switchCtx.data.showMetrics === false, '发布页：取消唯一的强度类型后隐藏强度指标')
   page.onTypeTap.call(switchCtx, { currentTarget: { dataset: { type: 'climbing' } } })
   log(
     switchCtx.data.showMetrics === true && switchCtx.data.difficultyIndex === 3 && switchCtx.data.form.distance === '21.5',

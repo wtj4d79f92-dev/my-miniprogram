@@ -987,6 +987,21 @@ async function run() {
     typeList.list.length === 1 && typeList.list[0].id === climbing._id,
     '广场：活动类型筛选只返回该类型的活动'
   )
+  const multiType = seedActivity({
+    _id: 'act_multi_type',
+    type: 'camping',
+    types: ['camping', 'hiking'],
+    typeNames: ['露营', '徒步'],
+    typeName: '露营 / 徒步',
+    emoji: '⛺',
+    title: '露营加轻徒步',
+    auditStatus: 'approved',
+  })
+  const multiTypeList = await callActivity('list', { pageIndex: 0, pageSize: 50, type: 'hiking' }, OTHER)
+  log(
+    multiTypeList.list.some((item) => item.id === multiType._id),
+    '广场：活动包含多个类型时，按其中任一类型都能筛选命中'
+  )
   const typedAll = await callActivity('list', { pageIndex: 0, pageSize: 50, type: 'all' }, OTHER)
   log(typedAll.total > typeList.total, '广场：全部类型不做过滤，其他玩法一起返回')
   const latestList = await callActivity('list', { pageIndex: 0, pageSize: 50, sort: 'latest' }, OTHER)
