@@ -117,7 +117,7 @@ App({
       this.globalData.cityLocated = true
     }
     const user = getStorage(KEYS.user, null)
-    if (user && user.openid) {
+    if (user && user.openid && user.phone) {
       this.globalData.user = user
     }
   },
@@ -150,9 +150,10 @@ App({
   },
 
   setUser(user) {
-    this.globalData.user = user || null
-    if (user) {
-      setStorage(KEYS.user, user)
+    const next = user && user.openid && user.phone ? user : null
+    this.globalData.user = next
+    if (next) {
+      setStorage(KEYS.user, next)
     } else {
       removeStorage(KEYS.user)
     }

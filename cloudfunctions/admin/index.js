@@ -22,12 +22,18 @@ const { LINE_LIBRARY, LINE_LIBRARY_VERSION } = require('./lib/lines')
 const activities = db.collection('activities')
 const auditLogs = db.collection('activity_audits')
 const admins = db.collection('admins')
+const users = db.collection('users')
+const homeOrganizers = db.collection('home_organizers')
 const lines = db.collection('lines')
 
 const DEFAULT_PAGE_SIZE = 20
 const MAX_PAGE_SIZE = 50
 const MAX_REMARK = 200
 const LOG_LIMIT = 30
+const HOME_ORGANIZER_LIMIT = 10
+const HOME_ORGANIZER_LINK_LIMIT = 5
+const HOME_ORGANIZER_DOC = 'slots'
+const USER_ID_MAX = 20
 /** 线路词库写库并发度：几百条小记录分批写，避免一次 set 太多把云函数拖超时 */
 const LINE_IMPORT_BATCH = 20
 
@@ -103,6 +109,176 @@ function adminName(admin) {
 async function whoami(event, openid) {
   const admin = await findAdmin(openid)
   return { openid: openid || '', isAdmin: !!admin, name: admin ? adminName(admin) : '' }
+}
+
+/* ------------------------------ 首页主办方坑位 ------------------------------ */
+
+/** 后台为 10 个坑位保存主账号，并为每个主账号保存最多 5 个关联发布账号。 */
+function normalizeOrganizerUserIds(input) {
+  const source = Array.isArray(input) ? input : []
+  const userIds = []
+  for (let i = 0; i < HOME_ORGANIZER_LIMIT; i += 1) {
+    const raw = text(source[i], USER_ID_MAX)
+    const value = raw ? Number(raw) : 0
+    userIds.push(Number.isSafeInteger(value) && value > 0 ? value : 0)
+  }
+  return userIds
+}
+
+function normalizeLinkedUserIds(input) {
+  const source = Array.isArray(input) ? input : []
+  return Array.from({ length: HOME_ORGANIZER_LIMIT }, (_, index) => {
+    const slot = Array.isArray(source[index]) ? source[index] : []
+    return slot
+      .slice(0, HOME_ORGANIZER_LINK_LIMIT)
+      .map((value) => Number(value))
+      .filter((value) => Number.isSafeInteger(value) && value > 0)
+  })
+}
+
+async function readOrganizerConfig() {
+  try {
+    const res = await homeOrganizers.doc(HOME_ORGANIZER_DOC).get()
+    const data = (res && res.data) || {}
+    return {
+      userIds: normalizeOrganizerUserIds(data.userIds),
+      linkedUserIds: normalizeLinkedUserIds(data.linkedUserIds),
+    }
+  } catch (e) {
+    return {
+      userIds: normalizeOrganizerUserIds([]),
+      linkedUserIds: normalizeLinkedUserIds([]),
+    }
+  }
+}
+
+/** 审核台配置态：保留数字 userId 供运营修改，同时补上昵称头像便于核对配的是谁。 */
+async function organizerSlots() {
+  const config = await readOrganizerConfig()
+  const ids = config.userIds
+    .filter(Boolean)
+    .concat(config.linkedUserIds.reduce((list, slot) => list.concat(slot), []))
+  let byUserId = {}
+  if (ids.length) {
+    const res = await users
+      .where({ userId: _.in(Array.from(new Set(ids))) })
+      .limit(HOME_ORGANIZER_LIMIT * (HOME_ORGANIZER_LINK_LIMIT + 1))
+      .get()
+    byUserId = (res.data || []).reduce((map, user) => {
+      if (user && user.userId) map[user.userId] = user
+      return map
+    }, {})
+  }
+  const slots = config.userIds.map((userId, index) => {
+    const user = byUserId[userId] || null
+    const nickName = text(user && user.nickName, 30)
+    return {
+      slot: index + 1,
+      userId: userId || 0,
+      linkedUserIds: config.linkedUserIds[index],
+      linkedAccounts: config.linkedUserIds[index].map((linkedUserId) => {
+        const linked = byUserId[linkedUserId] || null
+        const linkedName = text(linked && linked.nickName, 30)
+        return {
+          userId: linkedUserId,
+          found: !!linked,
+          nickName: linkedName,
+        }
+      }),
+      found: !!user,
+      nickName,
+      avatarUrl: text(user && user.avatarUrl, 500),
+      avatarColor: text(user && user.avatarColor, 30) || '#4ECDC4',
+      avatarText: text(user && user.avatarText, 2) || nickName.slice(0, 1) || '待',
+    }
+  })
+  const media = await resolveMedia(slots.map((item) => item.avatarUrl))
+  slots.forEach((item) => {
+    const entry = media[item.avatarUrl]
+    if (entry && entry.url) item.avatarUrl = entry.url
+  })
+  return { slots }
+}
+
+async function saveOrganizers(event, openid, admin) {
+  const source = Array.isArray(event && event.userIds) ? event.userIds : []
+  for (let i = 0; i < Math.min(source.length, HOME_ORGANIZER_LIMIT); i += 1) {
+    const raw = text(source[i], USER_ID_MAX)
+    const value = raw ? Number(raw) : 0
+    if (raw && (!Number.isSafeInteger(value) || value <= 0)) {
+      return fail('INVALID_PARAM', `第 ${i + 1} 个坑位请填写正整数用户 ID`)
+    }
+  }
+  const userIds = normalizeOrganizerUserIds(source)
+  const linkedSource = Array.isArray(event && event.linkedUserIds) ? event.linkedUserIds : []
+  const linkedUserIds = []
+  for (let i = 0; i < HOME_ORGANIZER_LIMIT; i += 1) {
+    const rawSlot = Array.isArray(linkedSource[i]) ? linkedSource[i] : []
+    const slot = rawSlot
+      .map((value) => text(value, USER_ID_MAX))
+      .filter(Boolean)
+    if (slot.length > HOME_ORGANIZER_LINK_LIMIT) {
+      return fail('INVALID_PARAM', `坑位 ${i + 1} 最多关联 ${HOME_ORGANIZER_LINK_LIMIT} 个账号`)
+    }
+    const parsed = []
+    for (let j = 0; j < slot.length; j += 1) {
+      const value = Number(slot[j])
+      if (!Number.isSafeInteger(value) || value <= 0) {
+        return fail('INVALID_PARAM', `坑位 ${i + 1} 第 ${j + 1} 个关联账号请填写正整数用户 ID`)
+      }
+      parsed.push(value)
+    }
+    if (parsed.length && !userIds[i]) {
+      return fail('INVALID_PARAM', `坑位 ${i + 1} 请先填写主账号`)
+    }
+    linkedUserIds.push(parsed)
+  }
+
+  const filled = userIds
+    .map((value, index) => ({ value, index, kind: 'primary' }))
+    .concat(
+      linkedUserIds.reduce(
+        (list, slot, slotIndex) =>
+          list.concat(
+            slot.map((value, linkIndex) => ({ value, index: slotIndex, linkIndex, kind: 'linked' }))
+          ),
+        []
+      )
+    )
+    .filter((item) => item.value)
+  const seen = {}
+  for (let i = 0; i < filled.length; i += 1) {
+    const item = filled[i]
+    if (seen[item.value]) return fail('INVALID_PARAM', '同一个用户不能重复配置到多个账号位置')
+    seen[item.value] = true
+  }
+
+  if (filled.length) {
+    const res = await users
+      .where({ userId: _.in(filled.map((item) => item.value)) })
+      .limit(HOME_ORGANIZER_LIMIT * (HOME_ORGANIZER_LINK_LIMIT + 1))
+      .get()
+    const found = (res.data || []).reduce((map, user) => {
+      if (user && user.userId) map[user.userId] = true
+      return map
+    }, {})
+    const missing = filled.filter((item) => !found[item.value])
+    if (missing.length) {
+      const positions = Array.from(new Set(missing.map((item) => item.index + 1))).join('、')
+      return fail('NOT_FOUND', `第 ${positions} 个坑位存在找不到的用户 ID`)
+    }
+  }
+
+  await homeOrganizers.doc(HOME_ORGANIZER_DOC).set({
+    data: {
+      userIds,
+      linkedUserIds,
+      updateTime: Date.now(),
+      updateBy: adminName(admin),
+    },
+  })
+  const saved = await organizerSlots()
+  return { ok: true, slots: saved.slots }
 }
 
 /* ------------------------------ 审核列表 ------------------------------ */
@@ -365,6 +541,8 @@ async function linesImport(event, openid, admin) {
 /** whoami 之外的 action 全部要求审核人身份 */
 const ACTIONS = {
   whoami,
+  organizers: organizerSlots,
+  saveOrganizers,
   list,
   detail,
   approve,

@@ -3,23 +3,38 @@ const ui = require('../../utils/ui')
 const api = require('../../services/api')
 const { TEXTS, getType } = require('../../utils/dict')
 const posters = require('../../utils/posters')
+const {
+  findQrCrop,
+  mapQrCrop,
+  needsDownloadForCanvas,
+  posterInfoRows,
+  posterQrLayout,
+  posterTitle,
+} = require('../../utils/poster-layout')
 
 const WIDTH = 750
 const HEIGHT = 1360
+const QR_LAYOUT = posterQrLayout(WIDTH)
 /** 顶部方形海报的高度：运营给的是 1:1 方图，正好占满 750 宽、不裁不拉伸 */
 const BANNER_HEIGHT = 750
 /** 顶部海报以下各段的基线：改这里就等于改版面，预览框比例见 index.wxss（要与 WIDTH/HEIGHT 一致） */
 const TITLE_Y = 802
 const INFO_Y = 902
-const INFO_GAP = 36
-/** 两张二维码的白卡：220 的卡 + 190 的码，卡与卡之间留 60 */
-const QR_CARD = 220
-const QR_IMAGE = 190
-const QR_CARD_Y = 1016
-const QR_LEFT_X = 125
-const QR_RIGHT_X = 405
+/** 小程序码贴齐左边；活动二维码与说明文案共用海报水平中线 */
+const MINI_QR_CARD = QR_LAYOUT.miniCardSize
+const MINI_QR_IMAGE = QR_LAYOUT.miniImageSize
+const MINI_QR_X = QR_LAYOUT.miniCardX
+const MINI_QR_Y = QR_LAYOUT.miniCardY
+const GROUP_QR_CARD = 300
+const GROUP_QR_IMAGE = 238
+const GROUP_QR_CENTER_X = QR_LAYOUT.groupCenterX
+const GROUP_QR_CENTER_Y = 1126
+const GROUP_QR_X = GROUP_QR_CENTER_X - GROUP_QR_CARD / 2
+const GROUP_QR_Y = GROUP_QR_CENTER_Y - GROUP_QR_CARD / 2
 const QR_LABEL_Y = 1262
-const FOOTER_Y = 1306
+const FOOTER_Y = 1328
+/** 二维码截图先缩到这个小画布上做暗色投影分析，避免对大图逐像素扫描 */
+const QR_SCAN_SIZE = 320
 
 Component({
   options: {
@@ -103,26 +118,44 @@ Component({
     toLocalPath(src) {
       const source = String(src || '')
       if (!source || source.indexOf('mock://') === 0) return Promise.resolve('')
-      if (source.indexOf('cloud://') !== 0 || !wx.cloud || !wx.cloud.downloadFile) {
-        return Promise.resolve(source)
-      }
+      if (!needsDownloadForCanvas(source)) return Promise.resolve(source)
       this._fileCache = this._fileCache || {}
       if (this._fileCache[source]) return Promise.resolve(this._fileCache[source])
       return new Promise((resolve) => {
-        wx.cloud.downloadFile({
-          fileID: source,
+        const done = (res) => {
+          const path = (res && res.tempFilePath) || ''
+          if (path) this._fileCache[source] = path
+          resolve(path)
+        }
+        const fail = () => resolve('')
+        if (source.indexOf('cloud://') === 0) {
+          if (!wx.cloud || !wx.cloud.downloadFile) {
+            resolve('')
+            return
+          }
+          wx.cloud.downloadFile({ fileID: source, success: done, fail })
+          return
+        }
+        if (typeof wx.downloadFile !== 'function') {
+          resolve('')
+          return
+        }
+        wx.downloadFile({
+          url: source,
           success: (res) => {
-            const path = (res && res.tempFilePath) || ''
-            if (path) this._fileCache[source] = path
-            resolve(path)
+            if (res && res.statusCode && res.statusCode !== 200) {
+              fail()
+              return
+            }
+            done(res)
           },
-          fail: () => resolve(''),
+          fail,
         })
       })
     },
 
     /** 在指定区域内等比缩放并居中绘制本地图片，返回是否绘制成功 */
-    drawImageFit(ctx, canvas, src, box) {
+    drawImageFit(ctx, canvas, src, box, crop) {
       if (!src) return Promise.resolve(false)
       return new Promise((resolve) => {
         let settled = false
@@ -134,14 +167,24 @@ Component({
         const image = canvas.createImage()
         image.onload = () => {
           if (settled) return
-          const width = image.width || box.w
-          const height = image.height || box.h
+          const source = crop || {
+            x: 0,
+            y: 0,
+            w: image.width || box.w,
+            h: image.height || box.h,
+          }
+          const width = source.w || box.w
+          const height = source.h || box.h
           // 等比缩放，长边贴合区域
           const scale = Math.min(box.w / width, box.h / height)
           const drawWidth = width * scale
           const drawHeight = height * scale
           ctx.drawImage(
             image,
+            source.x,
+            source.y,
+            width,
+            height,
             box.x + (box.w - drawWidth) / 2,
             box.y + (box.h - drawHeight) / 2,
             drawWidth,
@@ -198,41 +241,38 @@ Component({
           // 海报取不到（该类型还没出图）时，用类型主题色补一块 hero，避免顶部一片空渐变
           if (!bannerDrawn) this.paintHeroPlaceholder(ctx, act)
 
-          // 3. 活动标题（最多两行）。海报上那句是平台 slogan，这里说的是这一场具体活动，不重复
+          // 3. 左上角只保留一枚小尺寸小程序码，不遮住海报主体内容
+          this.roundRect(ctx, MINI_QR_X, MINI_QR_Y, MINI_QR_CARD, MINI_QR_CARD, 24)
+          ctx.fillStyle = '#FFFFFF'
+          ctx.fill()
+
+          // 4. 活动标题（最多两行）。费用方式作固定前缀，海报上那句平台 slogan 不重复
           ctx.textAlign = 'left'
           ctx.textBaseline = 'alphabetic'
           ctx.fillStyle = '#2D3748'
           ctx.font = 'bold 36px sans-serif'
-          this.wrapText(ctx, act.title || '活动组队', 48, TITLE_Y, 654, 44, 2)
+          this.wrapText(ctx, posterTitle(act), 48, TITLE_Y, 654, 44, 2)
 
-          // 4. 集合时间 / 集合地点 / 费用与人数 —— 只在有值时占一行，避免空标签占版面
-          const rows = [
-            ['集合时间', `${act.dateText || ''}`],
-            ['集合地点', `${act.location || ''}`],
-            ['费用与人数', `${act.feeText || 'AA制'} · ${act.peopleText || ''}`],
-          ].filter((row) => String(row[1] || '').replace(/[·\s]/g, ''))
-          rows.forEach((row, index) => {
-            const y = INFO_Y + index * INFO_GAP
+          // 5. 信息区只保留集合时间；集合地点和费用与人数由标题前缀与详情页承担
+          posterInfoRows(act).forEach((row) => {
+            const y = INFO_Y
             ctx.fillStyle = '#718096'
             ctx.font = '22px sans-serif'
-            ctx.fillText(row[0], 48, y)
+            ctx.fillText(row.label, 48, y)
             ctx.fillStyle = '#2D3748'
             ctx.font = '24px sans-serif'
-            this.wrapText(ctx, row[1], 200, y, 502, 32, 1)
+            this.wrapText(ctx, row.value, 200, y, 502, 32, 1)
           })
 
-          // 5. 两张二维码并排：左边小程序码（扫码 / 长按进入这场活动），右边活动二维码（进群）
-          ;[QR_LEFT_X, QR_RIGHT_X].forEach((x) => {
-            this.roundRect(ctx, x, QR_CARD_Y, QR_CARD, QR_CARD, 28)
-            ctx.fillStyle = '#FFFFFF'
-            ctx.fill()
-          })
-
+          // 6. 左上角小程序码（扫码 / 长按进入这场活动）与右下角活动二维码（进群）
+          this.roundRect(ctx, GROUP_QR_X, GROUP_QR_Y, GROUP_QR_CARD, GROUP_QR_CARD, 28)
+          ctx.fillStyle = '#FFFFFF'
+          ctx.fill()
           return this.drawMiniQr(ctx, canvas, codes.miniQr, {
-            x: QR_LEFT_X + (QR_CARD - QR_IMAGE) / 2,
-            y: QR_CARD_Y + (QR_CARD - QR_IMAGE) / 2,
-            w: QR_IMAGE,
-            h: QR_IMAGE,
+            x: MINI_QR_X + (MINI_QR_CARD - MINI_QR_IMAGE) / 2,
+            y: MINI_QR_Y + (MINI_QR_CARD - MINI_QR_IMAGE) / 2,
+            w: MINI_QR_IMAGE,
+            h: MINI_QR_IMAGE,
           })
             .then(() =>
               this.drawGroupQr(
@@ -240,22 +280,21 @@ Component({
                 canvas,
                 codes.groupQr,
                 {
-                  x: QR_RIGHT_X + (QR_CARD - QR_IMAGE) / 2,
-                  y: QR_CARD_Y + (QR_CARD - QR_IMAGE) / 2,
-                  w: QR_IMAGE,
-                  h: QR_IMAGE,
+                  x: GROUP_QR_X + (GROUP_QR_CARD - GROUP_QR_IMAGE) / 2,
+                  y: GROUP_QR_Y + 18,
+                  w: GROUP_QR_IMAGE,
+                  h: GROUP_QR_IMAGE,
                 },
                 this.groupQrLabel(act)
               )
             )
             .then(() => {
-              // 6. 二维码说明 + 底部品牌行
+              // 7. 活动二维码说明 + 底部品牌行
               ctx.textAlign = 'center'
               ctx.textBaseline = 'alphabetic'
               ctx.fillStyle = '#718096'
               ctx.font = '22px sans-serif'
-              ctx.fillText('扫码查看活动', QR_LEFT_X + QR_CARD / 2, QR_LABEL_Y)
-              ctx.fillText(this.groupQrLabel(act), QR_RIGHT_X + QR_CARD / 2, QR_LABEL_Y)
+              ctx.fillText(this.groupQrLabel(act), QR_LAYOUT.groupLabelCenterX, QR_LABEL_Y)
 
               // 顶部没有海报时，hero 区块里已经写过品牌名了，这里不再重复一遍
               if (!bannerDrawn) return
@@ -324,11 +363,66 @@ Component({
       })
     },
 
-    /** 活动二维码：有图则绘制，否则绘制占位文案 */
+    /** 活动二维码：先裁出码区再居中放大，识别不到码区时回退完整原图 */
     drawGroupQr(ctx, canvas, src, box, label) {
-      return this.drawImageFit(ctx, canvas, src, box).then((drawn) => {
-        if (drawn) return
-        this.drawQrPlaceholder(ctx, box, label || '活动二维码', '发起人未上传')
+      return this.findGroupQrCrop(canvas, src)
+        .then((crop) => this.drawImageFit(ctx, canvas, src, box, crop))
+        .then((drawn) => {
+          if (drawn) return
+          this.drawQrPlaceholder(ctx, box, label || '活动二维码', '发起人未上传')
+        })
+    },
+
+    /**
+     * 分析活动二维码截图：先等比缩到 320 方图，再按暗色投影找码区，最后映射回原图。
+     * 分析失败不影响海报生成，drawImageFit 会按完整原图兜底。
+     */
+    findGroupQrCrop(canvas, src) {
+      if (!src || typeof wx.createOffscreenCanvas !== 'function') return Promise.resolve(null)
+      return new Promise((resolve) => {
+        const image = canvas.createImage()
+        let settled = false
+        const finish = (crop) => {
+          if (settled) return
+          settled = true
+          resolve(crop)
+        }
+        image.onload = () => {
+          try {
+            const scanCanvas = wx.createOffscreenCanvas({
+              type: '2d',
+              width: QR_SCAN_SIZE,
+              height: QR_SCAN_SIZE,
+            })
+            const scanCtx = scanCanvas.getContext('2d')
+            const width = image.width || 0
+            const height = image.height || 0
+            if (!scanCtx || !width || !height) {
+              finish(null)
+              return
+            }
+            scanCtx.fillStyle = '#FFFFFF'
+            scanCtx.fillRect(0, 0, QR_SCAN_SIZE, QR_SCAN_SIZE)
+            const scale = Math.min(QR_SCAN_SIZE / width, QR_SCAN_SIZE / height)
+            const drawWidth = width * scale
+            const drawHeight = height * scale
+            scanCtx.drawImage(
+              image,
+              (QR_SCAN_SIZE - drawWidth) / 2,
+              (QR_SCAN_SIZE - drawHeight) / 2,
+              drawWidth,
+              drawHeight
+            )
+            const data = scanCtx.getImageData(0, 0, QR_SCAN_SIZE, QR_SCAN_SIZE).data
+            const scanCrop = findQrCrop(data, QR_SCAN_SIZE, QR_SCAN_SIZE)
+            finish(mapQrCrop(scanCrop, width, height, QR_SCAN_SIZE, QR_SCAN_SIZE))
+          } catch (err) {
+            finish(null)
+          }
+        }
+        image.onerror = () => finish(null)
+        image.src = src
+        setTimeout(() => finish(null), 5000)
       })
     },
 

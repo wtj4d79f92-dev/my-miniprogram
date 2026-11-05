@@ -1,10 +1,11 @@
 const api = require('../../services/api')
-const { TEXTS, TYPE_GRID, normalizeBanners } = require('../../utils/dict')
+const { TEXTS, normalizeBanners } = require('../../utils/dict')
 const { KEYS, getStorage, setStorage, setStorageAsync } = require('../../utils/storage')
 const loginBehavior = require('../../behaviors/login-behavior')
 const ui = require('../../utils/ui')
 const scene = require('../../utils/scene')
 const { normalizeMarqueeTexts, MARQUEE_ICON } = require('../../utils/marquee')
+const { buildHomeOrganizerSlots } = require('../../utils/home-organizers')
 
 /**
  * 分享卡片用代码包里的品牌图，而不是等微信截页面——首屏还没加载完就转发时，截图可能是空白的。
@@ -43,10 +44,12 @@ const HOME_COVER_TTL = 2 * 60 * 60 * 1000
 function stripStaleCovers(snapshot) {
   const blank = (item) => Object.assign({}, item, { cover: '', coverUrl: '' })
   const blankBanner = (item) => Object.assign({}, item, { image: '', imageUrl: '' })
+  const blankOrganizer = (item) => Object.assign({}, item, { avatarUrl: '' })
   return {
     banners: (snapshot.banners || []).map(blankBanner),
     hotList: (snapshot.hotList || []).map(blank),
     newestList: (snapshot.newestList || []).map(blank),
+    organizerSlots: (snapshot.organizerSlots || []).map(blankOrganizer),
   }
 }
 
@@ -55,18 +58,16 @@ Page({
 
   data: {
     texts: TEXTS,
-    typeGrid: TYPE_GRID,
     marqueeIcon: MARQUEE_ICON,
     homeMarqueeTexts: HOME_MARQUEE_TEXTS,
     homeMarqueeHasMultiple: HOME_MARQUEE_TEXTS.length > 1,
-    // 金刚区图标按格子下标记失败状态：data URI 正常不会失败，留一手兜底，格子不至于空着
-    iconErrorMap: {},
     city: '',
     cityLabel: '全部',
     locationDenied: false,
     banners: [],
     hotList: [],
     newestList: [],
+    organizerSlots: buildHomeOrganizerSlots([]),
     fallbackTip: '',
     loading: true,
     refreshing: false,
@@ -193,6 +194,7 @@ Page({
       banners: source.banners || [],
       hotList: source.hotList || [],
       newestList: source.newestList || [],
+      organizerSlots: source.organizerSlots || [],
       fallbackTip: fallbackTip || '',
     })
   },
@@ -205,6 +207,7 @@ Page({
       banners: normalizeBanners(source.banners),
       hotList: (source.hotList || []).map(api.decorate),
       newestList: (source.newestList || []).map(api.decorate),
+      organizerSlots: buildHomeOrganizerSlots(source.organizerSlots),
       fallbackTip: fallbackTip || '',
       loading: false,
       refreshing: false,
@@ -300,15 +303,17 @@ Page({
     this.openSquare(action.value)
   },
 
-  onTypeTap(e) {
-    this.openSquare(e.currentTarget.dataset.type)
-  },
-
-  /** 金刚区图标解码失败：这一格退回 emoji，其余格子不受影响 */
-  onTypeIconError(e) {
-    const index = e.currentTarget.dataset.index
-    if (index === undefined || this.data.iconErrorMap[index]) return
-    this.setData({ [`iconErrorMap[${index}]`]: true })
+  /** 点主办方坑位：只带公开坑位号进广场，未入驻坑位不响应 */
+  onOrganizerTap(e) {
+    if (this.data.singlePage) return
+    const data = (e && e.currentTarget && e.currentTarget.dataset) || {}
+    if (!data.occupied) {
+      ui.toast('用户入驻请联系客服')
+      return
+    }
+    const hostSlot = Math.max(0, Number(data.slot) || 0)
+    if (!hostSlot) return
+    wx.navigateTo({ url: `/pages/organizer/home/index?hostSlot=${hostSlot}` })
   },
 
   onCardTap(e) {

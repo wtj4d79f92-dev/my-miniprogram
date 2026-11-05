@@ -641,8 +641,18 @@
   border: none;
 }
 
-.share-emoji {
+.share-icon {
+  width: 56rpx;
+  height: 56rpx;
+}
+
+/* SVG 解码失败时才出现的兜底文字槽，尺寸与正常图标保持一致 */
+.share-icon-emoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 56rpx;
+  line-height: 56rpx;
 }
 
 .share-label {

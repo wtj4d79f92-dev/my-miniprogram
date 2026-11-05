@@ -1,12 +1,13 @@
 const api = require('../../../services/api')
 const { TEXTS } = require('../../../utils/dict')
-const { formatCardDate } = require('../../../utils/util')
+const { formatCardDateTime } = require('../../../utils/util')
 const loginBehavior = require('../../../behaviors/login-behavior')
 const ui = require('../../../utils/ui')
 const location = require('../../../utils/location')
 const scene = require('../../../utils/scene')
 const expire = require('../../../utils/expire')
 const posters = require('../../../utils/posters')
+const { SHARE_ICONS } = require('../../../utils/share-icons')
 
 /** 举报原因候选：与云端 activity 云函数的 REPORT_REASONS 保持一致 */
 const REPORT_REASONS = ['虚假信息或诈骗', '违法违规内容', '侵权或盗用他人内容', '广告骚扰', '其他']
@@ -182,6 +183,8 @@ Page({
     agreed: false,
     user: null,
     showSharePanel: false,
+    shareIcons: SHARE_ICONS,
+    shareIconErrors: {},
     showQrModal: false,
     // 二维码弹窗是「已报名用户主动打开」的选填入口，不再有报名成功自动弹出的形态
     qrTitle: '活动群二维码（可选）',
@@ -257,8 +260,8 @@ Page({
     const activity = api.decorate(raw)
     // 页面标题用活动名，微信搜索会据此理解这个页面在讲什么（自定义导航栏下用户看不到标题）
     ui.setPageTitle(`${activity.title} · 旷行吖`)
-    activity.startLabel = formatCardDate(activity.startTime)
-    activity.endLabel = activity.endTime ? formatCardDate(activity.endTime) : '待定'
+    activity.startLabel = formatCardDateTime(activity.startTime)
+    activity.endLabel = activity.endTime ? formatCardDateTime(activity.endTime) : '待定'
     activity.coverGradient = activity.bg
     // 封面 / 活动二维码是发起人上传的云存储文件，客户端直连 cloud:// 可能被存储权限拦下，
     // 云函数已换好 https 临时链接（coverUrl / qrUrl），这里优先用它渲染
@@ -810,6 +813,14 @@ Page({
 
   closeSharePanel() {
     this.setData({ showSharePanel: false })
+  },
+
+  onShareIconError(e) {
+    const key = e && e.currentTarget && e.currentTarget.dataset ? e.currentTarget.dataset.key : ''
+    if (!key || this.data.shareIconErrors[key]) return
+    this.setData({
+      shareIconErrors: Object.assign({}, this.data.shareIconErrors, { [key]: true }),
+    })
   },
 
   /** 分享面板 →「朋友圈」：小程序内无法直接调起朋友圈，仅作引导 */

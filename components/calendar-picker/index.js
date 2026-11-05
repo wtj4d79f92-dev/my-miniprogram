@@ -1,4 +1,4 @@
-const { startOfDay, formatYearMonth } = require('../../utils/util')
+const { startOfDay, formatYearMonth, pad } = require('../../utils/util')
 
 const WEEK_HEAD = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -18,6 +18,10 @@ Component({
     selectedTs: 0,
     minTs: 0,
     todayTs: 0,
+    withTime: false,
+    timeValue: '08:00',
+    minTimeMessage: '',
+    minTimeInclusive: false,
   },
 
   methods: {
@@ -30,7 +34,9 @@ Component({
       const opts = options || {}
       const base = startOfDay(ts || Date.now())
       const d = new Date(base)
-      const minTs = startOfDay(opts.minTs || 0)
+      const withTime = !!opts.withTime
+      const minTs = withTime ? Number(opts.minTs) || 0 : startOfDay(opts.minTs || 0)
+      const source = new Date(ts || base)
       this._minTs = minTs
       this.setData({
         visible: true,
@@ -40,6 +46,10 @@ Component({
         selectedTs: base,
         minTs,
         todayTs: startOfDay(Date.now()),
+        withTime,
+        timeValue: `${pad(source.getHours())}:${pad(source.getMinutes())}`,
+        minTimeMessage: opts.minTimeMessage || '',
+        minTimeInclusive: !!opts.minTimeInclusive,
       })
       this.build()
       return Promise.resolve()
@@ -63,7 +73,7 @@ Component({
           out: d.getMonth() !== month,
           today: ts === todayTs,
           selected: ts === selectedTs,
-          disabled: minTs > 0 && ts < minTs,
+          disabled: minTs > 0 && ts < startOfDay(minTs),
         })
       }
       this.setData({
@@ -101,10 +111,30 @@ Component({
       this.build()
     },
 
+    onTimeChange(e) {
+      this.setData({ timeValue: e.detail.value })
+    },
+
     confirm() {
-      const ts = this.data.selectedTs
-      if (this.data.minTs > 0 && ts < this.data.minTs) {
-        wx.showToast({ title: '所选日期不可早于今天', icon: 'none' })
+      let ts = this.data.selectedTs
+      if (this.data.withTime) {
+        const [hour, minute] = String(this.data.timeValue || '08:00')
+          .split(':')
+          .map(Number)
+        const d = new Date(ts)
+        d.setHours(hour || 0, minute || 0, 0, 0)
+        ts = d.getTime()
+      }
+      const tooEarly = this.data.minTimeInclusive
+        ? ts < this.data.minTs
+        : this.data.withTime
+          ? ts <= this.data.minTs
+          : ts < this.data.minTs
+      if (this.data.minTs > 0 && tooEarly) {
+        wx.showToast({
+          title: this.data.minTimeMessage || '所选日期不可早于今天',
+          icon: 'none',
+        })
         return
       }
       this.setData({ visible: false })

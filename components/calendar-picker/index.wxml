@@ -32,5 +32,15 @@
         <text class="cal-day">{{item.day}}</text>
       </view>
     </view>
+
+    <view wx:if="{{withTime}}" class="cal-time-row">
+      <text class="cal-time-label">具体时间</text>
+      <picker mode="time" value="{{timeValue}}" bindchange="onTimeChange">
+        <view class="cal-time-value">
+          <text>{{timeValue}}</text>
+          <text class="cal-time-arrow">›</text>
+        </view>
+      </picker>
+    </view>
   </view>
 </view>

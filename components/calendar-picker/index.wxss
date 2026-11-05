@@ -44,7 +44,7 @@
 .cal-grid {
   display: flex;
   flex-wrap: wrap;
-  padding: 0 24rpx 32rpx;
+  padding: 0 24rpx 16rpx;
 }
 
 .cal-cell {
@@ -85,4 +85,32 @@
 
 .cal-cell.disabled .cal-day {
   color: #dfe6e5;
+}
+
+.cal-time-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 24rpx 32rpx;
+  padding: 22rpx 2rpx 0;
+  border-top: 2rpx solid var(--line);
+}
+
+.cal-time-label {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cal-time-value {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  font-size: 28rpx;
+  color: var(--text);
+}
+
+.cal-time-arrow {
+  color: var(--text-light);
+  font-size: 32rpx;
 }

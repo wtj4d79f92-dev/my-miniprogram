@@ -17,14 +17,15 @@
 ```
 app.js / app.json / app.wxss      全局入口、路由与 tabBar、主题变量
 pages/
-  home/home                       首页：定位、横幅、玩法入口、热门 / 最新、分享给好友 / 朋友圈
-  square/index                    活动广场：活动类型 / 城市 / 星期 / 具体日期 / 排序 / 搜索 / 分页
+  home/home                       首页：定位、横幅、活动主办方坑位、热门 / 最新、分享给好友 / 朋友圈
+  square/index                    活动广场：主办方活动列表、活动类型 / 城市 / 星期 / 具体日期 / 排序 / 搜索 / 分页
   activity/detail/index           活动详情：报名退出、发起人修改 / 关闭 / 打开活动、协议、活动二维码、分享、海报
   activity/publish/index          发布活动：表单校验、自研日历、地图选点、类型联动、二维码 OCR 自动填标题 / 时间 / 强度 / 介绍
-  usercenter/index                个人中心：登录、资料编辑、手机号绑定、入口聚合
+  organizer/home/index            主办方主页：顶部头像昵称，下方复用广场活动卡片展示该主办方活动
+  usercenter/index                个人中心：手机号快捷登录、资料编辑、入口聚合
   user/activity-list/index        我的活动：我参与的 / 我发布的（修改、关闭、打开）
   feedback/index                  意见反馈
-  admin/audit/index               活动审核台：待审 / 已通过 / 已驳回 / 全部、详情预览、通过 / 驳回
+  admin/audit/index               活动审核台：待审 / 已通过 / 已驳回 / 全部、详情预览、通过 / 驳回、首页主办方坑位配置
 components/                       活动卡片、头像、登录页、城市选择、日历、协议弹窗、海报、空态
 custom-tab-bar/                   自定义底部导航（首页 / 广场 / 我的）
 behaviors/login-behavior.js       登录守卫：全屏登录页 → 登录成功 → 继续原操作
@@ -55,7 +56,7 @@ scripts/seed/lines.json           线路词库的「控制台导入」文件（J
 
 `services/config.js` 中 `useMock` 控制数据来源：
 
-- `useMock: true`（演示模式）：数据由 `services/mock.js` 生成，操作结果写入本地缓存，缓存键与 PRD 5.3 一致（`aa_selected_city`、`square_pending_type`、`my_user`、`my_user_counter`、`my_published`、`my_joined`、`my_feedback`），另加 `mock_join_map`、`mock_status_map`、`mock_audit_map`、`mock_comment_map`、`mock_notifications`、`mock_line_stats` 六个运行期缓存键，用于记录报名成员、关闭状态与关闭时间、本地审核结果、活动留言、站内通知与线路强度沉淀。首页另有一份列表快照 `aa_home_cache`、发布页另有一份沉淀快照 `aa_line_stats`（见「标题自动匹配线路」），两种模式共用。
+- `useMock: true`（演示模式）：数据由 `services/mock.js` 生成，操作结果写入本地缓存，缓存键与 PRD 5.3 一致（`aa_selected_city`、`square_pending_type`、`my_user`、`my_user_counter`、`my_published`、`my_joined`、`my_feedback`），另加 `mock_join_map`、`mock_status_map`、`mock_audit_map`、`mock_comment_map`、`mock_notifications`、`mock_line_stats`、`mock_home_organizers` 等运行期缓存键，用于记录报名成员、关闭状态与关闭时间、本地审核结果、活动留言、站内通知、线路强度沉淀，以及首页主办方的主账号和关联账号。首页另有一份列表快照 `aa_home_cache`、发布页另有一份沉淀快照 `aa_line_stats`（见「标题自动匹配线路」），两种模式共用。
 - `useMock: false`：走云开发，客户端调用 `activity` 云函数，action 与 PRD 8.6 一致（`home / list / detail / lines / lineStats / create / update / join / quit / toggle / mine / user / login / updateUser / qrcode / ocrQr / feedback / report / comments / comment / commentRemove / notifications / notificationUnread / notificationRead / notificationReadAll / deleteAccount`），审核相关调用走独立的 `admin` 云函数。
 
 > Mock 模式下把当前登录用户视为审核人，本地也能把「发布 → 待审 → 驳回 → 修改重提 → 通过」整条链路跑通；云端真人权限见下方「活动审核」。
@@ -65,7 +66,7 @@ scripts/seed/lines.json           线路词库的「控制台导入」文件（J
 1. 在微信开发者工具中开通云开发，记录环境 ID；
 2. 把 `services/config.js` 的 `useMock` 改为 `false`，`useCloud` 改为 `true`，填入 `cloudEnv`；
 3. 在 `app.js` 的 `onLaunch` 中初始化：`wx.cloud.init({ env: config.cloudEnv, traceUser: true })`；
-4. 创建集合 `activities`、`users`、`banners`、`feedback`、`activity_comments`、`notifications`，权限按 PRD 8.7 设置（用户举报与意见反馈都落在 `feedback`，用 `kind` 区分：`feedback` / `report`；活动留言落在 `activity_comments`，站内通知落在 `notifications`，三者都只允许云函数读写，客户端不得直连）；
+4. 创建集合 `activities`、`users`、`banners`、`home_organizers`、`feedback`、`activity_comments`、`notifications`，权限按 PRD 8.7 设置（用户举报与意见反馈都落在 `feedback`，用 `kind` 区分：`feedback` / `report`；活动留言落在 `activity_comments`，站内通知落在 `notifications`，首页主办方配置落在 `home_organizers`，都只允许云函数读写，客户端不得直连）；
 5. 新建 `cloudfunctions/activity` 云函数（Node.js），按 `services/api.js` 中 `cloudApi` 的 action 名实现路由，返回结构失败为 `{ code, message }`、成功为业务数据；
 6. 在 `project.config.json` 中补充 `"cloudfunctionRoot": "cloudfunctions/"` 后部署云函数。
 7. 二维码文字识别依赖云开发「服务市场」的文字识别 OCR 额度：在云开发控制台开通/续购 OCR 套餐；错误 `101003 not enough market quota` 表示额度不足，此时发布页静默降级为手写，不展示失败文案，不影响发布。
@@ -80,7 +81,7 @@ scripts/seed/lines.json           线路词库的「控制台导入」文件（J
 2. **昵称与活动文案一样要过内容安全**：昵称会展示在活动卡片与报名名单里，`updateUser`（含登录时前端带上来的 `profile.nickName`）和发布 / 编辑共用同一个 `checkText`，命中 `risky` 直接拒绝写库。
 3. **举报入口**：活动详情页底部「举报该活动」（自己的活动不展示）→ `report` action → `feedback` 集合里 `kind: 'report'` 的记录，运营按 `kind` 区分反馈与举报；原因是固定候选，云端 `REPORT_REASONS`、`services/api.js`、`pages/activity/detail/index.js` 三处必须一致。举报只作为人工线索留存，不参与机审放行、不自动下架活动。
 4. **协议可达**：登录页与「我的 → 设置 → 用户服务协议 / 隐私政策」都能随时查看；《用户服务协议》第三条写明侵权投诉走「举报」入口，对应通知-删除通道。
-5. **手机号只认微信授权 code**：`login` 只接受 `phoneCode`（服务端调 `phonenumber.getPhoneNumber` 兑换），不接受前端直接传入的号码；`updateUser` 不接受 `phone` 字段。默认昵称在注册时由 `utils/nickname.js` 的词库随机生成（如「山野阿狼」，与云端 `lib/nickname.js` 同一份），默认头像用昵称首字 + 按 `userId` 轮转的配色，**既不用手机号（含 `138****8888` 这种掩码）、也不用微信默认的「微信用户」+ 灰头像**——昵称会展示在活动卡片与报名名单里，全站一个样的「微信用户」在报名名单里分不出谁是谁；历史遗留的掩码昵称（`138****8888`）与微信默认昵称（`微信用户` / `微信用户 + 编号`）都会在下次登录时就地换成随机昵称，并同步已发布 / 已报名活动的快照。
+5. **手机号是登录必填项，且只认微信授权 code**：登录页只提供“手机号快捷登录”，用户拒绝授权或授权失败时不能登录；`login` 必须收到 `phoneCode`（服务端调 `phonenumber.getPhoneNumber` 兑换），缺少授权码或兑换失败都直接拒绝，不接受前端直接传入的号码；`updateUser` 不接受 `phone` 字段。前端登录守卫与启动恢复均以 `openid + phone` 判定已登录，历史无手机号账号会被重新引导授权补绑。默认昵称在注册时由 `utils/nickname.js` 的词库随机生成（如「山野阿狼」，与云端 `lib/nickname.js` 同一份），默认头像用昵称首字 + 按 `userId` 轮转的配色，**既不用手机号（含 `138****8888` 这种掩码）、也不用微信默认的「微信用户」+ 灰头像**——昵称会展示在活动卡片与报名名单里，全站一个样的「微信用户」在报名名单里分不出谁是谁；历史遗留的掩码昵称（`138****8888`）与微信默认昵称（`微信用户` / `微信用户 + 编号`）都会在下次登录时就地换成随机昵称，并同步已发布 / 已报名活动的快照。
 6. **费用只做信息说明**：活动必须选 AA 制 / 非 AA 制，非 AA 制只填一段文字说明（≤60 字），不收集金额、不产生任何支付行为；**平台不收取、不代收、不托管任何活动费用，也不提供收款 / 代付 / 结算通道**，发布页与详情页固定展示这句口径，协议同步写明。
 7. **入口与索引**：个人中心提供 `open-type="contact"` 客服入口（人工客服，纯后台配置，**不需要改代码、也不经过我们的服务器**）——后台「客服」页有「小程序客服」和「微信客服」两套能力，本项目用的 `open-type="contact"` 属于**小程序客服**：点左侧「查看」，添加客服人员并邀请其微信接受绑定，客服人员随后用微信官方客服小程序（后台提示的「小程序客服消息」，早期叫「客服小助手」）或后台网页端客服工作台回复用户；未添加客服人员时用户点进去会显示客服不在线。「消息服务器配置」只在走 API 收发时才需要填写。`sitemap.json` 对 `pages/admin/audit/index` 设 `disallow`，审核台不进微信搜索索引。
 8. **发版包卫生**：`project.config.json` 的 `packOptions.ignore` 排除 `*.md` / `*.docx` / `scripts` / `.git` / `.DS_Store` / `.gitignore` / 工具私有配置，避免文档与本地文件被打进上传包。
@@ -198,6 +199,12 @@ scripts/seed/lines.json           线路词库的「控制台导入」文件（J
 
 对发起人只说「审核中」：机审还是人工复核属于平台内部流程，发布页、活动详情与「我的发布」都不区分（文案见 `pages/activity/publish/index.wxml`、`pages/activity/detail/index.wxml`、`pages/user/activity-list/index.wxml`）。发起人能看到的确定性结论只有两种：审核中，或未通过 + 原因。
 
+### 首页主办方坑位
+
+首页「活动主办方」固定 10 个坑位、每排 5 个。运营在「我的 → 活动审核 → 首页主办方坑位」里为每个主办方填写 1 个主账号，并可按需配置最多 5 个关联账号；全部使用正整数用户ID（`users.userId`，不是 openid）。`activity` 云函数按 `userId` 从 `users` 集合读取最新昵称与头像，并把云存储头像换成临时链接。未配置的位置显示「待入驻」，第一排没有满 5 个时不展示第二排。
+
+点击已入驻坑位会进入独立的「主办方主页」：顶部展示主账号的头像与昵称，下方复用广场 `activity-card` 展示主账号及关联账号发布的活动，并按活动 ID 去重。客户端只拿到坑位号和公开昵称头像，不下发 userId 或 openid；`activity` 云函数按坑位号从配置里取主账号与关联账号，再一起查询活动。关联账号只参与活动归集，不继承主办方主页背景等管理权限。配置保存在 `home_organizers` 集合的 `slots` 文档中，字段为 `userIds`（10 个主账号）和 `linkedUserIds`（每个坑位最多 5 个关联账号），权限设为「所有用户不可读写」，只允许 `admin` 云函数写入、`activity` 云函数读取。
+
 ### 封面 / 活动二维码的云存储地址
 
 封面与活动二维码以 `cloud://` 文件 ID 落库，而审核人通常是另一个微信号：客户端直接渲染别人的云存储文件，能不能加载完全取决于云存储的权限设置 / 安全规则，被限制成「仅创建者可读」时审核台只会看到「封面加载失败」。因此：
@@ -212,13 +219,14 @@ scripts/seed/lines.json           线路词库的「控制台导入」文件（J
 
 ### 部署步骤
 
-1. 部署 `cloudfunctions/admin`（审核台）、`cloudfunctions/activity`（业务改动）两个云函数；`activity` 的 `config.json` 里带两个定时触发器 ——「到期自动关闭」（每小时整点，见「活动展示期」）与「保活」（每两分钟，见「首屏加载」），上传时选「上传触发器」一并生效；
+1. 部署 `cloudfunctions/admin`（审核台与主办方配置）、`cloudfunctions/activity`（业务读取与主办方活动筛选）两个云函数；`activity` 的 `config.json` 里带两个定时触发器 ——「到期自动关闭」（每小时整点，见「活动展示期」）与「保活」（每两分钟，见「首屏加载」），上传时选「上传触发器」一并生效；
 2. 给自己开通审核权限，二选一：
    - 在 `admin` 云函数的环境变量里配置 `ADMIN_OPENIDS=<你的 openid>`（首位管理员用这个，openid 可以在审核页的「没有审核权限」提示里直接复制）；
    - 新建 `admins` 集合，写入 `{ "openid": "...", "name": "运营昵称" }`，日常增删审核人只改这里；
 3. 可选：在审核台底部点「补齐全量审核状态」，给历史活动写入显式的 `approved`（幂等，可重复执行，不迁移也不影响展示）；
 4. 重新编译小程序，登录后「我的」页会出现「活动审核」入口（仅审核人可见）。
 5. 可选：在云开发控制台新建 `line_stats` 集合（发布时沉淀线路强度用，见「标题自动匹配线路」；集合不存在时发布页只按线路词库匹配，功能不会报错但沉淀攒不下来），权限设为「所有用户不可读写」，只通过云函数访问。
+6. 在云开发控制台新建 `home_organizers` 集合（首页主办方坑位），权限设为「所有用户不可读写」，只通过云函数访问。建好集合后进入审核台的「首页主办方坑位」，为最多 10 个主办方填写正整数主账号用户ID（`users.userId`），并按需为每个主办方添加最多 5 个关联账号。
 
 配套集合：`activity_audits` 记录每次审核的动作、前后状态、原因、审核人与时间（集合不存在时会自动跳过写日志，不阻塞审核）。集合权限建议设为「仅创建者可读写」或「所有用户不可读写」，只通过云函数访问。
 
@@ -480,13 +488,16 @@ node scripts/seed-data.js --qr=cloud://xxx --cover=cloud://xxx    # 可选：带
 ## 校验
 
 ```bash
+node scripts/phone-login.test.js
+node scripts/organizer-accounts.test.js
+node scripts/organizer-accounts-admin.test.js
 node scripts/validate.js
 node scripts/cloud-validate.js
 ```
 
-会检查：页面与组件的文件完整性、`usingComponents` 引用是否可解析、JSON 是否合法、JS 是否可通过语法解析，并跑一遍 Mock 业务链路（首页 → 广场筛选 → 详情 → 发布 → 报名 → 活动留言与回复 → 站内通知 → 消息中心 → 我的活动 → 关闭活动 → 退出 → 反馈 → 机审自动放行 → 注销账号）。
+`phone-login.test.js` 覆盖手机号登录守卫、启动时丢弃未绑手机号缓存、Mock 登录必须带手机号、云模式不能走 openid 快捷登录。两个 `organizer-accounts*.test.js` 覆盖主办方主账号 + 5 个关联账号的配置、活动合并去重、重复 / 超限校验和审核台输入保存。`validate.js` 会检查：页面与组件的文件完整性、`usingComponents` 引用是否可解析、JSON 是否合法、JS 是否可通过语法解析，并跑一遍 Mock 业务链路（首页 → 广场筛选 → 详情 → 发布 → 报名 → 活动留言与回复 → 站内通知 → 消息中心 → 我的活动 → 关闭活动 → 退出 → 反馈 → 机审自动放行 → 注销账号）。
 
-`scripts/cloud-validate.js` 用内存数据库替代 `wx-server-sdk`，直接调用四个云函数（`activity` / `admin` / `contentCheck` / `seed`）的入口，覆盖：审核前后在首页 / 广场 / 详情的可见性、发布与编辑重提、报名与关闭的审核守卫、活动留言（非参与者被拒、退出后失去访问、违规内容拦截、只有作者与发起人能删、软删除留痕、举报留言带内容快照、注销时清掉自己的留言）、留言回复与站内通知（回复关系落库、被回复留言不存在 / 已删除 / 非参与者被拒、一级留言通知发起人、回复通知被回复人、自己给自己留言不通知、通知只返回自己的且不下发 openid、单条 / 全部已读与未读数、注销时清掉收发双方与被删活动下的通知）、已关闭活动的当天可见与沉底排序（含跨页、城市筛选叠加、次日消失、重新打开归零）、审核人权限（含越权调用被拒）、待审列表与统计、驳回原因校验、审核日志、历史数据迁移，以及机审（文本违规拦截不写库、疑似标记复核、图片异步回调写回、图片违规自动驳回与下架、机审全过自动放行、二维码不是微信二维码时直接驳回且不进待审队列、被驳回后图片全通过也不放行、部分图片没结论 / 文本质疑 / 识别接口异常转人工、人工驳回后不被机审放行、接口异常降级）。机审接口在测试里是桩，通过行为开关切换文本与图片的 pass / review / risky / 调用失败、响应里不带结论、仅首张图送检失败，以及二维码的识别到群邀请码 / 个人微信二维码（两种链接形态）/ 群码与名片码同图（群码优先）/ 没识别到码 / 不是微信二维码 / 只有一维码 / 调用失败；「没结论」这条线单独覆盖：文本降级 → 图片结论回来后补检文本 → 补到结论自动放行（日志写明补检）、补检仍失败继续转人工（记 `text-recheck`）、图片推送没结论时不写 `pass` 也不放行（记 `image-failed`）、旧版推送只带 `isrisky` 仍按结论处理。演示数据那组还会真的走一遍首页 / 广场 / 详情 / 报名与清理，确认造出来的数据审核员看得到、`refresh` 能把 7 天展示期往后推、清理时不动真实活动。它是纯本地运行，不依赖云环境，也不改动云端数据。
+`scripts/cloud-validate.js` 用内存数据库替代 `wx-server-sdk`，直接调用四个云函数（`activity` / `admin` / `contentCheck` / `seed`）的入口，覆盖：手机号登录（缺少授权码拒绝、授权码兑换失败拒绝、前端号码不落库、正常授权注册 / 补绑）、审核前后在首页 / 广场 / 详情的可见性、发布与编辑重提、报名与关闭的审核守卫、活动留言（非参与者被拒、退出后失去访问、违规内容拦截、只有作者与发起人能删、软删除留痕、举报留言带内容快照、注销时清掉自己的留言）、留言回复与站内通知（回复关系落库、被回复留言不存在 / 已删除 / 非参与者被拒、一级留言通知发起人、回复通知被回复人、自己给自己留言不通知、通知只返回自己的且不下发 openid、单条 / 全部已读与未读数、注销时清掉收发双方与被删活动下的通知）、已关闭活动的当天可见与沉底排序（含跨页、城市筛选叠加、次日消失、重新打开归零）、审核人权限（含越权调用被拒）、待审列表与统计、驳回原因校验、审核日志、历史数据迁移，以及机审（文本违规拦截不写库、疑似标记复核、图片异步回调写回、图片违规自动驳回与下架、机审全过自动放行、二维码不是微信二维码时直接驳回且不进待审队列、被驳回后图片全通过也不放行、部分图片没结论 / 文本质疑 / 识别接口异常转人工、人工驳回后不被机审放行、接口异常降级）。机审接口在测试里是桩，通过行为开关切换文本与图片的 pass / review / risky / 调用失败、响应里不带结论、仅首张图送检失败，以及二维码的识别到群邀请码 / 个人微信二维码（两种链接形态）/ 群码与名片码同图（群码优先）/ 没识别到码 / 不是微信二维码 / 只有一维码 / 调用失败；「没结论」这条线单独覆盖：文本降级 → 图片结论回来后补检文本 → 补到结论自动放行（日志写明补检）、补检仍失败继续转人工（记 `text-recheck`）、图片推送没结论时不写 `pass` 也不放行（记 `image-failed`）、旧版推送只带 `isrisky` 仍按结论处理。演示数据那组还会真的走一遍首页 / 广场 / 详情 / 报名与清理，确认造出来的数据审核员看得到、`refresh` 能把 7 天展示期往后推、清理时不动真实活动。它是纯本地运行，不依赖云环境，也不改动云端数据。
 
 ## 已知限制（与 PRD 12.4 一致）
 

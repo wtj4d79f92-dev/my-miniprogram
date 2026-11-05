@@ -128,6 +128,13 @@
         <view class="migrate" bindtap="migrateHistory" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
           <text>审核能力上线前的历史活动，点此补齐全量审核状态</text>
         </view>
+        <view class="organizer-config-entry" bindtap="openOrganizers" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
+          <view>
+            <text class="organizer-config-title">首页主办方坑位</text>
+            <text class="organizer-config-desc">10 个坑位，每排 5 个；只配置用户 ID</text>
+          </view>
+          <text class="organizer-config-arrow">›</text>
+        </view>
         <view class="bottom-space"></view>
       </view>
     </scroll-view>
@@ -280,6 +287,67 @@
       <view class="sheet-actions">
         <view class="audit-btn ghost" bindtap="closeReject" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>取消</text></view>
         <view class="audit-btn danger {{acting ? 'disabled' : ''}}" bindtap="submitReject" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>确认驳回</text></view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 首页主办方坑位：运营只填用户 ID，昵称头像由接口回填 -->
+  <view wx:if="{{showOrganizers}}">
+    <view class="mask" bindtap="closeOrganizers"></view>
+    <view class="sheet sheet-organizers">
+      <view class="sheet-head">
+        <text class="sheet-title">首页主办方坑位</text>
+        <text class="sheet-close" bindtap="closeOrganizers">✕</text>
+      </view>
+      <text class="organizer-tip">每个主办方填写 1 个主账号，可再关联最多 5 个发布账号。关联账号发布的活动会合并到该主办方主页。</text>
+      <scroll-view class="organizer-scroll" scroll-y>
+        <view wx:for="{{organizerUserIds}}" wx:key="slot" class="organizer-row">
+          <text class="organizer-slot-label">坑位 {{index + 1}}</text>
+          <view class="organizer-input-wrap">
+            <text class="organizer-account-label">主账号</text>
+            <input
+              class="organizer-input"
+              value="{{item.value}}"
+              maxlength="20"
+              type="number"
+              placeholder="填写用户ID（正整数）"
+              data-index="{{index}}"
+              bindinput="onOrganizerIdInput"
+            />
+            <text wx:if="{{organizerSlots[index].found && item.savedValue === item.value}}" class="organizer-user-name">{{organizerSlots[index].nickName}}</text>
+            <view
+              wx:for="{{item.linked}}"
+              wx:key="key"
+              wx:for-item="linked"
+              wx:for-index="linkIndex"
+              class="organizer-linked-row"
+            >
+              <text class="organizer-linked-label">关联 {{linkIndex + 1}}</text>
+              <view class="organizer-linked-input-wrap">
+                <input
+                  class="organizer-input organizer-linked-input"
+                  value="{{linked.value}}"
+                  maxlength="20"
+                  type="number"
+                  placeholder="选填关联账号ID"
+                  data-slot-index="{{index}}"
+                  data-link-index="{{linkIndex}}"
+                  bindinput="onOrganizerLinkedIdInput"
+                />
+                <text
+                  wx:if="{{linked.found && linked.savedValue === linked.value}}"
+                  class="organizer-user-name"
+                >{{linked.nickName}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
+      <view class="sheet-actions">
+        <view class="audit-btn ghost" bindtap="closeOrganizers" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>取消</text></view>
+        <view class="audit-btn primary {{organizerSaving ? 'disabled' : ''}}" bindtap="saveOrganizers" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
+          <text>{{organizerSaving ? '保存中…' : '保存配置'}}</text>
+        </view>
       </view>
     </view>
   </view>

@@ -145,7 +145,7 @@ function checkQrAutoFill() {
   const filled = ctx.applyQrFields(parseQrFields(text, now))
   log(
     ctx.data.form.title === '峨眉山夜爬' &&
-      ctx.data.startLabel === '10月24日 周六' &&
+      ctx.data.startLabel === '10月24日 周六 07:30' &&
       ctx.data.form.distance === '8.5' &&
       ctx.data.form.elevationGain === '700',
     '二维码回填：标题 / 集合时间 / 全程 / 爬升一起填进表单'
@@ -819,6 +819,23 @@ const flow = (async () => {
   )
 
   // 发布
+  let pastStartError = ''
+  try {
+    await api.create({
+      form: {
+        type: 'hiking',
+        title: '过去时间活动',
+        location: '浙江省杭州市 西湖',
+        startTime: Date.now() - 60000,
+        endTime: Date.now() + 3600000,
+        feeMode: 'aa',
+      },
+    })
+  } catch (e) {
+    pastStartError = e && e.message
+  }
+  log(pastStartError === '集合时间必须晚于当前时间', '发布：集合时间早于当前时刻被拒绝')
+
   const created = await step(
     '发布',
     api.create({
@@ -3558,7 +3575,7 @@ function checkHomeShare() {
     `首页分享：两张卡片分别用 5:4 与 1:1 的代码包内品牌图（${friendCard && friendCard.imageUrl} / ${timelineCard && timelineCard.imageUrl}）`
   )
 
-  // 普通模式：搜索 / 玩法 / 卡片入口照旧跳转
+  // 普通模式：广场 / 主办方 / 卡片入口照旧跳转
   calls.length = 0
   homePage.goSquare.call(normalCtx, { currentTarget: { dataset: { type: 'hiking' } } })
   homePage.onCardTap.call(normalCtx, { detail: { id: 'act_home' } })
@@ -3574,7 +3591,9 @@ function checkHomeShare() {
   log(singleCtx.data.singlePage === true, '首页分享：场景值 1154 被识别为朋友圈单页模式')
   calls.length = 0
   homePage.goSquare.call(singleCtx, { currentTarget: { dataset: { type: 'hiking' } } })
-  homePage.onTypeTap.call(singleCtx, { currentTarget: { dataset: { type: 'camping' } } })
+  homePage.onOrganizerTap.call(singleCtx, {
+    currentTarget: { dataset: { occupied: true, slot: 1, name: '主办方' } },
+  })
   homePage.onCardTap.call(singleCtx, { detail: { id: 'act_home' } })
   homePage.goPublish.call(singleCtx)
   homePage.onLocateTap.call(singleCtx)
@@ -3607,8 +3626,10 @@ function checkHardening() {
 
   /* 手机号与昵称 */
   log(
-    cloudJs.indexOf('await phoneFromCode(payload.phoneCode)') > -1 && cloudJs.indexOf('text(payload.phone') === -1,
-    '手机号：云函数只认微信手机号授权 code，不再接受前端传入的号码'
+    cloudJs.indexOf('await phoneFromCode(phoneCode)') > -1 &&
+      cloudJs.indexOf("fail('PHONE_REQUIRED'") > -1 &&
+      cloudJs.indexOf('text(payload.phone,') === -1,
+    '手机号：云函数必须收到微信授权 code，缺少授权码或直接传号码都不能登录'
   )
   log(
     cloudJs.indexOf("if (info.phone !== undefined)") === -1,
@@ -4661,31 +4682,28 @@ function checkTypeIcons() {
     '金刚区：线性图标的描边色统一，功能只靠形状区分'
   )
 
-  // 底色：页面里不再逐格上色，两个页面共用同一块极浅品牌底
+  // 首页已改为主办方坑位；类型图标仍由发布页和广场筛选共用
   log(
-    homeWxml.indexOf('{{item.color}}') === -1 && publishWxml.indexOf('{{item.color}}') === -1,
+    publishWxml.indexOf('{{item.color}}') === -1,
     '金刚区：格子底色不再按类型下发（页面里没有 item.color 上色）'
   )
   const brandTile = (wxss) => (wxss.match(/\.type-icon \{[\s\S]*?\}/) || [''])[0]
   log(
-    brandTile(homeWxss).indexOf('background: var(--brand-soft)') > -1 &&
-      brandTile(publishWxss).indexOf('background: var(--brand-soft)') > -1,
-    '金刚区：首页与发布页的格子共用同一块极浅品牌底色'
+    brandTile(publishWxss).indexOf('background: var(--brand-soft)') > -1,
+    '金刚区：发布页类型格继续使用极浅品牌底色'
   )
   log(
-    homeWxml.indexOf('type-icon-img') > -1 && publishWxml.indexOf('type-icon-img') > -1,
-    '金刚区：首页与发布页渲染的是同一套类型图标'
+    publishWxml.indexOf('type-icon-img') > -1,
+    '金刚区：发布页继续渲染类型图标'
   )
   // 位图自带底色：页面要铺满整格，否则「图里一层底 + 格子一层底」会叠成双层底色
   log(
-    /class="type-icon-img \{\{item\.iconFill/.test(homeWxml) &&
-      /class="type-icon-img \{\{item\.iconFill/.test(publishWxml) &&
-      /\.type-icon-img\.is-fill \{/.test(homeWxss) &&
+    /class="type-icon-img \{\{item\.iconFill/.test(publishWxml) &&
       /\.type-icon-img\.is-fill \{/.test(publishWxss),
     '金刚区：吉祥物位图铺满整格（页面按 iconFill 加 is-fill）'
   )
-  // 位图吃的是代码包里的图片预算：开发者工具那条 IMAGE_AND_AUDIO_LIMIT 判的是**全包图片加总** ≤ 200KB，
-  // 十个类型逐个换下去最容易顶线，这里把总量钉住，超了先在这里红，而不是等到提审
+  // 开发者工具的代码质量检查要求包内图片 / 音频合计不超过 200KB。
+  // 登录页背景体积较大，走云存储文件 ID；本地资源只保留小图标与分享图。
   const walkImages = (dir) =>
     fs.readdirSync(path.join(ROOT, dir)).reduce((acc, name) => {
       const rel = `${dir}/${name}`
@@ -4698,7 +4716,13 @@ function checkTypeIcons() {
   )
   log(
     imageBytes < 200 * 1024,
-    `金刚区：代码包内图片合计 ${Math.round(imageBytes / 1024)}KB（含吉祥物位图），仍在 200KB 预算内`
+    `代码包：本地图片合计 ${Math.round(imageBytes / 1024)}KB，未超过开发者工具 200KB 限制`
+  )
+  const loginModalWxml = read('components/login-modal/index.wxml')
+  log(
+    loginModalWxml.indexOf('/login/login-bg.jpg') > -1 &&
+      loginModalWxml.indexOf('/assets/login-bg.jpg') === -1,
+    '登录页：全屏背景图使用云存储，不占本地图片资源额度'
   )
   // 广场的「活动类型」下拉也是同一批玩法：漏掉它就会出现「首页是线性图标、筛选里还是 emoji」
   log(
@@ -4722,10 +4746,8 @@ function checkTypeIcons() {
   )
   // 图标解码失败要退回 emoji，格子不能空着（原设计文档 6.3.2 的要求）
   log(
-    /binderror="onTypeIconError"/.test(homeWxml) &&
-      /binderror="onTypeIconError"/.test(publishWxml) &&
-      homeWxml.indexOf('type-icon-emoji') > -1,
-    '金刚区：图标加载失败时回退显示 emoji'
+    /binderror="onTypeIconError"/.test(publishWxml) && publishWxml.indexOf('type-icon-emoji') > -1,
+    '金刚区：发布页图标加载失败时回退显示 emoji'
   )
 }
 
@@ -4749,7 +4771,7 @@ function checkUserIcons() {
   const svgs = keys.map((key) => decodeURIComponent(USER_ICONS[key]))
   const typeSvgs = Object.keys(TYPE_ICONS).map((key) => decodeURIComponent(TYPE_ICONS[key]))
 
-  log(keys.length === 12, `「我的」入口：12 个入口图标齐全（当前 ${keys.length} 个）`)
+  log(keys.length === 11, `「我的」入口：11 个入口图标齐全（当前 ${keys.length} 个）`)
   log(
     keys.indexOf('joined') === -1 && keys.indexOf('published') === -1,
     '「我的」入口：重复的参与 / 发布入口图标已删除'

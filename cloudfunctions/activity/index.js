@@ -57,6 +57,7 @@ const {
   coord,
   escapeRegExp,
   memberOf,
+  publicMember,
   publicComment,
   publicNotification,
   publicActivity,
@@ -67,6 +68,7 @@ const {
 const activities = db.collection('activities')
 const users = db.collection('users')
 const banners = db.collection('banners')
+const homeOrganizers = db.collection('home_organizers')
 const feedbacks = db.collection('feedback')
 const auditLogs = db.collection('activity_audits')
 const comments = db.collection('activity_comments')
@@ -96,6 +98,13 @@ const LINE_STATS_LIMIT = 500
 // 「关闭当天可见」与两条自动关闭规则必须共用同一口径
 /** 我的活动一次最多返回的条数（云函数端单次查询上限 100） */
 const MY_LIST_LIMIT = 100
+/** 首页主办方坑位：固定 10 个，每排 5 个 */
+const HOME_ORGANIZER_LIMIT = 10
+/** 每个主办方除主账号外最多再关联 5 个发布账号 */
+const HOME_ORGANIZER_LINK_LIMIT = 5
+const HOME_ORGANIZER_DOC = 'slots'
+/** 主办方坑位查询不到有效用户 ID 时使用这个哨兵，保证返回空列表而不是所有活动 */
+const MISSING_ORGANIZER_OPENID = '__home_organizer_missing__'
 /** 定时关闭一次处理的活动条数（分批处理，与云数据库单次查询上限一致） */
 const CLOSE_BATCH = 100
 /** 默认横幅的历史动作：仅当后台仍保持该动作时，才按最新默认值升级 */
@@ -218,6 +227,13 @@ function buildConditions(query) {
     // locationAddress 不展示，但要能被搜到：用户按「双流」这类地址关键词也能找到活动
     conditions.push(_.or([{ title: reg }, { location: reg }, { locationAddress: reg }]))
   }
+  // 首页点某个主办方坑位进入广场：只按该坑位配置的用户筛选，用户 ID 不经过客户端
+  if (query.hostSlot) {
+    const openids = Array.isArray(query.organizerOpenids) ? query.organizerOpenids : []
+    conditions.push({
+      'organizer.openid': openids.length ? _.in(openids) : MISSING_ORGANIZER_OPENID,
+    })
+  }
   return conditions
 }
 
@@ -301,6 +317,160 @@ function attachBannerImageUrls(rows) {
   })
 }
 
+/* ------------------------------ 首页主办方 ------------------------------ */
+
+/**
+ * 后台只维护数字用户 ID，首页展示所需的昵称 / 头像由服务端补齐。
+ * 配置集合不存在、文档还没创建或读取失败时按「没有配置」处理，首页仍能正常打开。
+ */
+function normalizeOrganizerUserIds(input) {
+  const source = Array.isArray(input) ? input : []
+  return Array.from({ length: HOME_ORGANIZER_LIMIT }, (_, index) => {
+    const userId = Number(source[index])
+    return Number.isSafeInteger(userId) && userId > 0 ? userId : 0
+  })
+}
+
+function normalizeLinkedUserIds(input) {
+  const source = Array.isArray(input) ? input : []
+  return Array.from({ length: HOME_ORGANIZER_LIMIT }, (_, index) => {
+    const slot = Array.isArray(source[index]) ? source[index] : []
+    return Array.from({ length: HOME_ORGANIZER_LINK_LIMIT }, (_, linkedIndex) => {
+      const userId = Number(slot[linkedIndex])
+      return Number.isSafeInteger(userId) && userId > 0 ? userId : 0
+    }).filter(Boolean)
+  })
+}
+
+async function homeOrganizerConfig() {
+  try {
+    const res = await homeOrganizers.doc(HOME_ORGANIZER_DOC).get()
+    const data = (res && res.data) || {}
+    return {
+      userIds: normalizeOrganizerUserIds(data.userIds),
+      linkedUserIds: normalizeLinkedUserIds(data.linkedUserIds),
+    }
+  } catch (e) {
+    return {
+      userIds: normalizeOrganizerUserIds([]),
+      linkedUserIds: normalizeLinkedUserIds([]),
+    }
+  }
+}
+
+async function usersByUserId(userIds) {
+  const ids = Array.from(
+    new Set(
+      (userIds || []).filter((value) => Number.isSafeInteger(value) && value > 0)
+    )
+  ).slice(0, HOME_ORGANIZER_LIMIT * (HOME_ORGANIZER_LINK_LIMIT + 1))
+  if (!ids.length) return {}
+  try {
+    const res = await users
+      .where({ userId: _.in(ids) })
+      .limit(HOME_ORGANIZER_LIMIT * (HOME_ORGANIZER_LINK_LIMIT + 1))
+      .get()
+    return (res.data || []).reduce((map, user) => {
+      if (user && user.userId) map[user.userId] = user
+      return map
+    }, {})
+  } catch (e) {
+    console.warn('[activity] 主办方用户资料读取失败，本次按空坑位处理', e)
+    return {}
+  }
+}
+
+/** 首页公开数据：每个有效用户只带昵称头像与原始坑位号，身份字段留在服务端。 */
+async function publicHomeOrganizers() {
+  const config = await homeOrganizerConfig()
+  const userIds = config.userIds
+  const byUserId = await usersByUserId(userIds)
+  const seen = {}
+  const rows = []
+  userIds.forEach((userId, index) => {
+    if (!userId || seen[userId] || !byUserId[userId]) return
+    seen[userId] = true
+    const member = publicMember(byUserId[userId])
+    rows.push(Object.assign(member, { slot: index + 1 }))
+  })
+  if (!rows.length) return rows
+
+  const media = await resolveMedia(rows.map((item) => item.avatarUrl))
+  rows.forEach((item) => {
+    const entry = media[item.avatarUrl]
+    if (entry && entry.url) item.avatarUrl = entry.url
+  })
+  return rows
+}
+
+/** 广场筛选只认坑位号：服务端从配置里换成主账号与关联账号的 openid。 */
+async function homeOrganizerOpenidsAt(slot) {
+  const index = Math.floor(num(slot, 0)) - 1
+  if (index < 0 || index >= HOME_ORGANIZER_LIMIT) return []
+  const config = await homeOrganizerConfig()
+  const userIds = [config.userIds[index]].concat(config.linkedUserIds[index])
+  const byUserId = await usersByUserId(userIds)
+  return Array.from(
+    new Set(
+      userIds
+        .map((userId) => byUserId[userId])
+        .filter(Boolean)
+        .map((user) => text(user.openid, LIMITS.url))
+        .filter(Boolean)
+    )
+  )
+}
+
+/** 主办方主页顶部资料：按坑位返回公开昵称头像、背景图与布尔编辑权限，身份字段不下发。 */
+async function organizerProfile(event, openid) {
+  const slot = Math.floor(num(event && event.hostSlot, 0))
+  if (slot <= 0 || slot > HOME_ORGANIZER_LIMIT) return null
+  const config = await homeOrganizerConfig()
+  const userId = config.userIds[slot - 1]
+  if (!userId) return null
+  const byUserId = await usersByUserId([userId])
+  const user = byUserId[userId]
+  if (!user) return null
+
+  const member = publicMember(user)
+  const cover = text(user.organizerCover, LIMITS.url)
+  const media = await resolveMedia([member.avatarUrl, cover])
+  const avatarMedia = media[member.avatarUrl]
+  const coverMedia = media[cover]
+  if (avatarMedia && avatarMedia.url) member.avatarUrl = avatarMedia.url
+  return Object.assign(member, {
+    slot,
+    coverUrl: (coverMedia && coverMedia.url) || cover,
+    isOwner: !!openid && user.openid === openid,
+  })
+}
+
+/** 只允许当前坑位对应的主办方修改自己的主页背景；空背景可用于恢复默认头像效果。 */
+async function updateOrganizerCover(event, openid) {
+  if (!openid) return fail('UNAUTHORIZED', '请先登录')
+  const user = await findUser(openid)
+  if (!user) return fail('UNAUTHORIZED', '请先登录')
+  const slot = Math.floor(num(event && event.hostSlot, 0))
+  if (slot <= 0 || slot > HOME_ORGANIZER_LIMIT) return fail('INVALID_PARAM', '主办方主页不存在')
+  const config = await homeOrganizerConfig()
+  if (config.userIds[slot - 1] !== user.userId) {
+    return fail('FORBIDDEN', '只能编辑自己的主办方主页')
+  }
+
+  const cover = text(event && event.cover, LIMITS.url)
+  if (cover && !/^(cloud:\/\/|https:\/\/)/i.test(cover)) {
+    return fail('INVALID_PARAM', '背景图地址无效，请重新选择')
+  }
+  if (cover.indexOf('cloud://') === 0) {
+    const states = await inspectFiles([cover])
+    if (states[cover] === MISSING) return fail('UPLOAD_FAILED', '背景图文件不存在，请重新上传')
+  }
+
+  await users.doc(user._id).update({ data: { organizerCover: cover } })
+  const media = await resolveMedia([cover])
+  return { coverUrl: (media[cover] && media[cover].url) || cover }
+}
+
 /* ------------------------------ 首页 / 列表 ------------------------------ */
 
 /**
@@ -358,11 +528,12 @@ async function home(event, openid) {
   const where = cityWhere(event.city)
 
   // 横幅查询与活动查询一起发，不再串在 ensureBanners 后面（横幅为空时的补写见下）
-  const [bannerRes, hotRes, newestRes, countRes] = await Promise.all([
+  const [bannerRes, hotRes, newestRes, countRes, organizerSlots] = await Promise.all([
     banners.orderBy('sort', 'asc').limit(20).get(),
     whereToQuery(where).orderBy('joinedCount', 'desc').limit(6).get(),
     whereToQuery(where).orderBy('createTime', 'desc').limit(3).get(),
     whereToQuery(where).count(),
+    publicHomeOrganizers(),
   ])
 
   // 只有全新的空集合环境才会走写入分支，正常环境这里直接返回上面查到的横幅
@@ -381,6 +552,7 @@ async function home(event, openid) {
     banners: bannerRows.map(withId),
     hotList,
     newestList,
+    organizerSlots,
     empty: countRes.total === 0,
   }
 }
@@ -396,7 +568,12 @@ async function list(event, openid) {
   const pageIndex = Math.max(0, Math.floor(num(query.pageIndex, 0)))
   const pageSize = limitRange(Math.floor(num(query.pageSize, DEFAULT_PAGE_SIZE)), 1, MAX_PAGE_SIZE)
   const start = pageIndex * pageSize
-  const conditions = buildConditions(query)
+  let organizerOpenids = []
+  if (query.hostSlot) {
+    organizerOpenids = await homeOrganizerOpenidsAt(query.hostSlot)
+    query.hostSlot = Math.floor(num(query.hostSlot, 0))
+  }
+  const conditions = buildConditions(Object.assign({}, query, { organizerOpenids }))
 
   // 未关闭桶额外排除「集合时间已过」的活动：定时任务没跑时它们也不会被当成还在招募
   const openedWhere = whereFrom(conditions.concat([notClosedWhere(), notPastStartWhere()]))
@@ -670,6 +847,9 @@ async function create(event, openid) {
 
   const normalized = normalizeForm((event && event.form) || {})
   if (normalized.error) return normalized.error
+  if (normalized.data.startTime <= Date.now()) {
+    return fail('INVALID_PARAM', '集合时间必须晚于当前时间')
+  }
 
   const uploadError = await checkUploads(normalized.data)
   if (uploadError) return uploadError
@@ -875,7 +1055,10 @@ async function login(event, openid) {
   const profileNick = text(profile.nickName, LIMITS.nickName)
   // 手机号只能由微信手机号授权 code 在服务端兑换，不接受前端直接传入的号码
   // （前端传值等于任何人拿到 AppID 就能给自己的账号写任意手机号）
-  const phone = await phoneFromCode(payload.phoneCode)
+  const phoneCode = text(payload.phoneCode, 256)
+  if (!phoneCode) return fail('PHONE_REQUIRED', '请先授权手机号后登录')
+  const phone = await phoneFromCode(phoneCode)
+  if (!phone) return fail('PHONE_AUTH_FAILED', '手机号授权失败，请重试')
   // 昵称对外可见：前端直接带上来的昵称同样要过一遍内容安全，不能因为叫「登录」就跳过
   if (profileNick) {
     const checked = await checkText(profileNick, openid)
@@ -1481,7 +1664,10 @@ async function deleteAccount(event, openid) {
   if (!userDoc) return fail('UNAUTHORIZED', '请先登录')
 
   const published = await removeOwnActivities(openid)
-  const files = await removeCloudFiles(published.fileIDs)
+  const accountFiles = []
+  const organizerCover = String(userDoc.organizerCover || '')
+  if (organizerCover.indexOf('cloud://') === 0) accountFiles.push(organizerCover)
+  const files = await removeCloudFiles(published.fileIDs.concat(accountFiles))
   const joins = await removeJoinRecords(openid)
   const commentsRemoved = await removeComments(openid, published.activityIds)
   const notificationsRemoved = await removeNotifications(openid, published.activityIds)
@@ -1726,6 +1912,8 @@ async function listLineStats() {
 
 const ACTIONS = {
   home,
+  organizer: organizerProfile,
+  updateOrganizerCover,
   list,
   detail,
   lines: listLines,

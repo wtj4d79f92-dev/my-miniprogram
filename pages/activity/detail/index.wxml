@@ -373,15 +373,39 @@
       </view>
       <view class="share-list">
         <button class="share-item" open-type="share" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
-          <text class="share-emoji">💬</text>
+          <image
+            wx:if="{{!shareIconErrors.friend}}"
+            class="share-icon"
+            src="{{shareIcons.friend}}"
+            mode="aspectFit"
+            data-key="friend"
+            binderror="onShareIconError"
+          ></image>
+          <text wx:else class="share-icon share-icon-emoji">💬</text>
           <text class="share-label">微信好友</text>
         </button>
         <view class="share-item" bindtap="onTapShareTimeline" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
-          <text class="share-emoji">🌤</text>
+          <image
+            wx:if="{{!shareIconErrors.timeline}}"
+            class="share-icon"
+            src="{{shareIcons.timeline}}"
+            mode="aspectFit"
+            data-key="timeline"
+            binderror="onShareIconError"
+          ></image>
+          <text wx:else class="share-icon share-icon-emoji">🌤</text>
           <text class="share-label">朋友圈</text>
         </view>
         <view class="share-item" bindtap="onSharePoster" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
-          <text class="share-emoji">🖼</text>
+          <image
+            wx:if="{{!shareIconErrors.poster}}"
+            class="share-icon"
+            src="{{shareIcons.poster}}"
+            mode="aspectFit"
+            data-key="poster"
+            binderror="onShareIconError"
+          ></image>
+          <text wx:else class="share-icon share-icon-emoji">🖼</text>
           <text class="share-label">生成分享图片</text>
         </view>
       </view>

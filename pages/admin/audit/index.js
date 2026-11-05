@@ -6,6 +6,30 @@ const { formatCardDate } = require('../../../utils/util')
 const ui = require('../../../utils/ui')
 
 const PAGE_SIZE = 20
+const ORGANIZER_LINK_LIMIT = 5
+
+function organizerInputState(slots) {
+  return (slots || []).map((item) => {
+    const linkedIds = Array.isArray(item.linkedUserIds) ? item.linkedUserIds : []
+    const linkedAccounts = Array.isArray(item.linkedAccounts) ? item.linkedAccounts : []
+    return {
+      slot: item.slot,
+      value: item.userId ? String(item.userId) : '',
+      savedValue: item.userId ? String(item.userId) : '',
+      linked: Array.from({ length: ORGANIZER_LINK_LIMIT }, (_, index) => {
+        const userId = linkedIds[index] || 0
+        const account = linkedAccounts.filter((row) => row.userId === userId)[0] || null
+        return {
+          key: index,
+          value: userId ? String(userId) : '',
+          savedValue: userId ? String(userId) : '',
+          nickName: (account && account.nickName) || '',
+          found: !!(account && account.found),
+        }
+      }),
+    }
+  })
+}
 
 /** 常用驳回原因：点一下填入输入框，可继续修改 */
 const REJECT_PRESETS = [
@@ -118,6 +142,12 @@ Page({
     showReject: false,
     rejectRemark: '',
     rejectPresets: REJECT_PRESETS,
+    // 首页主办方坑位：后台只维护 10 个用户 ID，昵称头像由接口回填
+    showOrganizers: false,
+    organizerSlots: [],
+    organizerUserIds: [],
+    organizerLoading: false,
+    organizerSaving: false,
   },
 
   onLoad() {
@@ -304,6 +334,86 @@ Page({
 
   goBack() {
     wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/usercenter/index' }) })
+  },
+
+  /* ------------------------------ 首页主办方坑位 ------------------------------ */
+
+  openOrganizers() {
+    if (this.data.organizerLoading) return
+    this.setData({ organizerLoading: true })
+    api
+      .adminHomeOrganizers()
+      .then((res) => {
+        const slots = (res && res.slots) || []
+        this.setData({
+          showOrganizers: true,
+          organizerSlots: slots,
+          organizerUserIds: organizerInputState(slots),
+          organizerLoading: false,
+        })
+        return null
+      })
+      .catch((err) => {
+        this.setData({ organizerLoading: false })
+        ui.toast((err && err.message) || '主办方配置加载失败')
+      })
+  },
+
+  closeOrganizers() {
+    if (this.data.organizerSaving) return
+    this.setData({ showOrganizers: false })
+  },
+
+  onOrganizerIdInput(e) {
+    const index = Number(e.currentTarget.dataset.index)
+    if (!Number.isInteger(index) || index < 0 || index >= 10) return
+    this.setData({ [`organizerUserIds[${index}].value`]: String(e.detail.value || '').trim() })
+  },
+
+  onOrganizerLinkedIdInput(e) {
+    const slotIndex = Number(e.currentTarget.dataset.slotIndex)
+    const linkIndex = Number(e.currentTarget.dataset.linkIndex)
+    if (
+      !Number.isInteger(slotIndex) ||
+      slotIndex < 0 ||
+      slotIndex >= 10 ||
+      !Number.isInteger(linkIndex) ||
+      linkIndex < 0 ||
+      linkIndex >= ORGANIZER_LINK_LIMIT
+    ) {
+      return
+    }
+    this.setData({
+      [`organizerUserIds[${slotIndex}].linked[${linkIndex}].value`]: String(
+        e.detail.value || ''
+      ).trim(),
+    })
+  },
+
+  saveOrganizers() {
+    if (this.data.organizerSaving) return
+    this.setData({ organizerSaving: true })
+    api
+      .adminSaveHomeOrganizers({
+        userIds: this.data.organizerUserIds.map((item) => item.value),
+        linkedUserIds: this.data.organizerUserIds.map((item) =>
+          item.linked.map((linked) => linked.value)
+        ),
+      })
+      .then((res) => {
+        const slots = (res && res.slots) || []
+        this.setData({
+          organizerSlots: slots,
+          organizerUserIds: organizerInputState(slots),
+          organizerSaving: false,
+        })
+        ui.toast('主办方坑位已保存', 'success')
+        return null
+      })
+      .catch((err) => {
+        this.setData({ organizerSaving: false })
+        ui.toast((err && err.message) || '保存失败，请重试')
+      })
   },
 
   /* ------------------------------ 图片兜底 ------------------------------ */

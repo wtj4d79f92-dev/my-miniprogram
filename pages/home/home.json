@@ -9,6 +9,7 @@
     "city-picker": "/components/city-picker/index",
     "login-modal": "/components/login-modal/index",
     "activity-card": "/components/activity-card/index",
-    "empty-state": "/components/empty-state/index"
+    "empty-state": "/components/empty-state/index",
+    "avatar": "/components/avatar/index"
   }
 }

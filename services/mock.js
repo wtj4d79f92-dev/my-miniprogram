@@ -19,6 +19,10 @@ const MOCK_COMMENT_MAP = 'mock_comment_map'
 const MOCK_NOTIFY_LIST = 'mock_notifications'
 // 用户沉淀的线路强度：数组，每项一个中心词（与云端 line_stats 集合同一套字段口径）
 const MOCK_LINE_STATS = 'mock_line_stats'
+// 首页主办方坑位：主账号 10 个，对应坑位可再关联最多 5 个发布账号
+const MOCK_HOME_ORGANIZERS = 'mock_home_organizers'
+const HOME_ORGANIZER_LIMIT = 10
+const HOME_ORGANIZER_LINK_LIMIT = 5
 /** 关闭当天的判定精度：自然日（当天 00:00 之后关闭的活动当天还留在广场） */
 const DAY_MS = 86400000
 
@@ -62,15 +66,15 @@ const SEEDS = [
 
 /** Mock 用户池：作为活动发起人 / 报名成员 */
 const MOCK_USERS = [
-  { openid: 'mock_u_1', nickName: '山野阿宽', avatarColor: '#4ECDC4', avatarText: '山' },
-  { openid: 'mock_u_2', nickName: '小满去爬山', avatarColor: '#FF8E72', avatarText: '满' },
-  { openid: 'mock_u_3', nickName: '阿哲不卷了', avatarColor: '#45B7D1', avatarText: '哲' },
-  { openid: 'mock_u_4', nickName: '柠檬骑行记', avatarColor: '#F6D365', avatarText: '柠' },
-  { openid: 'mock_u_5', nickName: '周末不宅家', avatarColor: '#00CDAC', avatarText: '周' },
-  { openid: 'mock_u_6', nickName: '老K的球局', avatarColor: '#FF7D00', avatarText: 'K' },
-  { openid: 'mock_u_7', nickName: '一只露营猫', avatarColor: '#A8DADC', avatarText: '猫' },
-  { openid: 'mock_u_8', nickName: '跑者小鹿', avatarColor: '#FA709A', avatarText: '鹿' },
-  { openid: 'mock_u_9', nickName: '徒步的菜菜', avatarColor: '#44A08D', avatarText: '菜' },
+  { openid: 'mock_u_1', userId: 1001, nickName: '山野阿宽', avatarColor: '#4ECDC4', avatarText: '山' },
+  { openid: 'mock_u_2', userId: 1002, nickName: '小满去爬山', avatarColor: '#FF8E72', avatarText: '满' },
+  { openid: 'mock_u_3', userId: 1003, nickName: '阿哲不卷了', avatarColor: '#45B7D1', avatarText: '哲' },
+  { openid: 'mock_u_4', userId: 1004, nickName: '柠檬骑行记', avatarColor: '#F6D365', avatarText: '柠' },
+  { openid: 'mock_u_5', userId: 1005, nickName: '周末不宅家', avatarColor: '#00CDAC', avatarText: '周' },
+  { openid: 'mock_u_6', userId: 1006, nickName: '老K的球局', avatarColor: '#FF7D00', avatarText: 'K' },
+  { openid: 'mock_u_7', userId: 1007, nickName: '一只露营猫', avatarColor: '#A8DADC', avatarText: '猫' },
+  { openid: 'mock_u_8', userId: 1008, nickName: '跑者小鹿', avatarColor: '#FA709A', avatarText: '鹿' },
+  { openid: 'mock_u_9', userId: 1009, nickName: '徒步的菜菜', avatarColor: '#44A08D', avatarText: '菜' },
 ]
 
 const DESCS = [
@@ -83,6 +87,124 @@ const DESCS = [
 
 function currentUser() {
   return getStorage(KEYS.user, null)
+}
+
+function knownUsers() {
+  const list = MOCK_USERS.slice()
+  const current = currentUser()
+  if (current && current.openid) list.unshift(current)
+  allActivities().forEach((activity) => {
+    const organizer = activity && activity.organizer
+    if (organizer && organizer.openid) list.push(organizer)
+  })
+  const seen = {}
+  return list.filter((user) => {
+    if (!user || !user.openid || seen[user.openid]) return false
+    seen[user.openid] = true
+    return true
+  })
+}
+
+function userByUserId(userId) {
+  const value = Number(userId)
+  if (!Number.isSafeInteger(value) || value <= 0) return null
+  return knownUsers().filter((user) => Number(user.userId) === value)[0] || null
+}
+
+function normalizeOrganizerUserIds(input) {
+  const source = Array.isArray(input) ? input : []
+  return Array.from({ length: HOME_ORGANIZER_LIMIT }, (_, index) => {
+    const value = Number(source[index])
+    return Number.isSafeInteger(value) && value > 0 ? value : 0
+  })
+}
+
+function normalizeLinkedUserIds(input) {
+  const slots = Array.isArray(input) ? input : []
+  return Array.from({ length: HOME_ORGANIZER_LIMIT }, (_, index) => {
+    const source = Array.isArray(slots[index]) ? slots[index] : []
+    return Array.from({ length: HOME_ORGANIZER_LINK_LIMIT }, (_, linkedIndex) => {
+      const value = Number(source[linkedIndex])
+      return Number.isSafeInteger(value) && value > 0 ? value : 0
+    }).filter(Boolean)
+  })
+}
+
+function homeOrganizerConfig() {
+  const stored = getStorage(MOCK_HOME_ORGANIZERS, [])
+  // 旧缓存直接存 10 个主账号 ID，新的结构补上 linkedUserIds，读取时保持兼容
+  const source = Array.isArray(stored) ? { userIds: stored } : stored || {}
+  return {
+    userIds: normalizeOrganizerUserIds(source.userIds),
+    linkedUserIds: normalizeLinkedUserIds(source.linkedUserIds),
+  }
+}
+
+function homeOrganizerUserIds() {
+  return homeOrganizerConfig().userIds
+}
+
+function homeOrganizerLinkedUserIds() {
+  return homeOrganizerConfig().linkedUserIds
+}
+
+function saveHomeOrganizerConfig(input) {
+  const source = input || {}
+  const config = {
+    userIds: normalizeOrganizerUserIds(source.userIds),
+    linkedUserIds: normalizeLinkedUserIds(source.linkedUserIds),
+  }
+  setStorage(MOCK_HOME_ORGANIZERS, config)
+  return config
+}
+
+function saveHomeOrganizerUserIds(input) {
+  const source = Array.isArray(input) ? input : []
+  const userIds = Array.from({ length: HOME_ORGANIZER_LIMIT }, (_, index) => {
+    const value = Number(source[index])
+    return Number.isSafeInteger(value) && value > 0 ? value : 0
+  })
+  setStorage(MOCK_HOME_ORGANIZERS, userIds)
+  return userIds
+}
+
+function homeOrganizerSlots() {
+  const seen = {}
+  const config = homeOrganizerConfig()
+  return config.userIds.map((userId, index) => {
+    const user = userId && !seen[userId] ? userByUserId(userId) : null
+    if (userId) seen[userId] = true
+    return {
+      slot: index + 1,
+      userId,
+      linkedUserIds: config.linkedUserIds[index],
+      found: !!user,
+      user,
+    }
+  })
+}
+
+function homeOrganizerOpenidAt(slot) {
+  const index = Math.floor(Number(slot) || 0) - 1
+  if (index < 0 || index >= HOME_ORGANIZER_LIMIT) return ''
+  const userId = homeOrganizerUserIds()[index]
+  const user = userByUserId(userId)
+  return (user && user.openid) || ''
+}
+
+function homeOrganizerOpenidsAt(slot) {
+  const index = Math.floor(Number(slot) || 0) - 1
+  if (index < 0 || index >= HOME_ORGANIZER_LIMIT) return []
+  const config = homeOrganizerConfig()
+  const userIds = [config.userIds[index]].concat(config.linkedUserIds[index])
+  return Array.from(
+    new Set(
+      userIds
+        .map((userId) => userByUserId(userId))
+        .filter(Boolean)
+        .map((user) => user.openid)
+    )
+  )
 }
 
 function normalizeCityName(value) {
@@ -373,6 +495,9 @@ module.exports = {
   MOCK_COMMENT_MAP,
   MOCK_NOTIFY_LIST,
   MOCK_LINE_STATS,
+  MOCK_HOME_ORGANIZERS,
+  HOME_ORGANIZER_LIMIT,
+  HOME_ORGANIZER_LINK_LIMIT,
   DEFAULT_BANNERS,
   buildBaseActivities,
   allActivities,
@@ -391,6 +516,14 @@ module.exports = {
   saveLineStats,
   learnLineStat,
   publicLineStat,
+  userByUserId,
+  homeOrganizerConfig,
+  homeOrganizerSlots,
+  homeOrganizerOpenidAt,
+  homeOrganizerOpenidsAt,
+  homeOrganizerLinkedUserIds,
+  saveHomeOrganizerConfig,
+  saveHomeOrganizerUserIds,
   memberOf,
   cityFilter,
   normalizeCityName,

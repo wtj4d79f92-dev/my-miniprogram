@@ -5,6 +5,7 @@
     "pages/usercenter/index",
     "pages/activity/detail/index",
     "pages/activity/publish/index",
+    "pages/organizer/home/index",
     "pages/user/activity-list/index",
     "pages/message/index",
     "pages/feedback/index",

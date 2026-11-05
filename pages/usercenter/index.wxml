@@ -19,7 +19,7 @@
           </view>
           <text class="user-arrow">›</text>
         </view>
-        <view wx:if="{{!user}}" class="btn-primary login-btn" bindtap="onLoginTap" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>微信一键登录</text></view>
+        <view wx:if="{{!user}}" class="btn-primary login-btn" bindtap="onLoginTap" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>手机号快捷登录</text></view>
 
         <!-- 统计数并入用户卡片：点击统计项进入对应活动列表 -->
         <view class="stats">
@@ -48,15 +48,6 @@
           <text wx:else class="entry-icon entry-icon-emoji">🔔</text>
           <text class="entry-title">消息</text>
           <text wx:if="{{unreadCount}}" class="entry-badge">{{unreadCount > 99 ? '99+' : unreadCount}}</text>
-          <text class="entry-arrow">›</text>
-        </view>
-        <view wx:if="{{user && !user.phone}}" class="entry" bindtap="openPhone" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
-          <image wx:if="{{!iconErrorMap.phone}}" class="entry-icon" src="{{entryIcons.phone}}" mode="aspectFit" data-key="phone" binderror="onEntryIconError" />
-          <text wx:else class="entry-icon entry-icon-emoji">📱</text>
-          <view class="entry-main">
-            <text class="entry-title">绑定手机号（可选）</text>
-            <text class="entry-desc">用于找回账号与活动联系</text>
-          </view>
           <text class="entry-arrow">›</text>
         </view>
         <view class="entry" bindtap="goPublish" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
@@ -173,53 +164,6 @@
       </view>
       <view class="btn-primary profile-save" bindtap="saveProfile" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>{{saving ? '保存中…' : '保存'}}</text></view>
       <view class="btn-ghost profile-skip" bindtap="closeProfile" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>暂不完善</text></view>
-    </view>
-  </view>
-
-  <!-- 手机号绑定弹窗 -->
-  <view wx:if="{{showPhone}}">
-    <view class="mask" bindtap="closePhone"></view>
-    <view class="dialog phone-dialog">
-      <view class="profile-head">
-        <text class="profile-title">绑定手机号（可选）</text>
-        <text class="sheet-close" bindtap="closePhone">✕</text>
-      </view>
-      <block wx:if="{{useMock}}">
-        <input
-          class="login-input"
-          type="number"
-          maxlength="11"
-          placeholder="请输入 11 位手机号"
-          value="{{phoneInput}}"
-          bindinput="onPhoneInput"
-        />
-      </block>
-      <view class="phone-agree">
-        <view class="checkbox {{phoneAgreed ? 'checked' : ''}}" bindtap="togglePhoneAgree"><text wx:if="{{phoneAgreed}}">✓</text></view>
-        <text class="agree-text" bindtap="togglePhoneAgree">我已阅读并同意</text>
-        <text class="agree-link" catchtap="openService">《用户服务协议》</text>
-        <text class="agree-text">和</text>
-        <text class="agree-link" catchtap="openPrivacy">《隐私政策》</text>
-      </view>
-      <block wx:if="{{useMock}}">
-        <view
-          class="btn-primary phone-btn {{phoneAgreed ? '' : 'disabled'}}"
-          bindtap="submitPhoneMock"
-          hover-class="btn-press"
-          hover-start-time="0"
-          hover-stay-time="80"
-        ><text>{{binding ? '绑定中…' : '绑定手机号'}}</text></view>
-      </block>
-      <block wx:else>
-        <button
-          class="btn-primary phone-btn {{phoneAgreed ? '' : 'disabled'}}"
-          open-type="getPhoneNumber"
-          bindgetphonenumber="onGetPhoneNumber"
-          hover-class="btn-press"
-          hover-start-time="0"
-          hover-stay-time="80"
-        ><text>{{binding ? '绑定中…' : '绑定手机号'}}</text></button>
-      </block>
     </view>
   </view>
 

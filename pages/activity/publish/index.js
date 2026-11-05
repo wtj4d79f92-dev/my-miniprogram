@@ -7,7 +7,7 @@ const {
   supportsTags,
   supportsMetrics,
 } = require('../../../utils/dict')
-const { formatCardDate, startOfDay, addDays } = require('../../../utils/util')
+const { formatCardDateTime, startOfDay, addDays } = require('../../../utils/util')
 const loginBehavior = require('../../../behaviors/login-behavior')
 const ui = require('../../../utils/ui')
 const config = require('../../../services/config')
@@ -27,6 +27,13 @@ const QR_OCR_WAIT = 2500
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** 取某一天默认的返程时刻：当天 18:00 */
+function defaultReturnTime(dateTs) {
+  const d = new Date(dateTs)
+  d.setHours(18, 0, 0, 0)
+  return d.getTime()
 }
 
 /** 类型网格的选中态预先算好：WXML 表达式不支持 indexOf。 */
@@ -116,9 +123,11 @@ Page({
   onLoad(options) {
     const app = getApp()
     const today = startOfDay(Date.now())
-    const startTime = addDays(today, 1)
-    // 新建活动默认当天往返；返程时间被用户主动修改前，继续跟随集合日期
-    const endTime = startTime
+    const defaultStart = new Date(addDays(today, 1))
+    defaultStart.setHours(8, 0, 0, 0)
+    const startTime = defaultStart.getTime()
+    // 新建活动默认当天往返；返程时间被用户主动修改前，跟随集合日期并使用 18:00
+    const endTime = defaultReturnTime(startTime)
     const editId = (options && options.id) || ''
     // 用户是否自己改过这些字段：OCR 只填没被用户动过的，重传二维码时可更新上一次 OCR 的值；
     // 编辑已有活动时一律按「已改过」处理，不让截图改掉原活动的标题 / 日期
@@ -131,8 +140,8 @@ Page({
       user: app.globalData.user,
       'form.startTime': startTime,
       'form.endTime': endTime,
-      startLabel: formatCardDate(startTime),
-      endLabel: formatCardDate(endTime),
+      startLabel: formatCardDateTime(startTime),
+      endLabel: formatCardDateTime(endTime),
     })
     if (editId) {
       this.setData({ editId, pageTitle: '编辑活动', submitText: '重新提交审核' })
@@ -263,8 +272,8 @@ Page({
             active: tags.indexOf(item.key) > -1,
           })),
           descCount: desc.length,
-          startLabel: formatCardDate(raw.startTime),
-          endLabel: raw.endTime ? formatCardDate(raw.endTime) : '',
+          startLabel: formatCardDateTime(raw.startTime),
+          endLabel: raw.endTime ? formatCardDateTime(raw.endTime) : '',
           // 首发时已勾选过免责协议，同一份内容的修改重提不再重复要求勾选
           agreed: true,
         })
@@ -502,7 +511,10 @@ Page({
     this._dateField = field
     modal.open(isStart ? form.startTime : form.endTime, {
       title: isStart ? '选择集合时间' : '选择返程时间',
-      minTs: isStart ? startOfDay(Date.now()) : form.startTime,
+      minTs: isStart ? Date.now() : form.startTime,
+      withTime: true,
+      minTimeMessage: isStart ? '集合时间必须晚于当前时间' : '返程时间不能早于集合时间',
+      minTimeInclusive: !isStart,
     })
   },
 
@@ -511,13 +523,18 @@ Page({
     const form = this.data.form
     if (this._dateField === 'startTime') {
       this._startTouched = true
-      // 用户尚未单独选择返程日期时默认当天往返；已单独选择时只保证不早于集合时间
-      const endTime = this._endTouched && form.endTime && form.endTime >= timestamp ? form.endTime : timestamp
+      // 未手动改返程时始终跟随集合日期并使用默认 18:00；已单独选择时只保证不早于集合时间
+      const endTime =
+        !this._endTouched
+          ? defaultReturnTime(timestamp)
+          : form.endTime && form.endTime >= timestamp
+            ? form.endTime
+            : timestamp
       this.setData({
         'form.startTime': timestamp,
-        startLabel: formatCardDate(timestamp),
+        startLabel: formatCardDateTime(timestamp),
         'form.endTime': endTime,
-        endLabel: formatCardDate(endTime),
+        endLabel: formatCardDateTime(endTime),
         'errors.startTime': '',
         'errors.endTime': '',
       })
@@ -526,7 +543,7 @@ Page({
     this._endTouched = true
     this.setData({
       'form.endTime': timestamp,
-      endLabel: formatCardDate(timestamp),
+      endLabel: formatCardDateTime(timestamp),
       'errors.endTime': '',
     })
   },
@@ -722,15 +739,15 @@ Page({
       const startTime = Number(data.startTime)
       if (startTime && startTime !== form.startTime) {
         patch['form.startTime'] = startTime
-        patch.startLabel = formatCardDate(startTime)
+        patch.startLabel = formatCardDateTime(startTime)
         patch['errors.startTime'] = ''
         if (!this._endTouched) {
-          patch['form.endTime'] = startTime
-          patch.endLabel = formatCardDate(startTime)
+          const endTime = defaultReturnTime(startTime)
+          patch['form.endTime'] = endTime
+          patch.endLabel = formatCardDateTime(endTime)
           patch['errors.endTime'] = ''
         }
-        const clock = data.clockText ? ` ${data.clockText}` : ''
-        filled.push(`集合时间 ${formatCardDate(startTime)}${clock}`)
+        filled.push(`集合时间 ${formatCardDateTime(startTime)}`)
       }
     }
 
@@ -839,6 +856,7 @@ Page({
     if (!normalizeActivityTypes(form).length) errors.type = '请至少选择一个活动类型'
     if (!String(form.title).trim()) errors.title = '请填写活动标题'
     if (!form.startTime) errors.startTime = '请选择集合时间'
+    else if (form.startTime <= Date.now()) errors.startTime = '集合时间必须晚于当前时间'
     if (!form.endTime) errors.endTime = '请选择返程时间'
     if (form.startTime && form.endTime && form.endTime < form.startTime) errors.endTime = '返程时间不能早于集合时间'
     if (!String(form.location).trim()) errors.location = '请填写集合地点'

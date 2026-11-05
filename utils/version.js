@@ -6,7 +6,7 @@ const { TEXTS } = require('./dict')
  */
 const APP_VERSION = Object.freeze({
   name: TEXTS.appName,
-  number: '1.6.0',
+  number: '1.6.1',
 })
 
 /** 统一版本展示格式，兼容版本号是否手工填写了前缀 v */

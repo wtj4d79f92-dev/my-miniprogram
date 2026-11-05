@@ -193,58 +193,54 @@
   color: rgba(255, 255, 255, 0.92);
 }
 
-.type-grid {
+.organizer-grid {
   display: flex;
   flex-wrap: wrap;
-  padding: 24rpx 12rpx 8rpx;
+  padding: 26rpx 10rpx 10rpx;
 }
 
-.type-item {
+.organizer-item {
   /* 百分比宽度在部分机型会被向上取整，5×20% 溢出导致第 5 个换行，这里留 1px 余量 */
   flex: 0 0 calc(20% - 1px);
   min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-bottom: 24rpx;
+  margin-bottom: 26rpx;
 }
 
-.type-icon {
+.organizer-avatar,
+.organizer-empty-avatar {
+  width: 76rpx;
+  height: 76rpx;
+}
+
+.organizer-empty-avatar {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 88rpx;
-  height: 88rpx;
-  overflow: hidden;
-  border-radius: var(--radius);
-  /* 十个格子共用同一块极浅品牌底：颜色不再承担「区分功能」的职责，全靠图标形状 */
-  background: var(--brand-soft);
+  border: 2rpx dashed #c6ced8;
+  border-radius: 12rpx;
+  background: #f5f7f9;
+  color: #a6b0bb;
+  font-size: 34rpx;
+  box-sizing: border-box;
 }
 
-.type-icon-img {
-  width: 52rpx;
-  height: 52rpx;
-}
-
-/* 吉祥物位图自带底色、不是透明抠图：铺满整格，只留格子自己的圆角（线性图标仍居中 52rpx） */
-.type-icon-img.is-fill {
+.organizer-name {
   width: 100%;
-  height: 100%;
-}
-
-/* 只在图标解码失败时兜底显示，正常不会出现 */
-.type-icon-emoji {
-  font-size: 40rpx;
-}
-
-.type-name {
   margin-top: 10rpx;
+  color: var(--text);
   font-size: 22rpx;
-  color: var(--text-sub);
-  max-width: 100%;
+  line-height: 30rpx;
+  text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.organizer-item.is-empty .organizer-name {
+  color: var(--text-light);
 }
 
 .fallback-tip {

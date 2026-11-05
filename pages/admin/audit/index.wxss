@@ -361,6 +361,36 @@
   text-align: center;
 }
 
+.organizer-config-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20rpx;
+  padding: 24rpx;
+  border-radius: var(--radius);
+  background: var(--card-sheen);
+  box-shadow: var(--shadow), var(--card-inner);
+}
+
+.organizer-config-title {
+  display: block;
+  color: var(--text);
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.organizer-config-desc {
+  display: block;
+  margin-top: 6rpx;
+  color: var(--text-light);
+  font-size: 22rpx;
+}
+
+.organizer-config-arrow {
+  color: var(--text-light);
+  font-size: 36rpx;
+}
+
 .bottom-space {
   height: 60rpx;
 }
@@ -394,6 +424,90 @@
 .sheet-detail {
   /* 固定高度：scroll-view 没有确定高度就不会滚动，内容会被顶出屏幕外 */
   height: 84vh;
+}
+
+.sheet-organizers {
+  height: 82vh;
+}
+
+.organizer-tip {
+  margin-top: 18rpx;
+  color: var(--text-sub);
+  font-size: 24rpx;
+  line-height: 36rpx;
+}
+
+.organizer-scroll {
+  flex: 1;
+  height: 0;
+  margin-top: 18rpx;
+}
+
+.organizer-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 16rpx 0;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.organizer-slot-label {
+  width: 110rpx;
+  flex: none;
+  padding-top: 20rpx;
+  color: var(--text-light);
+  font-size: 24rpx;
+}
+
+.organizer-input-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.organizer-account-label {
+  display: block;
+  margin-bottom: 8rpx;
+  color: var(--text-light);
+  font-size: 22rpx;
+}
+
+.organizer-input {
+  height: 72rpx;
+  padding: 0 20rpx;
+  border-radius: var(--radius-sm);
+  background: #f5f7f9;
+  color: var(--text);
+  font-size: 24rpx;
+}
+
+.organizer-linked-row {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 12rpx;
+}
+
+.organizer-linked-label {
+  width: 88rpx;
+  flex: none;
+  padding-top: 24rpx;
+  color: var(--text-light);
+  font-size: 21rpx;
+}
+
+.organizer-linked-input-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.organizer-linked-input {
+  height: 64rpx;
+  font-size: 22rpx;
+}
+
+.organizer-user-name {
+  display: block;
+  margin-top: 8rpx;
+  color: var(--brand);
+  font-size: 22rpx;
 }
 
 .sheet-head {

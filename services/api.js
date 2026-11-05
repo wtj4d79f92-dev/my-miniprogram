@@ -10,7 +10,7 @@ const {
   tagName,
 } = require('../utils/dict')
 const { matchCity, normalizeCity, singleCityKey } = require('../utils/cities')
-const { delay, deepClone, formatCardDate, WEEKDAY_TEXT } = require('../utils/util')
+const { delay, deepClone, formatCardDateTime, WEEKDAY_TEXT } = require('../utils/util')
 const { LOCATION_MAX, ADDRESS_MAX } = require('../utils/location')
 // 线路词库：发布页按标题自动填「难度 / 全程长度 / 累计爬升」用（云端以 lines 集合为准）
 const { LINE_LIBRARY } = require('../utils/lines')
@@ -358,8 +358,46 @@ const mockApi = {
       banners: deepClone(mock.DEFAULT_BANNERS),
       hotList,
       newestList,
+      organizerSlots: mock
+        .homeOrganizerSlots()
+        .filter((item) => item.found)
+        .map((item) => {
+          const member = mock.memberOf(item.user)
+          delete member.openid
+          return Object.assign(member, { slot: item.slot })
+        }),
       empty: list.length === 0,
     })
+  },
+
+  organizer(hostSlot) {
+    const slot = Math.floor(Number(hostSlot) || 0)
+    const item = mock.homeOrganizerSlots().filter((row) => row.slot === slot && row.found)[0]
+    if (!item) return withDelay(null)
+    const member = mock.memberOf(item.user)
+    const current = mock.currentUser()
+    delete member.openid
+    return withDelay(
+      Object.assign(member, {
+        slot,
+        coverUrl: item.user.organizerCover || '',
+        isOwner: !!current && current.openid === item.user.openid,
+      })
+    )
+  },
+
+  updateOrganizerCover(hostSlot, cover) {
+    const user = mock.currentUser()
+    if (!user) return fail('UNAUTHORIZED', '请先登录')
+    const slot = Math.floor(Number(hostSlot) || 0)
+    if (slot <= 0) return fail('INVALID_PARAM', '主办方主页不存在')
+    if (mock.homeOrganizerOpenidAt(slot) !== user.openid) {
+      return fail('FORBIDDEN', '只能编辑自己的主办方主页')
+    }
+    const organizerCover = String(cover || '').trim()
+    const merged = Object.assign({}, user, { organizerCover })
+    setStorage(KEYS.user, merged)
+    return withDelay({ coverUrl: organizerCover })
   },
 
   list(params) {
@@ -398,6 +436,13 @@ const mockApi = {
           String(item.location).toLowerCase().indexOf(keyword) > -1 ||
           // 地址不展示，但要能被搜到，用户按「双流」这类关键词也能找到活动
           String(item.locationAddress || '').toLowerCase().indexOf(keyword) > -1
+      )
+    }
+    if (Number(query.hostSlot) > 0) {
+      const organizerOpenids = mock.homeOrganizerOpenidsAt(query.hostSlot)
+      list = list.filter(
+        (item) =>
+          !!item.organizer && organizerOpenids.indexOf(item.organizer.openid) > -1
       )
     }
 
@@ -462,6 +507,9 @@ const mockApi = {
     const user = mock.currentUser()
     if (!user) return fail('UNAUTHORIZED', '请先登录')
     const form = (payload && payload.form) || {}
+    if (Number(form.startTime) <= Date.now()) {
+      return fail('INVALID_PARAM', '集合时间必须晚于当前时间')
+    }
     const machine = mockMachineCheck(form)
     if (machine.blocked) return fail('CONTENT_RISKY', '内容未通过安全检测，请修改后重新提交')
     const audit = mockAutoAudit(machine)
@@ -642,6 +690,8 @@ const mockApi = {
 
   login(payload) {
     const params = payload || {}
+    const phone = String(params.phone || '').trim()
+    if (!/^1\d{10}$/.test(phone)) return fail('PHONE_REQUIRED', '请先绑定手机号后登录')
     const existed = getStorage(KEYS.user, null)
     if (existed && existed.openid) {
       // 历史版本用手机号掩码当默认昵称（等于把手机号前后各 4 位公开给其他用户），
@@ -649,7 +699,7 @@ const mockApi = {
       const legacyNick =
         /^\d{3}\*{4}\d{4}$/.test(existed.nickName || '') || isDefaultNick(existed.nickName)
       const merged = Object.assign({}, existed, {
-        phone: params.phone || existed.phone || '',
+        phone,
       })
       if (legacyNick) {
         merged.nickName = randomNickName()
@@ -660,8 +710,6 @@ const mockApi = {
     }
     const counter = (getStorage(KEYS.userCounter, 0) || 0) + 1
     setStorage(KEYS.userCounter, counter)
-    const phone = params.phone || ''
-    const guest = !phone
     // 昵称对外可见（活动卡片、报名名单），不能放手机号（哪怕是掩码），
     // 随机生成一个户外调性的昵称（与云端 login 同一份口径，见 utils/nickname.js）
     const nickName = randomNickName()
@@ -674,7 +722,6 @@ const mockApi = {
       avatarText: nickName.slice(0, 1),
       phone,
       bio: '',
-      isGuest: guest,
       createTime: Date.now(),
     }
     setStorage(KEYS.user, user)
@@ -1033,6 +1080,77 @@ const mockApi = {
     return withDelay({ openid: (user && user.openid) || '', isAdmin: !!user, name: '本地调试管理员' })
   },
 
+  adminHomeOrganizers() {
+    const user = mock.currentUser()
+    if (!user) return fail('UNAUTHORIZED', '请先登录')
+    return withDelay({
+      slots: mock.homeOrganizerSlots().map((item) => {
+        const member = item.user ? mock.memberOf(item.user) : null
+        return {
+          slot: item.slot,
+          userId: item.userId || 0,
+          linkedUserIds: item.linkedUserIds || [],
+          linkedAccounts: (item.linkedUserIds || []).map((linkedUserId) => {
+            const linked = mock.userByUserId(linkedUserId)
+            const linkedMember = linked ? mock.memberOf(linked) : null
+            return {
+              userId: linkedUserId,
+              found: !!linkedMember,
+              nickName: (linkedMember && linkedMember.nickName) || '',
+            }
+          }),
+          found: item.found,
+          nickName: (member && member.nickName) || '',
+          avatarUrl: (member && member.avatarUrl) || '',
+          avatarColor: (member && member.avatarColor) || '#4ECDC4',
+          avatarText: (member && member.avatarText) || '待',
+        }
+      }),
+    })
+  },
+
+  adminSaveHomeOrganizers(params) {
+    const user = mock.currentUser()
+    if (!user) return fail('UNAUTHORIZED', '请先登录')
+    const payload = Array.isArray(params) ? { userIds: params, linkedUserIds: [] } : params || {}
+    const source = Array.isArray(payload.userIds) ? payload.userIds : []
+    const invalid = source
+      .slice(0, 10)
+      .map((value) => String(value === undefined || value === null ? '' : value).trim())
+      .filter((value) => value && (!/^\d+$/.test(value) || Number(value) <= 0))
+    if (invalid.length) return fail('INVALID_PARAM', '用户 ID 必须是正整数')
+    const values = source.slice(0, 10).map((value) => {
+      const parsed = Number(value)
+      return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 0
+    })
+    const linkedSlotsSource = Array.isArray(payload.linkedUserIds) ? payload.linkedUserIds : []
+    const linkedSlots = []
+    for (let i = 0; i < 10; i += 1) {
+      const slot = Array.isArray(linkedSlotsSource[i]) ? linkedSlotsSource[i] : []
+      const clean = slot
+        .map((value) => String(value === undefined || value === null ? '' : value).trim())
+        .filter(Boolean)
+      if (clean.length > 5) return fail('INVALID_PARAM', `坑位 ${i + 1} 最多关联 5 个账号`)
+      const invalidLinked = clean.filter((value) => !/^\d+$/.test(value) || Number(value) <= 0)
+      if (invalidLinked.length) return fail('INVALID_PARAM', '关联账号 ID 必须是正整数')
+      if (clean.length && !values[i]) {
+        return fail('INVALID_PARAM', `坑位 ${i + 1} 请先填写主账号`)
+      }
+      linkedSlots[i] = clean.map((value) => Number(value))
+    }
+
+    const all = values.filter(Boolean).concat(
+      linkedSlots.reduce((list, slot) => list.concat(slot), [])
+    )
+    if (new Set(all).size !== all.length) {
+      return fail('INVALID_PARAM', '同一个用户不能重复配置到多个账号位置')
+    }
+    const missing = all.filter((userId) => !mock.userByUserId(userId))
+    if (missing.length) return fail('NOT_FOUND', '存在找不到的用户 ID，请检查后重试')
+    mock.saveHomeOrganizerConfig({ userIds: values, linkedUserIds: linkedSlots })
+    return this.adminHomeOrganizers()
+  },
+
   adminList(params) {
     const query = params || {}
     const status = query.status || 'pending'
@@ -1113,6 +1231,15 @@ const mockApi = {
 const cloudApi = {
   home(payload) {
     return callCloud('home', payload)
+  },
+  organizer(hostSlot) {
+    return callCloud('organizer', { hostSlot: Number(hostSlot) || 0 })
+  },
+  updateOrganizerCover(hostSlot, cover) {
+    return callCloud('updateOrganizerCover', {
+      hostSlot: Number(hostSlot) || 0,
+      cover: String(cover || ''),
+    })
   },
   list(params) {
     return callCloud('list', params)
@@ -1226,6 +1353,16 @@ const cloudApi = {
   adminWhoami() {
     return callAdmin('whoami', {})
   },
+  adminHomeOrganizers() {
+    return callAdmin('organizers', {})
+  },
+  adminSaveHomeOrganizers(payload) {
+    const params = Array.isArray(payload) ? { userIds: payload } : payload || {}
+    return callAdmin('saveOrganizers', {
+      userIds: params.userIds || [],
+      linkedUserIds: params.linkedUserIds || [],
+    })
+  },
   adminList(params) {
     return callAdmin('list', params)
   },
@@ -1268,11 +1405,11 @@ function feeTextOf(activity) {
 function decorate(activity) {
   if (!activity) return null
   const item = deepClone(activity)
-  item.dateText = item.startTime ? formatCardDate(item.startTime) : ''
+  item.dateText = item.startTime ? formatCardDateTime(item.startTime) : ''
   item.feeText = feeTextOf(item)
   item.peopleText = `${item.joinedCount}/${item.maxPeople}人`
   item.tagNames = (item.tags || []).map(tagName).filter(Boolean)
-  item.periodText = item.endTime ? formatCardDate(item.endTime) : '待定'
+  item.periodText = item.endTime ? formatCardDateTime(item.endTime) : '待定'
   item.weekdayName = WEEKDAY_TEXT[item.startWeekday] || ''
   item.difficultyText = item.difficulty ? `${item.difficulty}★` : ''
   // 云端下发的成员快照已抹掉 openid，列表渲染改用下标生成的 key（wx:key 不能为空）

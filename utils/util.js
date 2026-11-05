@@ -34,6 +34,18 @@ function formatCardDate(ts) {
   return `${formatMonthDay(ts)} ${weekdayText(ts)}`
 }
 
+/** 时间戳 -> 08:05 */
+function formatClock(ts) {
+  const d = new Date(ts)
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** 时间戳 -> 09月15日 周二 08:05（活动具体时间） */
+function formatCardDateTime(ts) {
+  if (!ts) return ''
+  return `${formatCardDate(ts)} ${formatClock(ts)}`
+}
+
 /** 时间戳 -> 2026年09月 */
 function formatYearMonth(ts) {
   const d = new Date(ts)
@@ -115,6 +127,8 @@ module.exports = {
   formatMonthDayShort,
   weekdayText,
   formatCardDate,
+  formatClock,
+  formatCardDateTime,
   formatYearMonth,
   startOfDay,
   addDays,

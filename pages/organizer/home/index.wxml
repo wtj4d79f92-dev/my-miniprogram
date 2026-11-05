@@ -1,0 +1,79 @@
+<view class="page organizer-page">
+  <navigation-bar title="主办方活动集合" color="#2D3748" background="#BFAF92"></navigation-bar>
+
+  <view class="organizer-fixed">
+    <view wx:if="{{loading && !organizer}}" class="organizer-hero organizer-hero-loading"></view>
+
+    <view wx:elif="{{organizer}}" class="organizer-hero">
+      <image
+        wx:if="{{organizer.coverUrl || organizer.avatarUrl}}"
+        class="organizer-hero-image"
+        src="{{organizer.coverUrl || organizer.avatarUrl}}"
+        mode="aspectFill"
+      ></image>
+      <view wx:else class="organizer-hero-fallback" style="background: {{organizer.avatarColor}};">
+        <text class="organizer-hero-initial">{{organizer.avatarText}}</text>
+      </view>
+      <view class="organizer-hero-shade"></view>
+      <text class="organizer-hero-name">{{organizer.nickName}}</text>
+      <view
+        wx:if="{{organizer.isOwner}}"
+        class="organizer-cover-edit"
+        bindtap="changeCover"
+        hover-class="organizer-cover-edit-press"
+        hover-start-time="0"
+        hover-stay-time="80"
+      >
+        <text>{{coverSaving ? '保存中…' : '更换背景'}}</text>
+      </view>
+    </view>
+
+    <view wx:if="{{!notFound}}" class="organizer-content">
+      <view class="section-head organizer-section-head">
+        <text class="section-title">主办方活动</text>
+        <text wx:if="{{total}}" class="organizer-count">{{total}} 个活动</text>
+      </view>
+    </view>
+  </view>
+
+  <scroll-view
+    class="page-scroll organizer-list-scroll"
+    scroll-y
+    refresher-enabled="{{true}}"
+    refresher-triggered="{{refreshing}}"
+    bindrefresherrefresh="onRefresh"
+    bindscrolltolower="onScrollToLower"
+    lower-threshold="80"
+  >
+    <view class="organizer-content organizer-list-body">
+      <block wx:if="{{!notFound}}">
+        <activity-card
+          wx:for="{{list}}"
+          wx:key="id"
+          act="{{item}}"
+          bindtapcard="onCardTap"
+        ></activity-card>
+
+        <empty-state
+          wx:if="{{!loading && !list.length}}"
+          icon="🏕"
+          text="该主办方暂时没有活动"
+        ></empty-state>
+
+        <view wx:if="{{list.length}}" class="load-more">
+          <text wx:if="{{loadingMore}}" class="load-more-text">加载中…</text>
+          <text wx:elif="{{hasMore}}" class="load-more-text">上拉加载更多</text>
+          <text wx:else class="load-more-text">已经到底啦</text>
+        </view>
+      </block>
+
+      <empty-state
+        wx:if="{{notFound}}"
+        icon="👤"
+        text="该主办方不存在或暂未入驻"
+      ></empty-state>
+
+      <view wx:if="{{loading && !list.length}}" class="loading-tip"><text>加载中…</text></view>
+    </view>
+  </scroll-view>
+</view>

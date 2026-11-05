@@ -20,6 +20,8 @@ const store = {
   activity_comments: [],
   notifications: [],
   admins: [],
+  // 首页主办方坑位：单文档 slots 保存 10 个用户 ID（见 cloudfunctions/activity 的 home）
+  home_organizers: [],
   activity_audits: [],
   // 线路词库：发布页按标题自动填强度指标的数据源（见 scripts/extract-lines.js）
   lines: [],
@@ -356,7 +358,17 @@ const fakeCloud = {
     return { fileList: list.map((fileID) => ({ fileID, status: 0, errMsg: 'ok' })) }
   },
   openapi: {
-    phonenumber: { getPhoneNumber: async () => ({ phoneInfo: {} }) },
+    phonenumber: {
+      async getPhoneNumber({ code }) {
+        if (phoneBehavior.fail) throw new Error('phone code expired')
+        return {
+          phoneInfo: {
+            purePhoneNumber: phoneBehavior.phone,
+            phoneNumber: `+86 ${phoneBehavior.phone}`,
+          },
+        }
+      },
+    },
     wxacode: { getUnlimited: async () => ({ buffer: '' }) },
     security: {
       // 文本检测：由 securityBehavior.text 决定返回什么，null 表示抛错（模拟接口未开通 / 超额度）
@@ -485,6 +497,10 @@ const securityBehavior = {
   textDelay: 0,
   imageDelay: 0,
 }
+const phoneBehavior = {
+  phone: '13800001111',
+  fail: false,
+}
 const securityCalls = []
 const qrCalls = []
 const ocrCalls = []
@@ -506,6 +522,8 @@ function resetSecurity(behavior) {
   securityBehavior.textDelay = 0
   securityBehavior.imageDelay = 0
   Object.assign(securityBehavior, behavior || {})
+  phoneBehavior.phone = '13800001111'
+  phoneBehavior.fail = false
   securityCalls.length = 0
   qrCalls.length = 0
   ocrCalls.length = 0
@@ -640,7 +658,7 @@ const OTHER = 'openid_other'
 const ADMIN = 'openid_admin'
 
 function seedUser(openid, nickName) {
-  store.users.push({
+  const user = {
     _id: `u_${openid}`,
     openid,
     userId: store.users.length + 1,
@@ -651,7 +669,9 @@ function seedUser(openid, nickName) {
     phone: '',
     bio: '',
     createTime: Date.now(),
-  })
+  }
+  store.users.push(user)
+  return user
 }
 
 function seedActivity(overrides) {
@@ -713,6 +733,224 @@ async function run() {
   log(homeIds.indexOf('act_rejected') === -1, '首页：被驳回的活动不可见')
   log(homeIds.indexOf('act_approved') > -1, '首页：已通过的活动可见')
 
+  /* ---------- 首页主办方坑位：只配置用户 ID，接口自动补头像昵称 ---------- */
+  const hostOne = seedUser('openid_host_1', '山野阿宽')
+  const hostTwo = seedUser('openid_host_2', '小满去爬山')
+  const hostLinkedA = seedUser('openid_host_linked_a', '阿宽协作号')
+  const hostLinkedB = seedUser('openid_host_linked_b', '阿宽活动号')
+  hostOne.userId = 1001
+  hostTwo.userId = 1002
+  hostLinkedA.userId = 1003
+  hostLinkedB.userId = 1004
+  hostOne.avatarUrl = 'cloud://host-1.png'
+  hostTwo.avatarUrl = 'https://cdn.test/host-2.png'
+  store.home_organizers.push({
+    _id: 'slots',
+    userIds: [1001, 1002],
+    linkedUserIds: [[1003, 1004]],
+    updateTime: Date.now(),
+    updateBy: '测试运营',
+  })
+  seedActivity({
+    _id: 'act_host_1',
+    title: '阿宽的主办活动',
+    auditStatus: 'approved',
+    organizer: {
+      openid: 'openid_host_1',
+      nickName: '山野阿宽',
+      avatarColor: '#4ECDC4',
+      avatarUrl: 'cloud://host-1.png',
+      avatarText: '山',
+    },
+  })
+  seedActivity({
+    _id: 'act_host_other',
+    title: '别人的活动',
+    auditStatus: 'approved',
+    organizer: {
+      openid: 'openid_host_2',
+      nickName: '小满去爬山',
+      avatarColor: '#FF8E72',
+      avatarUrl: '',
+      avatarText: '小',
+    },
+  })
+  seedActivity({
+    _id: 'act_host_linked_a',
+    title: '关联账号发布的活动 A',
+    auditStatus: 'approved',
+    organizer: {
+      openid: 'openid_host_linked_a',
+      nickName: '阿宽协作号',
+      avatarColor: '#45B7D1',
+      avatarUrl: '',
+      avatarText: '协',
+    },
+  })
+  seedActivity({
+    _id: 'act_host_linked_b',
+    title: '关联账号发布的活动 B',
+    auditStatus: 'approved',
+    organizer: {
+      openid: 'openid_host_linked_b',
+      nickName: '阿宽活动号',
+      avatarColor: '#FF7D00',
+      avatarUrl: '',
+      avatarText: '活',
+    },
+  })
+
+  const homeWithHosts = await callActivity('home', { city: '' }, OTHER)
+  log(
+    (homeWithHosts.organizerSlots || []).length === 2 &&
+      homeWithHosts.organizerSlots[0].nickName === '山野阿宽' &&
+      homeWithHosts.organizerSlots[1].nickName === '小满去爬山',
+    '主办方坑位：首页按配置的用户 ID 自动补昵称'
+  )
+  log(
+    (homeWithHosts.organizerSlots || []).length === 2 &&
+      homeWithHosts.organizerSlots[0].avatarUrl === 'https://tmp.test/cloud%3A%2F%2Fhost-1.png' &&
+      homeWithHosts.organizerSlots[1].avatarUrl === 'https://cdn.test/host-2.png',
+    '主办方坑位：云存储头像换临时链接，https 头像保持原值'
+  )
+  log(
+    (homeWithHosts.organizerSlots || []).every((item) => item.openid === undefined),
+    '主办方坑位：首页不下发 openid'
+  )
+
+  const hostList = await callActivity('list', { pageIndex: 0, pageSize: 50, hostSlot: 1 }, OTHER)
+  const hostListIds = (hostList.list || []).map((item) => item.id).sort()
+  log(
+    JSON.stringify(hostListIds) ===
+      JSON.stringify(['act_host_1', 'act_host_linked_a', 'act_host_linked_b']),
+    '主办方活动列表：合并主账号与关联账号发布的活动'
+  )
+  const emptyHostList = await callActivity('list', { pageIndex: 0, pageSize: 50, hostSlot: 9 }, OTHER)
+  log((emptyHostList.list || []).length === 0, '主办方活动列表：未配置坑位返回空列表')
+
+  const hostProfile = await callActivity('organizer', { hostSlot: 1 }, OTHER)
+  log(
+    hostProfile &&
+      hostProfile.nickName === '山野阿宽' &&
+      hostProfile.avatarUrl === 'https://tmp.test/cloud%3A%2F%2Fhost-1.png',
+    '主办方主页：按坑位返回公开头像昵称'
+  )
+  log(
+    hostProfile && hostProfile.openid === undefined && hostProfile.userId === undefined,
+    '主办方主页：不下发 openid 或后台用户 ID'
+  )
+  log(hostProfile && hostProfile.isOwner === false, '主办方主页：其他用户没有编辑标记')
+  const ownHostProfile = await callActivity('organizer', { hostSlot: 1 }, hostOne.openid)
+  log(ownHostProfile && ownHostProfile.isOwner === true, '主办方主页：本人获得编辑标记')
+  const linkedHostProfile = await callActivity('organizer', { hostSlot: 1 }, hostLinkedA.openid)
+  log(
+    linkedHostProfile && linkedHostProfile.isOwner === false,
+    '主办方主页：关联账号只合并活动，不继承主页管理权限'
+  )
+  const coverSaveForbidden = await callActivity(
+    'updateOrganizerCover',
+    { hostSlot: 1, cover: 'cloud://host-cover-forbidden.jpg' },
+    OTHER
+  )
+  log(coverSaveForbidden.code === 'FORBIDDEN', '主办方主页：其他用户不能修改背景图')
+  const coverSaveOk = await callActivity(
+    'updateOrganizerCover',
+    { hostSlot: 1, cover: 'cloud://host-cover.jpg' },
+    hostOne.openid
+  )
+  const hostProfileWithCover = await callActivity('organizer', { hostSlot: 1 }, OTHER)
+  log(
+    coverSaveOk.coverUrl === 'https://tmp.test/cloud%3A%2F%2Fhost-cover.jpg' &&
+      hostProfileWithCover.coverUrl === 'https://tmp.test/cloud%3A%2F%2Fhost-cover.jpg',
+    '主办方主页：本人保存后向其他访问者下发云存储临时图片地址'
+  )
+  log(
+    hostProfileWithCover &&
+      hostProfileWithCover.isOwner === false &&
+      hostProfileWithCover.openid === undefined &&
+      hostProfileWithCover.userId === undefined,
+    '主办方主页：背景图可公开访问，但编辑权限与身份字段不对外泄露'
+  )
+  const missingHostProfile = await callActivity('organizer', { hostSlot: 9 }, OTHER)
+  log(missingHostProfile === null, '主办方主页：未配置坑位按不存在处理')
+
+  const hostAdminList = await callAdmin('organizers', {}, ADMIN)
+  log(
+    (hostAdminList.slots || []).length === 10 &&
+      hostAdminList.slots[0].userId === 1001 &&
+      JSON.stringify(hostAdminList.slots[0].linkedUserIds) === JSON.stringify([1003, 1004]) &&
+      hostAdminList.slots[0].nickName === '山野阿宽',
+    '主办方坑位后台：返回 10 个坑位及主账号、关联账号'
+  )
+  const hostSaveForbidden = await callAdmin(
+    'saveOrganizers',
+    { userIds: [1001, 1002] },
+    OTHER
+  )
+  log(hostSaveForbidden.code === 'FORBIDDEN', '主办方坑位后台：非审核人不能保存配置')
+  const hostSaveUnknown = await callAdmin(
+    'saveOrganizers',
+    { userIds: [1001, 999999] },
+    ADMIN
+  )
+  log(hostSaveUnknown.code === 'NOT_FOUND', '主办方坑位后台：用户 ID 不存在时拒绝保存')
+  const hostSaveDuplicate = await callAdmin(
+    'saveOrganizers',
+    { userIds: [1001, 1001] },
+    ADMIN
+  )
+  log(hostSaveDuplicate.code === 'INVALID_PARAM', '主办方坑位后台：同一个用户不能重复占坑')
+  const hostSaveTooManyLinked = await callAdmin(
+    'saveOrganizers',
+    {
+      userIds: [1001],
+      linkedUserIds: [[1002, 1002, 1002, 1002, 1002, 1002]],
+    },
+    ADMIN
+  )
+  log(hostSaveTooManyLinked.code === 'INVALID_PARAM', '主办方坑位后台：每个主办方最多关联 5 个账号')
+  const hostSaveLinkedDuplicate = await callAdmin(
+    'saveOrganizers',
+    {
+      userIds: [1001, 1002],
+      linkedUserIds: [[1003], [1003]],
+    },
+    ADMIN
+  )
+  log(
+    hostSaveLinkedDuplicate.code === 'INVALID_PARAM',
+    '主办方坑位后台：同一个关联账号不能属于多个主办方'
+  )
+  const hostSaveOk = await callAdmin(
+    'saveOrganizers',
+    { userIds: [1002, 1001], linkedUserIds: [[1003, 1004], []] },
+    ADMIN
+  )
+  log(
+    hostSaveOk.ok === true &&
+      (hostSaveOk.slots || []).length === 10 &&
+      hostSaveOk.slots[0].userId === 1002 &&
+      hostSaveOk.slots[0].nickName === '小满去爬山' &&
+      JSON.stringify(hostSaveOk.slots[0].linkedUserIds) === JSON.stringify([1003, 1004]),
+    '主办方坑位后台：保存后返回主账号与关联账号配置'
+  )
+  // 后面还有大量“公开列表条数”断言，主办方专属夹具用完立即移除，避免污染共享内存库
+  store.activities = store.activities.filter(
+    (item) =>
+      item._id !== 'act_host_1' &&
+      item._id !== 'act_host_other' &&
+      item._id !== 'act_host_linked_a' &&
+      item._id !== 'act_host_linked_b'
+  )
+  store.users = store.users.filter(
+    (item) =>
+      item.openid !== 'openid_host_1' &&
+      item.openid !== 'openid_host_2' &&
+      item.openid !== 'openid_host_linked_a' &&
+      item.openid !== 'openid_host_linked_b'
+  )
+  store.home_organizers.length = 0
+
   const list = await callActivity('list', { pageIndex: 0, pageSize: 50, sort: 'latest' }, OTHER)
   const listIds = list.list.map((item) => item.id)
   log(listIds.indexOf('act_legacy') > -1, '广场：历史数据（无审核字段）继续可见，不会因上线审核而消失')
@@ -756,6 +994,20 @@ async function run() {
 
   const invalidCreate = await callActivity('create', { form: Object.assign({}, form, { title: '' }) }, ORGANIZER)
   log(invalidCreate.code === 'INVALID_PARAM', '发布：缺少标题被拒绝')
+  const pastStart = await callActivity(
+    'create',
+    {
+      form: Object.assign({}, form, {
+        startTime: Date.now() - 60000,
+        endTime: Date.now() + 86400000,
+      }),
+    },
+    ORGANIZER
+  )
+  log(
+    pastStart.code === 'INVALID_PARAM' && pastStart.message === '集合时间必须晚于当前时间',
+    '发布：集合时间早于当前时刻被拒绝'
+  )
 
   // 费用只做信息说明：AA / 非 AA 必须选，非 AA 制必须有文字说明，平台不参与资金流转
   const noFeeMode = await callActivity('create', { form: Object.assign({}, form, { feeMode: '' }) }, ORGANIZER)
@@ -1906,18 +2158,29 @@ async function run() {
   const okNick = await callActivity('updateUser', { userInfo: { nickName: '山野阿宽' } }, OTHER)
   log(okNick.nickName === '山野阿宽' && okNick.openid === OTHER, '昵称：正常昵称保存成功，自己的 openid 照旧返回')
 
-  /* ---------- 手机号：只认微信手机号授权 code，前端传值一律忽略 ---------- */
+  /* ---------- 手机号：登录必须先完成微信手机号授权 ---------- */
   const userByName = () => store.users.filter((item) => item.openid === OTHER)[0]
   const phoneForged = await callActivity('login', { phone: '13800001111' }, OTHER)
   log(
-    phoneForged.code === undefined && userByName().phone !== '13800001111',
-    '手机号：登录不接受前端直接传入的号码（只认微信下发的 phoneCode）'
+    phoneForged.code === 'PHONE_REQUIRED' && userByName().phone === '',
+    '手机号：缺少微信授权码时拒绝登录，前端直接传入的号码也不会写入'
+  )
+  phoneBehavior.fail = true
+  const phoneExpired = await callActivity('login', { phoneCode: 'expired_code' }, OTHER)
+  phoneBehavior.fail = false
+  log(
+    phoneExpired.code === 'PHONE_AUTH_FAILED' && userByName().phone === '',
+    '手机号：微信授权码兑换失败时拒绝登录，不会降级成无手机号账号'
   )
   await callActivity('updateUser', { userInfo: { phone: '13900002222' } }, OTHER)
   log(userByName().phone !== '13900002222', '手机号：资料编辑不接受 phone 字段')
 
   /* ---------- 新注册：默认昵称与默认头像随机生成，不是「微信用户」+ 灰色默认图 ---------- */
-  const freshRegister = await callActivity('login', {}, 'openid_fresh_default')
+  const freshRegister = await callActivity(
+    'login',
+    { phoneCode: 'fresh_user_code' },
+    'openid_fresh_default'
+  )
   log(
     isPoolNickName(freshRegister.nickName),
     `注册：默认昵称从词库随机生成（本次：${freshRegister.nickName}）`
@@ -1938,7 +2201,7 @@ async function run() {
     (item) => item.organizer && item.organizer.openid === OTHER
   )[0]
   if (legacyOrganizer) legacyOrganizer.organizer.nickName = '138****8888'
-  const migratedUser = await callActivity('login', {}, OTHER)
+  const migratedUser = await callActivity('login', { phoneCode: 'legacy_nick_code' }, OTHER)
   log(
     isPoolNickName(migratedUser.nickName) && migratedUser.nickName !== '138****8888',
     `昵称：历史手机号掩码昵称在登录时改成随机默认昵称（${migratedUser.nickName}）`
@@ -1951,7 +2214,7 @@ async function run() {
   /* ---------- 历史默认昵称：微信默认的「微信用户 + 编号」也在登录时换成随机昵称 ---------- */
   legacyNicknameUser.nickName = '微信用户3'
   legacyNicknameUser.avatarText = '微'
-  const migratedDefault = await callActivity('login', {}, OTHER)
+  const migratedDefault = await callActivity('login', { phoneCode: 'default_nick_code' }, OTHER)
   log(
     isPoolNickName(migratedDefault.nickName) && migratedDefault.avatarText === migratedDefault.nickName.slice(0, 1),
     `昵称：历史默认昵称「微信用户3」在登录时换成随机昵称（${migratedDefault.nickName}）`
@@ -2206,7 +2469,8 @@ async function run() {
   /* ---------- 注销账号：账号、发布、报名、反馈与云存储文件一次清干净 ---------- */
   resetStore()
   seedUser(ORGANIZER, '发起人')
-  seedUser(OTHER, '路人')
+  const deletingUser = seedUser(OTHER, '路人')
+  deletingUser.organizerCover = 'cloud://env/organizer-cover.png'
   const ownActivity = seedActivity({
     organizer: { openid: OTHER, nickName: '路人', avatarColor: '#FF8E72', avatarUrl: '', avatarText: '路' },
     cover: 'cloud://env/cover.png',
@@ -2339,8 +2603,9 @@ async function run() {
   log(
     deletedFiles.indexOf('cloud://env/cover.png') > -1 &&
       deletedFiles.indexOf('cloud://env/qr.png') > -1 &&
-      deletedFiles.indexOf('cloud://env/mini.png') > -1,
-    '注销：封面、活动二维码与小程序码文件一并从云存储删除'
+      deletedFiles.indexOf('cloud://env/mini.png') > -1 &&
+      deletedFiles.indexOf('cloud://env/organizer-cover.png') > -1,
+    '注销：活动图片与主办方主页背景图一并从云存储删除'
   )
 
   const deleteAgain = await callActivity('deleteAccount', {}, OTHER)
@@ -2348,7 +2613,7 @@ async function run() {
   const deleteAnonymous = await callActivity('deleteAccount', {})
   log(!!deleteAnonymous && deleteAnonymous.code === 'UNAUTHORIZED', '注销：未登录不接受注销请求')
 
-  const reRegister = await callActivity('login', {}, OTHER)
+  const reRegister = await callActivity('login', { phoneCode: 're_register_code' }, OTHER)
   log(
     !!reRegister &&
       reRegister.openid === OTHER &&

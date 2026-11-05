@@ -1,5 +1,12 @@
 <!-- 登录页：全屏覆盖，顶部返回 + 品牌区 + 协议勾选 + 主次登录按钮，底部保留「暂不登录」 -->
 <view class="login-page" wx:if="{{visible}}">
+  <image
+    class="login-bg"
+    src="cloud://cloud1-d2gcrlr5qbe1d05d4.636c-cloud1-d2gcrlr5qbe1d05d4-1489283260/login/login-bg.jpg"
+    mode="aspectFill"
+  ></image>
+  <view class="login-bg-shade"></view>
+
   <view class="login-nav" style="{{navStyle}}">
     <view
       class="login-nav-back"
@@ -15,18 +22,15 @@
 
   <!-- ① 登录首页 -->
   <view class="login-main" wx:if="{{step === 'main'}}">
-    <scroll-view class="login-scroll" scroll-y type="list">
+    <view class="login-hero">
       <view class="brand">
         <text class="brand-name">{{appName}}</text>
       </view>
 
-      <view class="brand-art">
-        <image class="brand-art-logo" src="/assets/logo.png" mode="aspectFill"></image>
-      </view>
-
       <view class="login-reason" wx:if="{{reason}}"><text class="login-reason-text">{{reason}}</text></view>
-      <text class="login-hint">未注册手机号验证登录后自动注册{{appName}}账号</text>
+    </view>
 
+    <view class="login-auth">
       <view class="agree-row {{agreeShake ? 'agree-row-shake' : ''}}">
         <view class="checkbox {{agreed ? 'checkbox-checked' : ''}}" bindtap="toggleAgree">
           <view class="checkbox-tick" wx:if="{{agreed}}"></view>
@@ -56,23 +60,24 @@
         </block>
 
         <block wx:else>
-          <!-- 云开发模式：openid 一键登录，或授权微信手机号 -->
-          <view class="login-btn login-btn-main" bindtap="onWechatLogin" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
-            <text class="login-btn-title">微信一键登录</text>
+          <!-- 云开发模式：必须授权微信手机号，拒绝授权不能登录 -->
+          <view class="login-phone-wrap">
+            <button
+              class="login-btn-reset login-phone-button"
+              open-type="getPhoneNumber"
+              hover-class="none"
+              bindgetphonenumber="onGetPhoneNumber"
+            >
+              <view class="login-btn login-btn-main {{agreed ? '' : 'login-btn-disabled'}}">
+                <text class="login-btn-title">{{submitting ? '登录中…' : '手机号快捷登录'}}</text>
+              </view>
+            </button>
+            <view wx:if="{{!agreed}}" class="login-phone-guard" bindtap="ensureAgreed"></view>
           </view>
-          <button
-            class="login-btn-reset"
-            open-type="getPhoneNumber"
-            hover-class="none"
-            bindgetphonenumber="onGetPhoneNumber"
-          >
-            <view class="login-btn login-btn-ghost" hover-class="btn-press" hover-start-time="0" hover-stay-time="80"><text>手机号快捷登录</text></view>
-          </button>
         </block>
       </view>
+    </view>
 
-      <view class="login-scroll-space"></view>
-    </scroll-view>
     <view class="login-foot">
       <text class="not-login" bindtap="cancel" hover-class="row-press" hover-start-time="0" hover-stay-time="80">暂不登录</text>
     </view>

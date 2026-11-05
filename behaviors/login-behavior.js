@@ -3,6 +3,11 @@ const { KEYS, getStorage } = require('../utils/storage')
 
 module.exports = Behavior({
   methods: {
+    /** 完整登录态必须同时具备微信身份与手机号 */
+    isLoggedInUser(user) {
+      return !!(user && user.openid && user.phone)
+    },
+
     /**
      * 当前登录用户（不触发登录流程）
      * 以 globalData / 本地缓存为准：页面 data.user 可能在启动校验前就已经赋值，是旧值
@@ -10,7 +15,7 @@ module.exports = Behavior({
     currentUser() {
       const app = getApp()
       const user = (app && app.globalData && app.globalData.user) || getStorage(KEYS.user, null)
-      return user && user.openid ? user : null
+      return this.isLoggedInUser(user) ? user : null
     },
 
     /** 等待 App 启动时的登录态校验，避免拿失效的本地缓存放行 */
@@ -21,7 +26,7 @@ module.exports = Behavior({
     },
 
     /**
-     * 打开登录页（Mock 为手机号模拟登录，云模式为微信一键登录 / 手机号授权）
+     * 打开登录页（Mock 为手机号模拟登录，云模式为微信手机号授权登录）
      * @param {string} reason 触发登录的原因，登录页会简要展示
      */
     openLoginModal(reason) {
@@ -46,7 +51,7 @@ module.exports = Behavior({
 
     /** 登录成功后的统一回调：同步 globalData 与页面数据 */
     handleLoginSuccess(user) {
-      if (!user) return
+      if (!this.isLoggedInUser(user)) return
       const app = getApp()
       if (app) app.setUser(user)
       this.setData({ user })

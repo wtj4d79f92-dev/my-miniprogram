@@ -52,7 +52,7 @@
         wx:if="{{!loading && !list.length && needLogin}}"
         icon="🔔"
         text="登录后查看留言与回复通知"
-        buttonText="微信一键登录"
+        buttonText="手机号快捷登录"
         bindaction="onLoginTap"
       ></empty-state>
 

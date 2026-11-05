@@ -1,7 +1,8 @@
-// 登录页：全屏登录界面，顶部返回 + 品牌区 + 协议勾选 + 主次登录按钮 + 底部「暂不登录」
+// 登录页：全屏登录界面，顶部返回 + 品牌区 + 协议勾选 + 手机号快捷登录 + 底部「暂不登录」
 // - 协议勾选后才允许登录，未勾选点击登录会提示并抖动协议行
-// - 登录过的手机号展示为「登录此账号 + 脱敏手机号」，可一键复用
-// - 「手机号快捷登录」「切换手机号」进入手机号输入；「暂不登录」取消并返回原操作
+// - 云模式必须通过微信手机号授权，拒绝授权不能登录
+// - Mock 模式登录过的手机号展示为「登录此账号 + 脱敏手机号」，可一键复用
+// - 底部「暂不登录」只取消当前操作，不会产生登录态
 // - 新用户登录成功后进「完善头像昵称」步骤：微信不允许静默获取昵称头像，这里用官方
 //   chooseAvatar / nickname 能力让用户点两下带上微信资料，也可「暂不完善」直接进小程序
 const api = require('../../services/api')
@@ -234,7 +235,7 @@ Component({
     onPrimaryTap() {
       if (!this.ensureAgreed()) return
       if (!this.data.useMock) {
-        this.doLogin({})
+        wx.showToast({ title: '请授权手机号后登录', icon: 'none' })
         return
       }
       if (this.data.knownPhone) {
@@ -269,18 +270,12 @@ Component({
       this.doLogin({ phone }, phone)
     },
 
-    /** 云模式：openid 一键登录，不强制手机号 */
-    onWechatLogin() {
-      if (!this.ensureAgreed()) return
-      this.doLogin({})
-    },
-
     /** 云模式：微信手机号授权登录 */
     onGetPhoneNumber(e) {
       if (!this.ensureAgreed()) return
       const code = e && e.detail && e.detail.code
       if (!code) {
-        wx.showToast({ title: '未完成手机号授权，可改用微信一键登录', icon: 'none' })
+        wx.showToast({ title: '需授权手机号后才能登录', icon: 'none' })
         return
       }
       this.doLogin({ phoneCode: code })
@@ -304,10 +299,10 @@ Component({
           }
           this.finish(user)
         })
-        .catch(() => {
+        .catch((err) => {
           wx.hideLoading()
           this.setData({ submitting: false })
-          wx.showToast({ title: '登录失败，请重试', icon: 'none' })
+          wx.showToast({ title: (err && err.message) || '登录失败，请重试', icon: 'none' })
         })
     },
 

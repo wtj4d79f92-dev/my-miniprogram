@@ -8,5 +8,6 @@ Component({
     text: { type: String, value: '友' },
     size: { type: String, value: 'md' },
     ring: { type: Boolean, value: false },
+    shape: { type: String, value: 'circle' },
   },
 })

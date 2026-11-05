@@ -84,35 +84,38 @@
         </swiper-item>
       </swiper>
 
-      <!-- 户外玩法 -->
+      <!-- 活动主办方：5 列一排，最多 10 个坑位；第一排未满时不展示第二排 -->
       <view class="section-head">
-        <text class="section-title">发现户外玩法</text>
+        <text class="section-title">活动主办方</text>
       </view>
-      <view class="type-grid card">
+      <view class="organizer-grid card">
         <view
-          class="type-item"
-          wx:for="{{typeGrid}}"
-          wx:key="key"
-          data-type="{{item.key}}"
-          bindtap="onTypeTap"
-          hover-class="btn-press"
+          class="organizer-item {{item.occupied ? '' : 'is-empty'}}"
+          wx:for="{{organizerSlots}}"
+          wx:key="slot"
+          data-occupied="{{item.occupied}}"
+          data-slot="{{item.hostSlot}}"
+          data-name="{{item.nickName}}"
+          data-avatar-url="{{item.avatarUrl}}"
+          data-avatar-color="{{item.avatarColor}}"
+          data-avatar-text="{{item.avatarText}}"
+          bindtap="onOrganizerTap"
+          hover-class="{{item.occupied ? 'btn-press' : 'none'}}"
           hover-start-time="0"
           hover-stay-time="80"
         >
-          <!-- 图标来自 utils/type-icons.js：默认是统一线性图标，换了吉祥物的类型是自带底色的位图（铺满整格） -->
-          <view class="type-icon">
-            <image
-              wx:if="{{!iconErrorMap[index]}}"
-              class="type-icon-img {{item.iconFill ? 'is-fill' : ''}}"
-              src="{{item.icon}}"
-              mode="aspectFit"
-              data-index="{{index}}"
-              binderror="onTypeIconError"
-            />
-            <!-- 图标没解出来时退回 emoji，格子不空着 -->
-            <text wx:else class="type-icon-emoji">{{item.emoji}}</text>
-          </view>
-          <text class="type-name">{{item.name}}</text>
+          <avatar
+            wx:if="{{item.occupied}}"
+            class="organizer-avatar"
+            url="{{item.avatarUrl}}"
+            color="{{item.avatarColor}}"
+            text="{{item.avatarText}}"
+            size="md"
+            ring="{{true}}"
+            shape="square"
+          ></avatar>
+          <view wx:else class="organizer-empty-avatar"><text>＋</text></view>
+          <text class="organizer-name">{{item.nickName}}</text>
         </view>
       </view>
 

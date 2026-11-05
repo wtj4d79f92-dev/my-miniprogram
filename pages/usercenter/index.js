@@ -1,7 +1,6 @@
 const api = require('../../services/api')
 const { TEXTS } = require('../../utils/dict')
 const { VERSION_TEXT } = require('../../utils/version')
-const config = require('../../services/config')
 const loginBehavior = require('../../behaviors/login-behavior')
 const ui = require('../../utils/ui')
 const { needProfileSetup, uploadAvatar, usableAvatar } = require('../../utils/profile')
@@ -18,7 +17,6 @@ Page({
     entryIcons: USER_ICONS,
     // 图标按入口 key 记失败状态：data URI 正常不会失败，留一手兜底，行首不至于空着
     iconErrorMap: {},
-    useMock: config.useMock,
     user: null,
     // 顶部头像：历史版本把本机临时路径存成过头像，那种地址加载不出来，这里按「没有头像」退回首字色块
     userAvatar: '',
@@ -36,11 +34,6 @@ Page({
     editAvatar: '',
     editNickName: '',
     saving: false,
-    // 手机号绑定弹窗
-    showPhone: false,
-    phoneInput: '',
-    phoneAgreed: false,
-    binding: false,
     // 设置页：统一收纳协议与账号管理，打开时隐藏底部 tabBar 并整页覆盖
     showSettings: false,
     // 注销进行中：防重复提交，也用来禁用入口
@@ -207,24 +200,6 @@ Page({
       })
   },
 
-  /* --------------------------- 手机号绑定 --------------------------- */
-
-  openPhone() {
-    if (!this.data.user) {
-      this.onLoginTap()
-      return
-    }
-    this.setData({ showPhone: true, phoneInput: '', phoneAgreed: false })
-  },
-
-  closePhone() {
-    this.setData({ showPhone: false })
-  },
-
-  togglePhoneAgree() {
-    this.setData({ phoneAgreed: !this.data.phoneAgreed })
-  },
-
   openService() {
     const modal = this.selectComponent('#agreement-modal')
     if (modal) modal.open('service')
@@ -233,65 +208,6 @@ Page({
   openPrivacy() {
     const modal = this.selectComponent('#agreement-modal')
     if (modal) modal.open('privacy')
-  },
-
-  onPhoneInput(e) {
-    this.setData({ phoneInput: e.detail.value })
-  },
-
-  /** 协议未勾选时的联动提示 */
-  guardAgreement() {
-    if (this.data.phoneAgreed) return true
-    ui.confirm({
-      title: '提示',
-      content: '请先阅读并同意《用户服务协议》和《隐私政策》',
-      confirmText: '去同意',
-      cancelText: '稍后',
-    }).then((ok) => {
-      if (ok) this.setData({ phoneAgreed: true })
-    })
-    return false
-  },
-
-  submitPhoneMock() {
-    if (!this.guardAgreement()) return
-    const phone = String(this.data.phoneInput || '').trim()
-    if (!/^1\d{10}$/.test(phone)) {
-      ui.toast('请输入正确的11位手机号')
-      return
-    }
-    this.setData({ binding: true })
-    api
-      .login({ phone })
-      .then((user) => {
-        this.setData({ binding: false, showPhone: false })
-        this.handleLoginSuccess(user)
-        ui.toast('绑定成功', 'success')
-      })
-      .catch(() => {
-        this.setData({ binding: false })
-        ui.toast('绑定失败，请重试')
-      })
-  },
-
-  onGetPhoneNumber(e) {
-    if (!this.guardAgreement()) return
-    if (!e.detail || !e.detail.code) {
-      ui.toast('手机号授权不可用，不影响登录使用')
-      return
-    }
-    this.setData({ binding: true })
-    api
-      .login({ phoneCode: e.detail.code })
-      .then((user) => {
-        this.setData({ binding: false, showPhone: false })
-        this.handleLoginSuccess(user)
-        ui.toast('绑定成功', 'success')
-      })
-      .catch(() => {
-        this.setData({ binding: false })
-        ui.toast('绑定失败，请重试')
-      })
   },
 
   /* ------------------------------ 入口 ------------------------------ */
@@ -443,7 +359,6 @@ Page({
       unreadCount: 0,
       isAdmin: false,
       showProfile: false,
-      showPhone: false,
       showSettings: false,
     })
     ui.toast('账号已注销', 'success')
