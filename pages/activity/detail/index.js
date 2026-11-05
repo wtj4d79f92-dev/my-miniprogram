@@ -2,6 +2,7 @@ const api = require('../../../services/api')
 const { TEXTS } = require('../../../utils/dict')
 const { formatCardDateTime } = require('../../../utils/util')
 const loginBehavior = require('../../../behaviors/login-behavior')
+const privacyUpdateBehavior = require('../../../behaviors/privacy-update-behavior')
 const ui = require('../../../utils/ui')
 const location = require('../../../utils/location')
 const scene = require('../../../utils/scene')
@@ -163,7 +164,7 @@ function resolveActivityId(options) {
 }
 
 Page({
-  behaviors: [loginBehavior],
+  behaviors: [loginBehavior, privacyUpdateBehavior],
 
   data: {
     id: '',

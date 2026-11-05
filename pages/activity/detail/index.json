@@ -9,6 +9,7 @@
     "avatar": "/components/avatar/index",
     "login-modal": "/components/login-modal/index",
     "agreement-modal": "/components/agreement-modal/index",
+    "privacy-update-modal": "/components/privacy-update-modal/index",
     "poster-modal": "/components/poster-modal/index"
   }
 }

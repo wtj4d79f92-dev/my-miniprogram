@@ -1,10 +1,11 @@
 const api = require('../../../services/api')
 const { KEYS, getStorage } = require('../../../utils/storage')
 const loginBehavior = require('../../../behaviors/login-behavior')
+const privacyUpdateBehavior = require('../../../behaviors/privacy-update-behavior')
 const ui = require('../../../utils/ui')
 
 Page({
-  behaviors: [loginBehavior],
+  behaviors: [loginBehavior, privacyUpdateBehavior],
 
   data: {
     tab: 'joined',

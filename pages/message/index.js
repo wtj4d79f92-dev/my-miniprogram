@@ -1,5 +1,6 @@
 const api = require('../../services/api')
 const loginBehavior = require('../../behaviors/login-behavior')
+const privacyUpdateBehavior = require('../../behaviors/privacy-update-behavior')
 const ui = require('../../utils/ui')
 
 /**
@@ -34,7 +35,7 @@ function decorate(list) {
 }
 
 Page({
-  behaviors: [loginBehavior],
+  behaviors: [loginBehavior, privacyUpdateBehavior],
 
   data: {
     list: [],

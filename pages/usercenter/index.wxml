@@ -167,6 +167,7 @@
     </view>
   </view>
 
-  <agreement-modal id="agreement-modal"></agreement-modal>
+  <agreement-modal id="agreement-modal" bindagree="onAgreementAgree"></agreement-modal>
+  <privacy-update-modal id="privacy-update-modal" bindagree="onPrivacyUpdateAgree" bindclose="onPrivacyUpdateClose"></privacy-update-modal>
   <login-modal id="login-modal" bindlogin="onLogin"></login-modal>
 </view>

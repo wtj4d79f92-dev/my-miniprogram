@@ -443,6 +443,7 @@
     bindagree="onAgreementAgree"
     bindclose="onAgreementClose"
   ></agreement-modal>
+  <privacy-update-modal id="privacy-update-modal" bindagree="onPrivacyUpdateAgree" bindclose="onPrivacyUpdateClose"></privacy-update-modal>
   <poster-modal id="poster-modal"></poster-modal>
   <login-modal id="login-modal" bindlogin="onLogin"></login-modal>
 </view>

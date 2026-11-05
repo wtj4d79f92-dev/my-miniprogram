@@ -4,6 +4,7 @@
 const api = require('../../../services/api')
 const { formatCardDate } = require('../../../utils/util')
 const ui = require('../../../utils/ui')
+const privacyUpdateBehavior = require('../../../behaviors/privacy-update-behavior')
 
 const PAGE_SIZE = 20
 const ORGANIZER_LINK_LIMIT = 5
@@ -114,6 +115,8 @@ function mediaState(value, media) {
 }
 
 Page({
+  behaviors: [privacyUpdateBehavior],
+
   data: {
     tabs: [
       { key: 'pending', label: '待审' },

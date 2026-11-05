@@ -3,6 +3,7 @@ const { KEYS, getStorage, setStorage, removeStorage } = require('./utils/storage
 const { locate } = require('./utils/location')
 const config = require('./services/config')
 const api = require('./services/api')
+const { needsPrivacyUpdate } = require('./utils/privacy-notice')
 
 /**
  * 启动后多久去校验本地登录态。
@@ -32,6 +33,8 @@ App({
     user: null,
     // 未读消息数：底部 tab 的小红点与「我的 → 消息」入口上的数字共用这一份
     unreadCount: 0,
+    // 老用户点了“查看政策”后，等待当前页面打开半屏协议弹窗
+    privacyUpdatePending: false,
   },
 
   onLaunch() {
@@ -50,6 +53,40 @@ App({
         resolve(ready)
       }, USER_VERIFY_DELAY)
     })
+    this.userReady.then(() => this.maybeShowPrivacyUpdate())
+  },
+
+  /**
+   * 隐私政策发生版本更新时，对已登录但尚未确认当前版本的老用户提示一次。
+   * 系统弹窗可在任意当前页面出现；查看全文由当前页面直接打开半屏协议弹窗。
+   */
+  maybeShowPrivacyUpdate() {
+    if (this._privacyPrompted || !needsPrivacyUpdate(this.globalData.user)) return false
+    this._privacyPrompted = true
+    wx.showModal({
+      title: '隐私政策更新',
+      content:
+        '我们更新了《隐私政策》，补充了手机号快捷登录、主办方主页公开资料与背景图、设备本地缓存及注销说明。请阅读并确认。',
+      cancelText: '稍后',
+      confirmText: '查看政策',
+      success: (res) => {
+        if (!res || !res.confirm) return
+        this.globalData.privacyUpdatePending = true
+        const pages = typeof getCurrentPages === 'function' ? getCurrentPages() : []
+        const page = pages[pages.length - 1]
+        if (page && typeof page.openPrivacyUpdateFromNotice === 'function') {
+          const opened = page.openPrivacyUpdateFromNotice()
+          if (opened === false) {
+            this.globalData.privacyUpdatePending = false
+            wx.showToast({ title: '当前页面暂无法打开，请稍后重试', icon: 'none' })
+          }
+          return
+        }
+        this.globalData.privacyUpdatePending = false
+        wx.showToast({ title: '当前页面暂无法打开，请稍后重试', icon: 'none' })
+      },
+    })
+    return true
   },
 
   /**

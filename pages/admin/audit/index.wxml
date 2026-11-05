@@ -351,4 +351,5 @@
       </view>
     </view>
   </view>
+  <privacy-update-modal id="privacy-update-modal" bindagree="onPrivacyUpdateAgree" bindclose="onPrivacyUpdateClose"></privacy-update-modal>
 </view>

@@ -67,4 +67,5 @@
   </scroll-view>
 
   <login-modal id="login-modal"></login-modal>
+  <privacy-update-modal id="privacy-update-modal" bindagree="onPrivacyUpdateAgree" bindclose="onPrivacyUpdateClose"></privacy-update-modal>
 </view>

@@ -1,7 +1,10 @@
 const api = require('../../services/api')
 const ui = require('../../utils/ui')
+const privacyUpdateBehavior = require('../../behaviors/privacy-update-behavior')
 
 Page({
+  behaviors: [privacyUpdateBehavior],
+
   data: {
     content: '',
     count: 0,

@@ -1,0 +1,5 @@
+<agreement-modal
+  id="agreement-modal"
+  bindagree="onAgree"
+  bindclose="onClose"
+></agreement-modal>

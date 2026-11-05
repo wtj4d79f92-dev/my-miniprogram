@@ -9,6 +9,7 @@ const {
 } = require('../../../utils/dict')
 const { formatCardDateTime, startOfDay, addDays } = require('../../../utils/util')
 const loginBehavior = require('../../../behaviors/login-behavior')
+const privacyUpdateBehavior = require('../../../behaviors/privacy-update-behavior')
 const ui = require('../../../utils/ui')
 const config = require('../../../services/config')
 const { parsePickedPlace, placeNameOf, LOCATION_MAX } = require('../../../utils/location')
@@ -65,7 +66,7 @@ function uploadImage(path, name) {
 }
 
 Page({
-  behaviors: [loginBehavior],
+  behaviors: [loginBehavior, privacyUpdateBehavior],
 
   data: {
     typeGrid: typeGridWithSelected(['hiking']),

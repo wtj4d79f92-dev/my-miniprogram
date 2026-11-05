@@ -2693,8 +2693,11 @@ function checkDeleteAccount() {
       const { PRIVACY_AGREEMENT } = require(path.join(ROOT, 'utils/agreements'))
       const policy = PRIVACY_AGREEMENT.paragraphs.join('\n')
       log(
-        policy.indexOf('封面图') > -1 && policy.indexOf('活动二维码') > -1 && policy.indexOf('不传二维码也可以发布活动') > -1,
-        '隐私政策：写明发布时选择的图片用途，并标明活动二维码为选填'
+        policy.indexOf('封面图') > -1 &&
+          policy.indexOf('活动二维码') > -1 &&
+          policy.indexOf('主办方主页背景') > -1 &&
+          policy.indexOf('不传二维码也可以发布活动') > -1,
+        '隐私政策：写明发布图片与主办方背景图用途，并标明活动二维码为选填'
       )
       log(
         policy.indexOf('识别二维码图片上的文字') > -1 &&
@@ -2707,8 +2710,22 @@ function checkDeleteAccount() {
       log(policy.indexOf('设备信息') > -1, '隐私政策：写明设备信息用途')
       log(policy.indexOf('剪切板（仅写入）') > -1, '隐私政策：写明剪切板仅写入且不读取')
       log(
+        policy.indexOf('手机号快捷登录') > -1 &&
+          policy.indexOf('无法进行报名') > -1 &&
+          policy.indexOf('不影响浏览与报名') === -1,
+        '隐私政策：写明手机号是登录必填项及拒绝授权的影响'
+      )
+      log(
+        policy.indexOf('当前设备') > -1 && policy.indexOf('已授权手机号') > -1,
+        '隐私政策：写明账号信息和手机号的设备本地缓存'
+      )
+      log(
         policy.indexOf('注销账号') > -1 && policy.indexOf('个人中心 → 设置') > -1,
         '隐私政策：注销途径指向个人中心的自助入口'
+      )
+      log(
+        policy.indexOf('1074069210@qq.com') > -1 && policy.indexOf('十五个工作日') > -1,
+        '隐私政策：提供邮箱联系方式及其处理时限'
       )
       log(policy.indexOf('不会读取') > -1, '隐私政策：明确不会读取相册与剪切板内容')
     })

@@ -2,6 +2,7 @@
   "renderer": "webview",
   "usingComponents": {
     "navigation-bar": "/components/navigation-bar/navigation-bar",
-    "empty-state": "/components/empty-state/index"
+    "empty-state": "/components/empty-state/index",
+    "privacy-update-modal": "/components/privacy-update-modal/index"
   }
 }

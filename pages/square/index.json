@@ -6,6 +6,7 @@
     "city-picker": "/components/city-picker/index",
     "calendar-picker": "/components/calendar-picker/index",
     "login-modal": "/components/login-modal/index",
+    "privacy-update-modal": "/components/privacy-update-modal/index",
     "activity-card": "/components/activity-card/index",
     "empty-state": "/components/empty-state/index"
   }

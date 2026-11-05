@@ -7,6 +7,8 @@ const KEYS = {
   user: 'my_user',
   userCounter: 'my_user_counter',
   lastPhone: 'my_last_phone',
+  // 隐私政策确认版本：按用户记录，政策更新后只对尚未确认的新版本用户提示一次
+  privacyAck: 'my_privacy_ack',
   published: 'my_published',
   joined: 'my_joined',
   feedback: 'my_feedback',

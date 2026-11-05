@@ -21,4 +21,5 @@
       <text class="feedback-footer">你的反馈将仅用于产品改进分析，感谢支持</text>
     </view>
   </scroll-view>
+  <privacy-update-modal id="privacy-update-modal" bindagree="onPrivacyUpdateAgree" bindclose="onPrivacyUpdateClose"></privacy-update-modal>
 </view>

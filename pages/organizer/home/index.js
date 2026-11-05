@@ -1,6 +1,7 @@
 const api = require('../../../services/api')
 const config = require('../../../services/config')
 const ui = require('../../../utils/ui')
+const privacyUpdateBehavior = require('../../../behaviors/privacy-update-behavior')
 
 const PAGE_SIZE = 10
 
@@ -22,6 +23,8 @@ function uploadCover(source) {
 }
 
 Page({
+  behaviors: [privacyUpdateBehavior],
+
   data: {
     hostSlot: 0,
     organizer: null,

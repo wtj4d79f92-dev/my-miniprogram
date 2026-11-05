@@ -1,6 +1,7 @@
 {
   "renderer": "webview",
   "usingComponents": {
-    "navigation-bar": "/components/navigation-bar/navigation-bar"
+    "navigation-bar": "/components/navigation-bar/navigation-bar",
+    "privacy-update-modal": "/components/privacy-update-modal/index"
   }
 }

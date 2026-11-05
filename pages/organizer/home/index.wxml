@@ -76,4 +76,5 @@
       <view wx:if="{{loading && !list.length}}" class="loading-tip"><text>加载中…</text></view>
     </view>
   </scroll-view>
+  <privacy-update-modal id="privacy-update-modal" bindagree="onPrivacyUpdateAgree" bindclose="onPrivacyUpdateClose"></privacy-update-modal>
 </view>

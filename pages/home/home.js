@@ -2,6 +2,7 @@ const api = require('../../services/api')
 const { TEXTS, normalizeBanners } = require('../../utils/dict')
 const { KEYS, getStorage, setStorage, setStorageAsync } = require('../../utils/storage')
 const loginBehavior = require('../../behaviors/login-behavior')
+const privacyUpdateBehavior = require('../../behaviors/privacy-update-behavior')
 const ui = require('../../utils/ui')
 const scene = require('../../utils/scene')
 const { normalizeMarqueeTexts, MARQUEE_ICON } = require('../../utils/marquee')
@@ -54,7 +55,7 @@ function stripStaleCovers(snapshot) {
 }
 
 Page({
-  behaviors: [loginBehavior],
+  behaviors: [loginBehavior, privacyUpdateBehavior],
 
   data: {
     texts: TEXTS,

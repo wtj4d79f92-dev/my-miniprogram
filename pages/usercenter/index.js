@@ -2,12 +2,14 @@ const api = require('../../services/api')
 const { TEXTS } = require('../../utils/dict')
 const { VERSION_TEXT } = require('../../utils/version')
 const loginBehavior = require('../../behaviors/login-behavior')
+const privacyUpdateBehavior = require('../../behaviors/privacy-update-behavior')
 const ui = require('../../utils/ui')
 const { needProfileSetup, uploadAvatar, usableAvatar } = require('../../utils/profile')
 const { USER_ICONS } = require('../../utils/user-icons')
+const { acknowledgePrivacy, forgetPrivacyAcknowledgement } = require('../../utils/privacy-notice')
 
 Page({
-  behaviors: [loginBehavior],
+  behaviors: [loginBehavior, privacyUpdateBehavior],
 
   data: {
     texts: TEXTS,
@@ -210,6 +212,16 @@ Page({
     if (modal) modal.open('privacy')
   },
 
+  /** 老用户阅读政策并点击“同意并继续”后，记录当前版本且不再提示。 */
+  onAgreementAgree(e) {
+    const key = e && e.detail && e.detail.key
+    if (key !== 'privacy') return
+    const app = getApp()
+    const user = this.data.user || (app && app.globalData && app.globalData.user)
+    acknowledgePrivacy(user)
+    if (app && app.globalData) app.globalData.privacyUpdatePending = false
+  },
+
   /* ------------------------------ 入口 ------------------------------ */
 
   goActivityList(e) {
@@ -342,6 +354,7 @@ Page({
   /** 注销成功：本地登录态与页面数据一起复位，回到未登录的「我的」 */
   afterDeleteAccount() {
     const app = getApp()
+    forgetPrivacyAcknowledgement(this.data.user)
     if (app && app.applyUser) {
       app.applyUser(null)
     } else if (app && app.setUser) {

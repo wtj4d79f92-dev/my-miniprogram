@@ -4,6 +4,7 @@
   "usingComponents": {
     "navigation-bar": "/components/navigation-bar/navigation-bar",
     "activity-card": "/components/activity-card/index",
-    "empty-state": "/components/empty-state/index"
+    "empty-state": "/components/empty-state/index",
+    "privacy-update-modal": "/components/privacy-update-modal/index"
   }
 }

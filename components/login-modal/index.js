@@ -11,6 +11,7 @@ const { AGREEMENTS } = require('../../utils/agreements')
 const { KEYS, getStorage, setStorage } = require('../../utils/storage')
 const { parseBold } = require('../../utils/util')
 const { needProfileSetup, uploadAvatar, isFreshUser, usableAvatar } = require('../../utils/profile')
+const { acknowledgePrivacy } = require('../../utils/privacy-notice')
 
 const DEFAULT_APP_NAME = '旷行吖'
 const PHONE_REG = /^1\d{10}$/
@@ -289,6 +290,8 @@ Component({
         .login(payload)
         .then((user) => {
           wx.hideLoading()
+          // 登录页已经要求勾选《隐私政策》，登录成功即记录用户已确认当前版本。
+          acknowledgePrivacy(user)
           // 记住本次登录手机号，下次可「登录此账号」一键复用
           if (phone) setStorage(KEYS.lastPhone, phone)
           this.setData({ submitting: false })

@@ -174,4 +174,5 @@
 
   <city-picker id="city-picker" city="{{city}}" bindchange="onCityChange" bindlocate="onLocateTap"></city-picker>
   <login-modal id="login-modal" bindlogin="onLogin"></login-modal>
+  <privacy-update-modal id="privacy-update-modal" bindagree="onPrivacyUpdateAgree" bindclose="onPrivacyUpdateClose"></privacy-update-modal>
 </view>

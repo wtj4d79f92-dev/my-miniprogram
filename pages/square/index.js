@@ -3,6 +3,7 @@ const { TEXTS, TYPE_GRID, SORT_OPTIONS, WEEKDAY_OPTIONS } = require('../../utils
 const { KEYS, getStorage, removeStorage } = require('../../utils/storage')
 const { formatMonthDayShort } = require('../../utils/util')
 const loginBehavior = require('../../behaviors/login-behavior')
+const privacyUpdateBehavior = require('../../behaviors/privacy-update-behavior')
 const ui = require('../../utils/ui')
 
 const PAGE_SIZE = 10
@@ -21,7 +22,7 @@ function typeLabelOf(key) {
 }
 
 Page({
-  behaviors: [loginBehavior],
+  behaviors: [loginBehavior, privacyUpdateBehavior],
 
   data: {
     texts: TEXTS,
