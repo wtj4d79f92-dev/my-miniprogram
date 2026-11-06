@@ -22,6 +22,19 @@ const LIMITS = {
 /** 无头像时的色块备选，与前端 utils/nickname.js 的 AVATAR_COLORS 同一份口径 */
 const { AVATAR_COLORS } = require('./nickname')
 
+const CHINA_OFFSET_MS = 8 * 60 * 60 * 1000
+
+/**
+ * 按中国标准时间计算星期。
+ *
+ * 云函数运行环境可能使用 UTC；直接对用户在中国时区选择的集合时间调用 getDay()，
+ * 会把周日 00:00～07:59 算成周六。先平移到 UTC+8，再读取 UTC 星期，可避免依赖运行环境时区。
+ */
+function chinaWeekdayOf(timestamp) {
+  const shifted = new Date(Number(timestamp) + CHINA_OFFSET_MS)
+  return shifted.getUTCDay()
+}
+
 /** 失败结构：前端 callCloud 见到 code 字段即判定为失败 */
 function fail(code, message) {
   return { code, message }
@@ -199,6 +212,7 @@ async function txDoc(transaction, collectionName, id) {
 module.exports = {
   LIMITS,
   AVATAR_COLORS,
+  chinaWeekdayOf,
   fail,
   text,
   num,

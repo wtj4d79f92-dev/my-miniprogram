@@ -1,5 +1,13 @@
 // admin 云函数通用工具：字段清洗与错误结构，约定与 activity 云函数保持一致
 
+const CHINA_OFFSET_MS = 8 * 60 * 60 * 1000
+
+/** 按中国标准时间计算星期，避免云函数 UTC 运行环境把周一至周日整体错一天 */
+function chinaWeekdayOf(timestamp) {
+  const shifted = new Date(Number(timestamp) + CHINA_OFFSET_MS)
+  return shifted.getUTCDay()
+}
+
 /** 失败结构：前端 callAdmin 见到 code 字段即判定为失败 */
 function fail(code, message) {
   return { code, message }
@@ -31,4 +39,4 @@ function withId(doc) {
   return out
 }
 
-module.exports = { fail, text, num, limitRange, withId }
+module.exports = { chinaWeekdayOf, fail, text, num, limitRange, withId }

@@ -3495,11 +3495,11 @@ function checkHomeShare() {
     '首页分享：配置 singlePage.navigationBarFit=squeezed，朋友圈打开时内容不被微信导航栏压住'
   )
 
-  /* ② 页面结构：被禁用的入口（自定义导航栏、发布按钮）在单页模式下不渲染 */
+  /* ② 页面结构：被禁用的入口（自定义顶部行、发布按钮）在单页模式下不渲染 */
   const wxml = read('pages/home/home.wxml')
   log(
-    /<navigation-bar[\s\S]*?wx:if="\{\{!singlePage\}\}"/.test(wxml),
-    '首页分享：单页模式下不再渲染自定义 navigation-bar'
+    /<view[^>]*wx:if="\{\{!singlePage\}\}"[^>]*class="page-topbar"/.test(wxml),
+    '首页分享：单页模式下不再渲染自定义顶部行'
   )
   log(/class="fab"[^>]*wx:if="\{\{!singlePage\}\}"/.test(wxml), '首页分享：单页模式下不再渲染「发布」悬浮按钮')
   log(/class="single-page-tip"/.test(wxml), '首页分享：顶部如实说明朋友圈浏览模式的能力范围')

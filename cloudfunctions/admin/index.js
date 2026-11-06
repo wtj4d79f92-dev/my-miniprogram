@@ -13,7 +13,7 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 const db = cloud.database()
 const _ = db.command
 
-const { fail, text, num, limitRange, withId } = require('./lib/helper')
+const { chinaWeekdayOf, fail, text, num, limitRange, withId } = require('./lib/helper')
 const { PENDING, APPROVED, REJECTED, approvedWhere, auditStatusOf } = require('./lib/audit')
 const { collectFileIDs, resolveMedia } = require('./lib/media')
 // 线路词库：linesImport 把内置词库整份写进 lines 集合，见 scripts/extract-lines.js
@@ -36,6 +36,7 @@ const HOME_ORGANIZER_DOC = 'slots'
 const USER_ID_MAX = 20
 /** 线路词库写库并发度：几百条小记录分批写，避免一次 set 太多把云函数拖超时 */
 const LINE_IMPORT_BATCH = 20
+const MIGRATE_BATCH = 100
 
 /** 管理端列表只展示审核需要的字段：joinedPeople 这类大数组不带出来，避免响应体过大 */
 const LIST_FIELDS = {
@@ -476,28 +477,53 @@ async function logs(event) {
 }
 
 /**
- * 历史数据迁移：给审核能力上线前发布的活动补 approved。
+ * 历史数据迁移：给审核能力上线前发布的活动补 approved，并修复按 UTC 计算错的集合星期。
  * 配合 activity 云函数里 nin 的写法，迁移前后前台可见范围完全一致，属于可重复执行的安全操作。
  */
+async function repairStartWeekdays() {
+  let weekdayUpdated = 0
+  let offset = 0
+  for (;;) {
+    const res = await activities
+      .where({ startTime: _.gt(0) })
+      .orderBy('_id', 'asc')
+      .skip(offset)
+      .field({ startTime: true, startWeekday: true })
+      .limit(MIGRATE_BATCH)
+      .get()
+    const rows = (res && res.data) || []
+    for (let i = 0; i < rows.length; i += 1) {
+      const expected = chinaWeekdayOf(rows[i].startTime)
+      if (rows[i].startWeekday === expected) continue
+      await activities.doc(rows[i]._id).update({ data: { startWeekday: expected } })
+      weekdayUpdated += 1
+    }
+    offset += rows.length
+    if (rows.length < MIGRATE_BATCH) break
+  }
+  return weekdayUpdated
+}
+
 async function migrate(event, openid, admin) {
   const res = await activities.where({ auditStatus: _.exists(false) }).update({
     data: { auditStatus: APPROVED, auditTime: Date.now(), auditBy: adminName(admin) },
   })
   const updated = (res.stats && res.stats.updated) || 0
-  if (updated) {
+  const weekdayUpdated = await repairStartWeekdays()
+  if (updated || weekdayUpdated) {
     await writeLog({
       activityId: '',
       title: '',
       action: 'migrate',
       from: '',
       to: APPROVED,
-      remark: `历史数据补审核状态 ${updated} 条`,
+      remark: `历史数据补审核状态 ${updated} 条，修复星期字段 ${weekdayUpdated} 条`,
       adminOpenid: openid || '',
       adminName: adminName(admin),
       createTime: Date.now(),
     })
   }
-  return { updated }
+  return { updated, weekdayUpdated }
 }
 
 /* ------------------------------ 路由 ------------------------------ */

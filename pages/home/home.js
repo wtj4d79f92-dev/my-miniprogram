@@ -5,7 +5,11 @@ const loginBehavior = require('../../behaviors/login-behavior')
 const privacyUpdateBehavior = require('../../behaviors/privacy-update-behavior')
 const ui = require('../../utils/ui')
 const scene = require('../../utils/scene')
-const { normalizeMarqueeTexts, MARQUEE_ICON } = require('../../utils/marquee')
+const {
+  normalizeMarqueeTexts,
+  buildMarqueeItems,
+  MARQUEE_ICON,
+} = require('../../utils/marquee')
 const { buildHomeOrganizerSlots } = require('../../utils/home-organizers')
 
 /**
@@ -17,6 +21,7 @@ const SHARE_IMAGE = '/assets/share-home.png'
 const TIMELINE_IMAGE = '/assets/logo.png'
 const SHARE_TITLE = `${TEXTS.appName} · 同城找搭子，一起出发`
 const HOME_MARQUEE_TEXTS = normalizeMarqueeTexts(TEXTS.homeMarqueeTexts)
+const HOME_MARQUEE_ITEMS = buildMarqueeItems(HOME_MARQUEE_TEXTS, 180, [])
 
 /**
  * 首页列表本地快照的有效期。冷启动时先用快照把活动渲染出来，接口返回后再覆盖，
@@ -62,6 +67,9 @@ Page({
     marqueeIcon: MARQUEE_ICON,
     homeMarqueeTexts: HOME_MARQUEE_TEXTS,
     homeMarqueeHasMultiple: HOME_MARQUEE_TEXTS.length > 1,
+    homeMarqueeItems: HOME_MARQUEE_ITEMS,
+    homeMarqueeCurrent: 0,
+    homeMarqueeActiveIndex: 0,
     city: '',
     cityLabel: '全部',
     locationDenied: false,
@@ -79,9 +87,17 @@ Page({
 
   onLoad() {
     const app = getApp()
-    this.setData({ user: app.globalData.user, singlePage: scene.isSinglePageMode() })
+    this.setData({
+      user: app.globalData.user,
+      singlePage: scene.isSinglePageMode(),
+      topBarStyle: ui.getTopBarStyle(),
+    })
     this.syncCityState()
     this.renderCache()
+  },
+
+  onReady() {
+    this.measureMarquee()
   },
 
   onShow() {
@@ -95,6 +111,70 @@ Page({
     this.syncCityState()
     this.syncPageTitle()
     this.loadData()
+    if (this._marqueeMeasured) this.scheduleMarquee(this.data.homeMarqueeActiveIndex)
+  },
+
+  onHide() {
+    this.clearMarqueeTimer()
+  },
+
+  onUnload() {
+    this.clearMarqueeTimer()
+  },
+
+  /**
+   * 用真实文字宽度决定每条文案是否需要滚动。
+   * swiper 的每一项在数据里都保留，所以一次查询即可拿到全部文案宽度。
+   */
+  measureMarquee() {
+    if (!this.data.homeMarqueeHasMultiple) return
+    const query = wx.createSelectorQuery().in(this)
+    query.select('.home-marquee-window').boundingClientRect()
+    query.selectAll('.home-marquee-vertical-text').boundingClientRect()
+    query.exec((result) => {
+      const windowRect = result && result[0]
+      const textRects = (result && result[1]) || []
+      if (!windowRect || !windowRect.width || !textRects.length) return
+      const items = buildMarqueeItems(
+        this.data.homeMarqueeTexts,
+        windowRect.width,
+        textRects.map((rect) => rect.width)
+      )
+      this._marqueeMeasured = true
+      this.setData({ homeMarqueeItems: items }, () => {
+        this.scheduleMarquee(this.data.homeMarqueeActiveIndex)
+      })
+    })
+  },
+
+  onMarqueeChange(e) {
+    const current = Math.max(0, Number(e.detail.current) || 0)
+    this.setData(
+      {
+        homeMarqueeCurrent: current,
+        homeMarqueeActiveIndex: current,
+      },
+      () => this.scheduleMarquee(current)
+    )
+  },
+
+  scheduleMarquee(index) {
+    this.clearMarqueeTimer()
+    if (!this.data.homeMarqueeHasMultiple) return
+    const items = this.data.homeMarqueeItems
+    const safeIndex = Math.max(0, Math.min(index, items.length - 1))
+    const item = items[safeIndex]
+    if (!item) return
+    this._marqueeTimer = setTimeout(() => {
+      const next = (safeIndex + 1) % items.length
+      this.setData({ homeMarqueeCurrent: next })
+    }, item.durationMs)
+  },
+
+  clearMarqueeTimer() {
+    if (!this._marqueeTimer) return
+    clearTimeout(this._marqueeTimer)
+    this._marqueeTimer = null
   },
 
   onPullDownRefresh() {

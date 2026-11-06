@@ -1,18 +1,14 @@
 <view class="page tab-page">
-  <navigation-bar title="活动广场" back="{{false}}" color="#2D3748" background="#BFAF92"></navigation-bar>
-
-  <view class="square-head">
-    <!-- 城市栏：定位与切换城市合并成一个胶囊，点开即城市选择弹层 -->
-    <view class="locate-bar">
-      <view class="city-pill" bindtap="openCityPicker" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
-        <text class="locate-icon">📍</text>
-        <text class="city-pill-name">{{locationDenied ? '定位未开启' : cityLabel}}</text>
-        <text class="city-pill-arrow">▾</text>
-      </view>
+  <!-- 页面不显示名称，定位胶囊直接占用微信胶囊按钮所在的导航行 -->
+  <view class="page-topbar" style="{{topBarStyle}}">
+    <view class="city-pill" bindtap="openCityPicker" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
+      <text class="locate-icon">📍</text>
+      <text class="city-pill-name">{{locationDenied ? '定位未开启' : cityLabel}}</text>
+      <text class="city-pill-arrow">▾</text>
     </view>
 
-    <!-- 搜索栏：与首页同一套极简仿搜索框，输入后回车（键盘「搜索」）提交，无内嵌按钮 -->
-    <view class="search-row">
+    <!-- 搜索栏与定位、微信胶囊按钮共用同一条导航行，三者高度一致 -->
+    <view class="search-row topbar-search">
       <text class="search-icon">🔍</text>
       <input
         class="search-input"
@@ -27,7 +23,9 @@
       />
       <text wx:if="{{keyword}}" class="search-clear" bindtap="onKeywordClear" hover-class="row-press" hover-start-time="0" hover-stay-time="80">✕</text>
     </view>
+  </view>
 
+  <view class="square-head">
     <!-- 排序栏 + 筛选（活动类型 / 具体日期 / 星期几） -->
     <view class="sort-bar">
       <view class="sort-options">

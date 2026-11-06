@@ -712,6 +712,18 @@ function seedActivity(overrides) {
   return doc
 }
 
+/** 下一个中国时区的周日 00:00：复现云函数按 UTC 计算星期时错成周六的边界 */
+function nextChinaSundayMidnight() {
+  const chinaNow = new Date(Date.now() + 8 * 3600000)
+  const daysAhead = (7 - chinaNow.getUTCDay()) % 7 || 7
+  const chinaMidnight = Date.UTC(
+    chinaNow.getUTCFullYear(),
+    chinaNow.getUTCMonth(),
+    chinaNow.getUTCDate() + daysAhead
+  )
+  return chinaMidnight - 8 * 3600000
+}
+
 /* ------------------------------ 用例 ------------------------------ */
 
 async function run() {
@@ -992,6 +1004,19 @@ async function run() {
   log(created.status === 'recruiting' && created.joinedCount === 0, '发布：业务状态与成员列表正常')
   log(created.city === '杭州', '发布：城市由集合地点自动匹配')
   log(created.startTimeHasClock === false, '发布：保存集合时间是否已明确，供客户端决定是否展示钟点')
+  const sundayStart = nextChinaSundayMidnight()
+  const sundayCreated = await callActivity(
+    'create',
+    {
+      form: Object.assign({}, form, {
+        title: '周日零点活动',
+        startTime: sundayStart,
+        endTime: sundayStart + 12 * 3600000,
+      }),
+    },
+    ORGANIZER
+  )
+  log(sundayCreated.startWeekday === 0, '发布：中国时区周日零点活动的入库星期应为周日')
 
   const invalidCreate = await callActivity('create', { form: Object.assign({}, form, { title: '' }) }, ORGANIZER)
   log(invalidCreate.code === 'INVALID_PARAM', '发布：缺少标题被拒绝')
@@ -1420,14 +1445,25 @@ async function run() {
   log(logsRes.list.length >= 2, '审核台：可按活动查询审核记录')
 
   /* ---------- admin 云函数：历史数据迁移 ---------- */
+  const badWeekday = seedActivity({
+    _id: 'act_bad_weekday',
+    title: '周日零点旧活动',
+    startTime: Date.UTC(2026, 10, 7, 16),
+    endTime: Date.UTC(2026, 10, 8, 4),
+    startWeekday: 6,
+    auditStatus: 'approved',
+  })
   const legacyBefore = store.activities.filter((item) => item.auditStatus === undefined).length
   log(legacyBefore === 1, `迁移前存在 ${legacyBefore} 条无审核状态的历史数据`)
   const migrateRes = await callAdmin('migrate', {}, ADMIN)
   log(migrateRes.updated === 1, '迁移：补齐历史数据的审核状态')
+  log(migrateRes.weekdayUpdated >= 1, '迁移：修复按 UTC 存错的星期')
+  log(badWeekday.startWeekday === 0, '迁移：周日零点旧活动改为周日')
   const migrated = store.activities.filter((item) => item._id === legacy._id)[0]
   log(migrated.auditStatus === 'approved', '迁移：历史数据标记为已通过')
   const migrateAgain = await callAdmin('migrate', {}, ADMIN)
   log(migrateAgain.updated === 0, '迁移：可重复执行，不会重复改动')
+  log(migrateAgain.weekdayUpdated === 0, '迁移：星期已正确时不重复更新')
   const legacyStillVisible = await callActivity('list', { pageIndex: 0, pageSize: 50 }, OTHER)
   log(legacyStillVisible.list.some((item) => item.id === legacy._id), '迁移：历史活动迁移后依然可见')
 

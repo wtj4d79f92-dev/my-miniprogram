@@ -1,7 +1,7 @@
 .locate-bar {
   display: flex;
   align-items: center;
-  padding: 16rpx 0 4rpx;
+  padding: 0;
 }
 
 /* 定位 + 切换城市合并成一个胶囊，点开即城市选择弹层 */
@@ -38,16 +38,21 @@
 .home-marquee {
   display: flex;
   align-items: center;
-  width: 100%;
-  max-width: 100%;
-  height: 44rpx;
-  margin-top: 12rpx;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
   padding: 0 14rpx;
   overflow: hidden;
   border-radius: var(--radius-pill);
   background: var(--card-sheen);
   box-shadow: 0 4rpx 14rpx rgba(58, 44, 24, 0.12), var(--card-inner);
   box-sizing: border-box;
+}
+
+.page-scroll .home-marquee {
+  width: 100%;
+  height: 44rpx;
+  margin-top: 12rpx;
 }
 
 .home-marquee-icon {
@@ -60,7 +65,7 @@
 .home-marquee-window {
   flex: 1;
   width: 0;
-  height: 34rpx;
+  height: 100%;
   min-width: 0;
   overflow: hidden;
 }
@@ -69,7 +74,7 @@
 .home-marquee-horizontal,
 .home-marquee-slide {
   width: 100%;
-  height: 34rpx;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -84,8 +89,7 @@
   display: flex;
   flex: none;
   align-items: center;
-  /* 内容区宽度 = 屏幕宽度 - 页面左右内边距 - 图标及其间距 - 胶囊内边距 */
-  min-width: calc(100vw - 114rpx);
+  min-width: 100%;
   padding-right: 80rpx;
   box-sizing: border-box;
   white-space: nowrap;
@@ -94,7 +98,7 @@
 .home-marquee-text,
 .home-marquee-vertical-text {
   font-size: 24rpx;
-  line-height: 34rpx;
+  line-height: 1;
   font-weight: 500;
   color: var(--text-sub);
   letter-spacing: 1rpx;
@@ -106,11 +110,18 @@
 }
 
 .home-marquee-vertical-text {
-  display: block;
-  width: 100%;
-  overflow: hidden;
+  display: inline-block;
+  flex: none;
+  width: auto;
   white-space: nowrap;
-  text-overflow: ellipsis;
+  will-change: transform;
+}
+
+/* 当前长文案从左侧开始，滚到最后一个字完整露出后再停留并切下一条 */
+.home-marquee-vertical-text.is-scrolling.is-active {
+  animation-name: home-marquee-item-scroll;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
 }
 
 .home-marquee-dot {
@@ -126,6 +137,16 @@
 
   to {
     transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes home-marquee-item-scroll {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(var(--home-marquee-distance), 0, 0);
   }
 }
 

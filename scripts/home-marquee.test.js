@@ -4,7 +4,11 @@ const path = require('path')
 
 const ROOT = path.resolve(__dirname, '..')
 const { TEXTS } = require(path.join(ROOT, 'utils/dict'))
-const { normalizeMarqueeTexts, MARQUEE_ICON } = require(path.join(ROOT, 'utils/marquee'))
+const {
+  normalizeMarqueeTexts,
+  buildMarqueeItems,
+  MARQUEE_ICON,
+} = require(path.join(ROOT, 'utils/marquee'))
 const wxml = fs.readFileSync(path.join(ROOT, 'pages/home/home.wxml'), 'utf8')
 const wxss = fs.readFileSync(path.join(ROOT, 'pages/home/home.wxss'), 'utf8')
 const pageJs = fs.readFileSync(path.join(ROOT, 'pages/home/home.js'), 'utf8')
@@ -21,20 +25,41 @@ assert.deepStrictEqual(
   ['单条文案'],
   '单条字符串配置也应兼容'
 )
+assert.deepStrictEqual(
+  buildMarqueeItems(['短标题', '这是一条远远超出窗口宽度的长文案'], 120, [60, 220]).map((item) => ({
+    scrolling: item.scrolling,
+    durationMs: item.durationMs,
+    style: item.style,
+  })),
+  [
+    { scrolling: false, durationMs: 2600, style: '' },
+    {
+      scrolling: true,
+      durationMs: 4712,
+      style: '--home-marquee-distance: -116px; animation-duration: 3712ms;',
+    },
+  ],
+  '长文案应滚过自身超出窗口的部分，短文案保持静止停留'
+)
 const iconSvg = decodeURIComponent(MARQUEE_ICON.split(',')[1])
 assert.match(iconSvg, /viewBox="0 0 24 24"/, '跑马灯图标应使用统一的 24×24 线性图标规格')
 assert.match(iconSvg, /stroke="#00B578"/, '跑马灯图标应使用“我的”页同一品牌绿')
 assert.match(iconSvg, /stroke-width="1.6"/, '跑马灯图标应使用“我的”页同一线宽')
 assert.match(wxml, /class="home-marquee"/, '首页应渲染跑马灯')
 assert.match(wxml, /src="\{\{marqueeIcon\}\}"/, '首页跑马灯应渲染线性图标')
-assert.match(wxml, /homeMarqueeHasMultiple/, '首页应根据文案条数切换滚动方向')
+assert.match(wxml, /homeMarqueeItems/, '首页应按测量结果渲染每条文案的滚动状态')
 assert.match(wxml, /class="home-marquee-swiper"/, '多条文案应使用上下轮播')
 assert.match(wxml, /vertical="\{\{true\}\}"/, '多条文案轮播方向应为上下')
+assert.match(wxml, /bindchange="onMarqueeChange"/, '文案切换完成后应开始下一条的展示计时')
+assert.match(wxml, /is-scrolling/, '超出窗口的长文案应启用横向滚动')
+assert.match(wxml, /is-active/, '只有当前文案应播放横向滚动动画')
 assert.doesNotMatch(wxml, />\s*发现\s*</, '跑马灯图标后不应保留“发现”文案')
 assert.doesNotMatch(wxml, /home-marquee-divider/, '跑马灯图标后不应保留分隔线')
 assert.doesNotMatch(wxml, /class="search-entry"/, '首页应删除搜索入口')
 assert.doesNotMatch(pageJs, /onSearchTap/, '首页应删除搜索跳转逻辑')
 assert.match(wxss, /@keyframes home-marquee-scroll/, '跑马灯应有横向滚动动画')
+assert.match(wxss, /@keyframes home-marquee-item-scroll/, '每条长文案应有独立的横向滚动动画')
+assert.match(wxss, /var\(--home-marquee-distance\)/, '横向滚动距离应按实际文案宽度计算')
 assert.match(wxss, /height:\s*44rpx/, '跑马灯应使用紧凑高度')
 assert.match(wxss, /border-radius:\s*var\(--radius-pill\)/, '跑马灯应使用紧凑胶囊外形')
 assert.match(

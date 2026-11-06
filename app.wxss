@@ -69,6 +69,27 @@ page {
   box-sizing: border-box;
 }
 
+/* 首页 / 广场首行：与微信右上角胶囊按钮共用同一条自定义导航行 */
+.page-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding-right: 24rpx;
+  padding-left: 24rpx;
+  box-sizing: border-box;
+}
+
+.page-topbar .city-pill {
+  flex: none;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.page-topbar .city-pill-name {
+  /* 首行还要容纳跑马灯 / 搜索框，长城市名在定位胶囊内截断，不能挤掉中间内容 */
+  max-width: 160rpx;
+}
+
 /* tabBar 页面：底部预留自定义 tabBar 的高度，避免滚动内容被导航栏压住 */
 .tab-page {
   padding-bottom: calc(110rpx + env(safe-area-inset-bottom));

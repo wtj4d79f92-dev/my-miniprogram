@@ -1,6 +1,46 @@
 <view class="page tab-page">
-  <!-- 单页模式下微信自带固定顶部导航栏，页面里的 navigation-bar 属于被禁用组件，这里不再渲染 -->
-  <navigation-bar wx:if="{{!singlePage}}" title="{{texts.appName}}" back="{{false}}" color="#2D3748" background="#BFAF92"></navigation-bar>
+  <!-- 页面不显示名称，定位胶囊直接占用微信胶囊按钮所在的导航行 -->
+  <view wx:if="{{!singlePage}}" class="page-topbar" style="{{topBarStyle}}">
+    <view class="city-pill" bindtap="openCityPicker" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
+      <text class="locate-icon">📍</text>
+      <text class="city-pill-name">{{locationDenied ? '定位未开启' : cityLabel}}</text>
+      <text class="city-pill-arrow">▾</text>
+    </view>
+
+    <!-- 首页跑马灯：与定位、微信胶囊按钮共用同一条导航行，三者高度一致 -->
+    <view wx:if="{{homeMarqueeTexts.length}}" class="home-marquee" aria-label="{{homeMarqueeTexts[0]}}">
+      <image class="home-marquee-icon" src="{{marqueeIcon}}" mode="aspectFit" />
+      <view class="home-marquee-window">
+        <swiper
+          wx:if="{{homeMarqueeHasMultiple}}"
+          class="home-marquee-swiper"
+          vertical="{{true}}"
+          current="{{homeMarqueeCurrent}}"
+          autoplay="{{false}}"
+          circular="{{true}}"
+          duration="500"
+          bindchange="onMarqueeChange"
+        >
+          <swiper-item wx:for="{{homeMarqueeItems}}" wx:key="text">
+            <view class="home-marquee-slide">
+              <text
+                class="home-marquee-vertical-text {{item.scrolling ? 'is-scrolling' : ''}} {{index === homeMarqueeActiveIndex ? 'is-active' : ''}}"
+                style="{{index === homeMarqueeActiveIndex ? item.style : ''}}"
+              >{{item.text}}</text>
+            </view>
+          </swiper-item>
+        </swiper>
+        <view wx:else class="home-marquee-horizontal">
+          <view class="home-marquee-track">
+            <view class="home-marquee-group" wx:for="{{[0, 1]}}" wx:key="*this">
+              <text class="home-marquee-text">{{homeMarqueeTexts[0]}}</text>
+              <text class="home-marquee-dot">·</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
 
   <scroll-view
     class="page-scroll tab-page-scroll"
@@ -16,17 +56,8 @@
         <text>朋友圈浏览模式仅展示活动信息，搜索、报名需在小程序内操作</text>
       </view>
 
-      <!-- 定位与切换城市合并成一个胶囊：点开就是城市选择弹层（重新定位在弹层里） -->
-      <view class="locate-bar">
-        <view class="city-pill" bindtap="openCityPicker" hover-class="btn-press" hover-start-time="0" hover-stay-time="80">
-          <text class="locate-icon">📍</text>
-          <text class="city-pill-name">{{locationDenied ? '定位未开启' : cityLabel}}</text>
-          <text class="city-pill-arrow">▾</text>
-        </view>
-      </view>
-
-      <!-- 首页跑马灯：文案统一在 utils/dict.js 的 homeMarqueeTexts 中调整 -->
-      <view wx:if="{{homeMarqueeTexts.length}}" class="home-marquee" aria-label="{{homeMarqueeTexts[0]}}">
+      <!-- 单页模式没有自定义顶部行，跑马灯仍放在内容流最上方 -->
+      <view wx:if="{{singlePage && homeMarqueeTexts.length}}" class="home-marquee" aria-label="{{homeMarqueeTexts[0]}}">
         <image class="home-marquee-icon" src="{{marqueeIcon}}" mode="aspectFit" />
         <view class="home-marquee-window">
           <!-- 多条文案：每条向上轮播展示 -->
@@ -34,14 +65,18 @@
             wx:if="{{homeMarqueeHasMultiple}}"
             class="home-marquee-swiper"
             vertical="{{true}}"
-            autoplay="{{true}}"
+            current="{{homeMarqueeCurrent}}"
+            autoplay="{{false}}"
             circular="{{true}}"
-            interval="3000"
             duration="500"
+            bindchange="onMarqueeChange"
           >
-            <swiper-item wx:for="{{homeMarqueeTexts}}" wx:key="*this">
+            <swiper-item wx:for="{{homeMarqueeItems}}" wx:key="text">
               <view class="home-marquee-slide">
-                <text class="home-marquee-vertical-text">{{item}}</text>
+                <text
+                  class="home-marquee-vertical-text {{item.scrolling ? 'is-scrolling' : ''}} {{index === homeMarqueeActiveIndex ? 'is-active' : ''}}"
+                  style="{{index === homeMarqueeActiveIndex ? item.style : ''}}"
+                >{{item.text}}</text>
               </view>
             </swiper-item>
           </swiper>

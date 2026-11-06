@@ -593,12 +593,12 @@ Page({
       })
   },
 
-  /** 一次性运维动作：给审核能力上线前发布的历史活动补审核状态（可重复执行） */
+  /** 一次性运维动作：补历史审核状态，并修复按 UTC 存错的星期筛选字段（可重复执行） */
   migrateHistory() {
     ui.confirm({
-      title: '补齐历史数据',
-      content: '给审核上线前发布的活动补「已通过」状态，不影响前台展示范围。可重复执行。',
-      confirmText: '开始补齐',
+      title: '补齐并修复历史数据',
+      content: '补齐审核上线前活动的「已通过」状态，并修复按中国时区存错的星期筛选字段。可重复执行。',
+      confirmText: '开始修复',
     }).then((ok) => {
       if (!ok) return
       wx.showLoading({ title: '处理中', mask: true })
@@ -606,7 +606,9 @@ Page({
         .adminMigrate()
         .then((res) => {
           wx.hideLoading()
-          ui.toast(`已补齐 ${((res && res.updated) || 0)} 条`, 'success')
+          const auditUpdated = (res && res.updated) || 0
+          const weekdayUpdated = (res && res.weekdayUpdated) || 0
+          ui.toast(`审核 ${auditUpdated} 条，星期 ${weekdayUpdated} 条`, 'success')
           this.loadList(true)
           return null
         })

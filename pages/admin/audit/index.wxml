@@ -126,7 +126,7 @@
         <view wx:if="{{!loading && !hasMore && list.length > 1}}" class="loading-tip"><text>没有更多了</text></view>
 
         <view class="migrate" bindtap="migrateHistory" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
-          <text>审核能力上线前的历史活动，点此补齐全量审核状态</text>
+          <text>点此补齐历史审核状态，并修复星期筛选数据</text>
         </view>
         <view class="organizer-config-entry" bindtap="openOrganizers" hover-class="row-press" hover-start-time="0" hover-stay-time="80">
           <view>

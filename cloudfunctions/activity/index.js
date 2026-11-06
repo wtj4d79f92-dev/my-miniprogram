@@ -50,6 +50,7 @@ const { LINE_LIBRARY } = require('./lib/lines')
 const { extractCenterWord, sampleOf, mergeStat } = require('./lib/line-stat')
 const {
   LIMITS,
+  chinaWeekdayOf,
   fail,
   text,
   num,
@@ -688,7 +689,7 @@ function normalizeForm(form) {
       // 只有用户明确选择或 OCR 明确识别出钟点才存 true；旧数据缺少字段按未明确处理
       startTimeHasClock: form.startTimeHasClock === true,
       endTime,
-      startWeekday: new Date(startTime).getDay(),
+      startWeekday: chinaWeekdayOf(startTime),
       difficulty: types.some((key) => supportsMetrics(key))
         ? limitRange(Math.floor(num(form.difficulty, 0)), 0, 10)
         : 0,

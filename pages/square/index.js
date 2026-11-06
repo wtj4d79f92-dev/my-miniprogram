@@ -65,6 +65,7 @@ Page({
       city: app.globalData.city,
       cityLabel: app.globalData.city || '全部',
       locationDenied: app.globalData.locationDenied,
+      topBarStyle: ui.getTopBarStyle(),
     })
     this.loadList(true)
   },

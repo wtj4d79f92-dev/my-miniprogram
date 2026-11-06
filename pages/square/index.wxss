@@ -1,5 +1,6 @@
 .square-head {
-  padding: 16rpx 24rpx 0;
+  /* 顶部导航、筛选区、活动卡片之间各留出一段呼吸感 */
+  padding: 24rpx 24rpx;
   /* 顶部筛选区和页面同底色，卡片才是浮起来的那一层 */
   background: var(--page-bg);
   z-index: 10;
@@ -8,7 +9,7 @@
 .locate-bar {
   display: flex;
   align-items: center;
-  padding-bottom: 16rpx;
+  padding: 0;
 }
 
 .locate-icon {
@@ -45,12 +46,18 @@
 .search-row {
   display: flex;
   align-items: center;
-  height: 84rpx;
+  height: 100%;
   padding: 0 24rpx;
   /* 与首页搜索框同一套材质：同圆角、同玻璃底、同投影 */
-  border-radius: var(--radius);
+  border-radius: var(--radius-pill);
   background: var(--card-sheen);
   box-shadow: var(--shadow), var(--card-inner);
+  box-sizing: border-box;
+}
+
+.topbar-search {
+  flex: 1;
+  min-width: 0;
 }
 
 .search-icon {
