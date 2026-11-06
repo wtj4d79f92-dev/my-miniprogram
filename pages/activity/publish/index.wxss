@@ -321,6 +321,14 @@
   display: flex;
 }
 
+.qr-upload-tip {
+  display: block;
+  margin: -4rpx 0 20rpx;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: var(--text-light);
+}
+
 .qr-preview {
   display: flex;
   align-items: center;

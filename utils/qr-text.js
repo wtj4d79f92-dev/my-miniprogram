@@ -500,7 +500,25 @@ function parseStartTime(value, now) {
 
   if (!pair && dateHit && clockHit) pair = { date: dateHit.date, clock: clockHit.clock }
   if (!pair && dateHit) {
-    pair = { date: dateHit.date, clock: { hour: 0, minute: 0, text: '' } }
+    const date = dateHit.date
+    const isToday =
+      startOfDay(new Date(date.year, date.month - 1, date.day).getTime()) === startOfDay(current)
+    if (isToday) {
+      const defaultAt = new Date(current)
+      defaultAt.setSeconds(0, 0)
+      defaultAt.setHours(defaultAt.getHours() + 1)
+      pair = {
+        date: {
+          year: defaultAt.getFullYear(),
+          month: defaultAt.getMonth() + 1,
+          day: defaultAt.getDate(),
+          kind: date.kind,
+        },
+        clock: { hour: defaultAt.getHours(), minute: defaultAt.getMinutes(), text: '' },
+      }
+    } else {
+      pair = { date, clock: { hour: 8, minute: 0, text: '' } }
+    }
   }
   if (!pair && clockHit) {
     const today = new Date(current)

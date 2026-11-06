@@ -18,6 +18,7 @@ const { matchCity } = require('../../../utils/cities')
 const { matchLine, matchStat } = require('../../../utils/line-match')
 const { LINE_LIBRARY, LINE_LIBRARY_VERSION } = require('../../../utils/lines')
 const { parseQrFields, stripGroupName, stripQrHints } = require('../../../utils/qr-text')
+const { cropQrImage } = require('../../../utils/qr-image')
 const { KEYS, getStorage, setStorage } = require('../../../utils/storage')
 
 const LOGIN_REASON = '发布活动需要先登录，是否立即登录？'
@@ -101,6 +102,8 @@ Page({
       tags: [],
       title: '',
       startTime: 0,
+      // 时间戳只为校验 / 排序补上默认钟点；该标记表示这个钟点是否来自截图或用户选择
+      startTimeHasClock: false,
       endTime: 0,
       location: '',
       // 地图选点反查出的完整地址：不展示，只随表单上送给服务端做城市匹配与地址检索
@@ -246,6 +249,8 @@ Page({
             tags,
             title: raw.title || '',
             startTime: raw.startTime,
+            // 历史活动无法证明用户主动选过钟点，按未明确处理，避免回填后再把默认时间写成已选择
+            startTimeHasClock: raw.startTimeHasClock === true,
             endTime: raw.endTime,
             location: raw.location || '',
             locationAddress: raw.locationAddress || '',
@@ -533,6 +538,7 @@ Page({
             : timestamp
       this.setData({
         'form.startTime': timestamp,
+        'form.startTimeHasClock': !!e.detail.timeTouched || !!form.startTimeHasClock,
         startLabel: formatCardDateTime(timestamp),
         'form.endTime': endTime,
         endLabel: formatCardDateTime(endTime),
@@ -647,12 +653,19 @@ Page({
         const file = res.tempFiles && res.tempFiles[0]
         if (!file) return
         const path = file.tempFilePath
-        // 换图时把上一张还没提交的草稿删掉，避免云存储里越堆越多
-        this.discardQrDraft()
-        this._qrNeedsLogin = false
-        this.setData({ 'form.groupQrCode': path })
-        this.clearError('groupQrCode')
-        this.readQrText(path)
+        wx.showLoading({ title: '正在裁切', mask: true })
+        const applyPicked = (pickedPath) => {
+          if (this._unloaded || !pickedPath) return
+          // 换图时把上一张还没提交的草稿删掉，避免云存储里越堆越多
+          this.discardQrDraft()
+          this._qrNeedsLogin = false
+          this.setData({ 'form.groupQrCode': pickedPath })
+          this.clearError('groupQrCode')
+          this.readQrText(pickedPath)
+        }
+        cropQrImage(path, this)
+          .then(applyPicked, () => applyPicked(path))
+          .then(() => wx.hideLoading())
       },
     })
   },
@@ -738,6 +751,7 @@ Page({
     // 集合时间：用户自己点过日历后保留用户的选择
     if (data.startTime && !this._startTouched) {
       const startTime = Number(data.startTime)
+      patch['form.startTimeHasClock'] = !!data.clockText
       if (startTime && startTime !== form.startTime) {
         patch['form.startTime'] = startTime
         patch.startLabel = formatCardDateTime(startTime)

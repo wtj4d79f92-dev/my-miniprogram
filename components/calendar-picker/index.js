@@ -2,6 +2,17 @@ const { startOfDay, formatYearMonth, pad } = require('../../utils/util')
 
 const WEEK_HEAD = ['日', '一', '二', '三', '四', '五', '六']
 
+/** 选中日期后未指定钟点时的默认值：当天从当前时间顺延一小时，其余日期使用 08:00 */
+function defaultTimeForDate(ts, now) {
+  const target = startOfDay(ts)
+  const today = startOfDay(now || Date.now())
+  if (target !== today) return '08:00'
+  const next = new Date(now || Date.now())
+  next.setSeconds(0, 0)
+  next.setHours(next.getHours() + 1)
+  return `${pad(next.getHours())}:${pad(next.getMinutes())}`
+}
+
 Component({
   options: {
     styleIsolation: 'apply-shared',
@@ -38,6 +49,7 @@ Component({
       const minTs = withTime ? Number(opts.minTs) || 0 : startOfDay(opts.minTs || 0)
       const source = new Date(ts || base)
       this._minTs = minTs
+      this._timeTouched = false
       this.setData({
         visible: true,
         title: opts.title || '选择日期',
@@ -107,11 +119,15 @@ Component({
     onSelect(e) {
       const ts = e.currentTarget.dataset.ts
       if (e.currentTarget.dataset.disabled) return
-      this.setData({ selectedTs: ts })
+      const changed = ts !== this.data.selectedTs
+      const patch = { selectedTs: ts }
+      if (changed && !this._timeTouched) patch.timeValue = defaultTimeForDate(ts)
+      this.setData(patch)
       this.build()
     },
 
     onTimeChange(e) {
+      this._timeTouched = true
       this.setData({ timeValue: e.detail.value })
     },
 
@@ -138,7 +154,10 @@ Component({
         return
       }
       this.setData({ visible: false })
-      this.triggerEvent('confirm', { timestamp: ts })
+      this.triggerEvent('confirm', {
+        timestamp: ts,
+        timeTouched: this.data.withTime ? !!this._timeTouched : false,
+      })
     },
 
     cancel() {

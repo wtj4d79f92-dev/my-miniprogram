@@ -261,7 +261,7 @@ Page({
     const activity = api.decorate(raw)
     // 页面标题用活动名，微信搜索会据此理解这个页面在讲什么（自定义导航栏下用户看不到标题）
     ui.setPageTitle(`${activity.title} · 旷行吖`)
-    activity.startLabel = formatCardDateTime(activity.startTime)
+    activity.startLabel = activity.dateText
     activity.endLabel = activity.endTime ? formatCardDateTime(activity.endTime) : '待定'
     activity.coverGradient = activity.bg
     // 封面 / 活动二维码是发起人上传的云存储文件，客户端直连 cloud:// 可能被存储权限拦下，

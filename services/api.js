@@ -10,7 +10,7 @@ const {
   tagName,
 } = require('../utils/dict')
 const { matchCity, normalizeCity, singleCityKey } = require('../utils/cities')
-const { delay, deepClone, formatCardDateTime, WEEKDAY_TEXT } = require('../utils/util')
+const { delay, deepClone, formatCardDate, formatCardDateTime, WEEKDAY_TEXT } = require('../utils/util')
 const { LOCATION_MAX, ADDRESS_MAX } = require('../utils/location')
 // 线路词库：发布页按标题自动填「难度 / 全程长度 / 累计爬升」用（云端以 lines 集合为准）
 const { LINE_LIBRARY } = require('../utils/lines')
@@ -69,6 +69,8 @@ function mockFormFields(form) {
     // 否则 city 为空，按城市筛选时这条活动永远查不到；省份 / 全国这种落不到单城的提示不采用
     city: matchCity(form.locationAddress || form.location) || singleCityKey(form.cityHint),
     startTime: form.startTime,
+    // 只有用户明确选择或 OCR 明确识别出钟点才存 true；旧数据缺少字段按未明确处理
+    startTimeHasClock: form.startTimeHasClock === true,
     endTime: form.endTime,
     startWeekday: new Date(form.startTime).getDay(),
     difficulty: types.some((key) => supportsMetrics(key)) ? form.difficulty || 0 : 0,
@@ -1405,7 +1407,11 @@ function feeTextOf(activity) {
 function decorate(activity) {
   if (!activity) return null
   const item = deepClone(activity)
-  item.dateText = item.startTime ? formatCardDateTime(item.startTime) : ''
+  item.dateText = item.startTime
+    ? item.startTimeHasClock === true
+      ? formatCardDateTime(item.startTime)
+      : formatCardDate(item.startTime)
+    : ''
   item.feeText = feeTextOf(item)
   item.peopleText = `${item.joinedCount}/${item.maxPeople}人`
   item.tagNames = (item.tags || []).map(tagName).filter(Boolean)

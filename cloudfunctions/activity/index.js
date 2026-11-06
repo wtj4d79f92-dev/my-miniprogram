@@ -685,6 +685,8 @@ function normalizeForm(form) {
       // 否则 city 为空，这条活动按城市筛选时永远查不到
       city: matchCity(locationAddress || location) || singleCityKey(form.cityHint),
       startTime,
+      // 只有用户明确选择或 OCR 明确识别出钟点才存 true；旧数据缺少字段按未明确处理
+      startTimeHasClock: form.startTimeHasClock === true,
       endTime,
       startWeekday: new Date(startTime).getDay(),
       difficulty: types.some((key) => supportsMetrics(key))

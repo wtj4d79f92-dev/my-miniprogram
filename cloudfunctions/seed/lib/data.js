@@ -197,6 +197,8 @@ function buildDocs(now, options) {
       locationLng: seed.lng || 0,
       city: seed.city,
       startTime,
+      // 演示数据都明确到钟点，列表与详情照常展示具体时间
+      startTimeHasClock: true,
       endTime,
       startWeekday: new Date(startTime).getDay(),
       difficulty: METRIC_TYPES.indexOf(seed.type) > -1 ? seed.difficulty || 0 : 0,

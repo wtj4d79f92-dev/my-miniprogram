@@ -991,6 +991,7 @@ async function run() {
   log(created.auditTime === 0 && created.auditBy === '', '发布：审核结论与审核人初始为空')
   log(created.status === 'recruiting' && created.joinedCount === 0, '发布：业务状态与成员列表正常')
   log(created.city === '杭州', '发布：城市由集合地点自动匹配')
+  log(created.startTimeHasClock === false, '发布：保存集合时间是否已明确，供客户端决定是否展示钟点')
 
   const invalidCreate = await callActivity('create', { form: Object.assign({}, form, { title: '' }) }, ORGANIZER)
   log(invalidCreate.code === 'INVALID_PARAM', '发布：缺少标题被拒绝')

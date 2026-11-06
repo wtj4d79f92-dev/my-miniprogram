@@ -3,10 +3,12 @@ const path = require('path')
 
 const ROOT = path.resolve(__dirname, '..')
 const pagePath = path.join(ROOT, 'pages/activity/publish/index.js')
+const detailPagePath = path.join(ROOT, 'pages/activity/detail/index.js')
 const calendarPath = path.join(ROOT, 'components/calendar-picker/index.js')
 const util = require(path.join(ROOT, 'utils/util'))
 
 const pageOptions = []
+const detailPageOptions = []
 let calendarOptions = null
 const originalBehavior = global.Behavior
 const originalPage = global.Page
@@ -22,6 +24,11 @@ require(pagePath)
 global.Behavior = originalBehavior
 global.Page = originalPage
 global.wx = originalWx
+
+global.Page = (options) => detailPageOptions.push(options)
+delete require.cache[detailPagePath]
+require(detailPagePath)
+global.Page = originalPage
 
 global.Component = (options) => {
   calendarOptions = options
@@ -117,6 +124,34 @@ function testCollectionTimeMustBeStrictlyAfterNow() {
   assert.strictEqual(context.validate().errors.startTime, undefined, '晚于当前一分钟的集合时间应允许发布')
 }
 
+function testDateOnlyCollectionTimeDefaultsToEight() {
+  const { parseQrFields } = require(path.join(ROOT, 'utils/qr-text'))
+  const now = new Date(2026, 10, 5, 10, 0, 0, 0).getTime()
+  const parsed = parseQrFields('集合时间：11月8日\n全程8公里', now)
+  const start = new Date(parsed.startTime)
+
+  assert.strictEqual(
+    parsed.clockText,
+    '',
+    '只识别到日期时，不应把系统补的钟点当成截图里明确写出的时间'
+  )
+  assert.strictEqual(start.getDate(), 8, '应保留识别出的集合日期')
+  assert.strictEqual(start.getHours(), 8, '非当天集合时间应默认上午八点')
+  assert.strictEqual(start.getMinutes(), 0, '默认集合时间应落在整点')
+}
+
+function testTodayDateOnlyCollectionTimeDefaultsToOneHourLater() {
+  const { parseQrFields } = require(path.join(ROOT, 'utils/qr-text'))
+  const now = new Date(2026, 10, 5, 10, 23, 45, 0).getTime()
+  const parsed = parseQrFields('集合时间：今天\n全程8公里', now)
+  const start = new Date(parsed.startTime)
+
+  assert.strictEqual(parsed.clockText, '', '当天只识别到日期时，补出的时间不算截图明确写出的钟点')
+  assert.strictEqual(start.getDate(), 5, '当天默认集合时间应保留当天日期')
+  assert.strictEqual(start.getHours(), 11, '当天集合时间应在当前时间基础上加一小时')
+  assert.strictEqual(start.getMinutes(), 23, '当天默认集合时间应保留当前分钟')
+}
+
 function createCalendarContext() {
   return Object.assign({}, calendarOptions.methods, {
     data: JSON.parse(JSON.stringify(calendarOptions.data)),
@@ -146,6 +181,53 @@ async function testDateSelectionKeepsChosenClock() {
     selected,
     '日期确认后应保留用户选择的具体钟点'
   )
+}
+
+async function testCalendarReportsWhetherTimeWasEdited() {
+  const dateOnly = createCalendarContext()
+  await dateOnly.open(new Date(2026, 10, 6, 8, 0, 0, 0).getTime(), {
+    withTime: true,
+  })
+  dateOnly.onSelect({
+    currentTarget: { dataset: { ts: new Date(2026, 10, 7, 0, 0, 0, 0).getTime() } },
+  })
+  dateOnly.confirm()
+  assert.strictEqual(
+    dateOnly.lastEvent.detail.timeTouched,
+    false,
+    '只选择日期时，应明确回传具体时间没有被编辑'
+  )
+
+  const withClock = createCalendarContext()
+  await withClock.open(new Date(2026, 10, 6, 8, 0, 0, 0).getTime(), {
+    withTime: true,
+  })
+  withClock.onTimeChange({ detail: { value: '09:15' } })
+  withClock.confirm()
+  assert.strictEqual(
+    withClock.lastEvent.detail.timeTouched,
+    true,
+    '修改具体时间后，应回传具体时间已被用户编辑'
+  )
+}
+
+async function testDateSelectionUsesRuleBasedDefaultClock() {
+  const now = new Date(2026, 10, 5, 10, 23, 45, 0).getTime()
+  Date.now = () => now
+  const context = createCalendarContext()
+  await context.open(new Date(2026, 10, 6, 8, 0, 0, 0).getTime(), {
+    withTime: true,
+  })
+
+  context.onSelect({
+    currentTarget: { dataset: { ts: new Date(2026, 10, 5, 0, 0, 0, 0).getTime() } },
+  })
+  assert.strictEqual(context.data.timeValue, '11:23', '选择当天日期后，具体时间应默认为当前时间加一小时')
+
+  context.onSelect({
+    currentTarget: { dataset: { ts: new Date(2026, 10, 8, 0, 0, 0, 0).getTime() } },
+  })
+  assert.strictEqual(context.data.timeValue, '08:00', '选择非当天日期后，具体时间应默认为上午八点')
 }
 
 async function testCalendarRejectsCollectionTimeNotAfterNow() {
@@ -251,6 +333,99 @@ function testPublishLabelsShowSelectedClock() {
   )
 }
 
+function testPublishMarksClockOnlyAfterTimeEdit() {
+  const timestamp = new Date(2026, 10, 6, 8, 30, 0, 0).getTime()
+  const context = createPageContext(pageOptions[0])
+  context._dateField = 'startTime'
+  context._endTouched = false
+
+  context.onDateConfirm({ detail: { timestamp, timeTouched: false } })
+  assert.strictEqual(
+    context.data.form.startTimeHasClock,
+    false,
+    '只调整日期、不编辑具体时间时，不应把默认钟点标记为已明确'
+  )
+
+  context.onDateConfirm({ detail: { timestamp, timeTouched: true } })
+  assert.strictEqual(
+    context.data.form.startTimeHasClock,
+    true,
+    '编辑具体时间后，应将集合时间标记为已明确'
+  )
+}
+
+async function testEditFormRestoresWhetherClockWasExplicit() {
+  const api = require(path.join(ROOT, 'services/api'))
+  const originalDetail = api.detail
+  const originalGetApp = global.getApp
+  const startTime = new Date(2026, 10, 6, 8, 0, 0, 0).getTime()
+  const context = createPageContext(pageOptions[0])
+  context.updateCityTip = () => {}
+  global.getApp = () => ({ globalData: { user: { openid: 'mock_owner' } } })
+  api.detail = () =>
+    Promise.resolve({
+      id: 'activity_time_edit',
+      title: '周末徒步',
+      type: 'hiking',
+      types: ['hiking'],
+      startTime,
+      startTimeHasClock: true,
+      endTime: new Date(2026, 10, 6, 18, 0, 0, 0).getTime(),
+      location: '人民公园',
+      organizer: { openid: 'mock_owner' },
+      isOrganizer: true,
+      expired: false,
+    })
+
+  try {
+    await context.loadActivity('activity_time_edit')
+  } finally {
+    api.detail = originalDetail
+    global.getApp = originalGetApp
+  }
+
+  assert.strictEqual(
+    context.data.form.startTimeHasClock,
+    true,
+    '编辑活动时应恢复原先是否明确过具体时间的状态'
+  )
+}
+
+async function testEditFormTreatsMissingClockMarkerAsNotChosen() {
+  const api = require(path.join(ROOT, 'services/api'))
+  const originalDetail = api.detail
+  const originalGetApp = global.getApp
+  const context = createPageContext(pageOptions[0])
+  context.updateCityTip = () => {}
+  global.getApp = () => ({ globalData: { user: { openid: 'mock_owner' } } })
+  api.detail = () =>
+    Promise.resolve({
+      id: 'activity_time_old',
+      title: '旧活动',
+      type: 'hiking',
+      types: ['hiking'],
+      startTime: new Date(2026, 10, 6, 8, 0, 0, 0).getTime(),
+      endTime: new Date(2026, 10, 6, 18, 0, 0, 0).getTime(),
+      location: '人民公园',
+      organizer: { openid: 'mock_owner' },
+      isOrganizer: true,
+      expired: false,
+    })
+
+  try {
+    await context.loadActivity('activity_time_old')
+  } finally {
+    api.detail = originalDetail
+    global.getApp = originalGetApp
+  }
+
+  assert.strictEqual(
+    context.data.form.startTimeHasClock,
+    false,
+    '编辑旧活动时，缺少主动选择标记应按具体时间未明确处理'
+  )
+}
+
 function testNewActivityDefaultsToMorningClock() {
   const now = new Date(2026, 10, 5, 10, 0, 0, 0).getTime()
   const originalGetApp = global.getApp
@@ -291,6 +466,27 @@ function testNewActivityDefaultsReturnToEveningClock() {
   assert.strictEqual(d.getMinutes(), 0, '新建活动返程默认时间应落在整点')
 }
 
+function testNewActivityDefaultClockIsNotMarkedExplicit() {
+  const now = new Date(2026, 10, 5, 10, 0, 0, 0).getTime()
+  const originalGetApp = global.getApp
+  Date.now = () => now
+  global.getApp = () => ({ globalData: { user: null } })
+  const context = createPageContext(pageOptions[0])
+  context.loadLineSources = () => {}
+
+  try {
+    context.onLoad({})
+  } finally {
+    global.getApp = originalGetApp
+  }
+
+  assert.strictEqual(
+    context.data.form.startTimeHasClock,
+    false,
+    '系统为新建活动补的默认钟点不应视为用户已经明确具体时间'
+  )
+}
+
 function testUntouchedReturnClockFollowsChangedCollectionDate() {
   const timestamp = new Date(2026, 10, 8, 9, 15, 0, 0).getTime()
   const expectedEnd = new Date(2026, 10, 8, 18, 0, 0, 0).getTime()
@@ -324,6 +520,44 @@ function testQrCollectionTimeDefaultsUntouchedReturnToEighteen() {
   )
 }
 
+function testQrCollectionTimeTracksWhetherClockWasRecognized() {
+  const { parseQrFields } = require(path.join(ROOT, 'utils/qr-text'))
+  const now = new Date(2026, 10, 5, 10, 0, 0, 0).getTime()
+  const context = createPageContext(pageOptions[0])
+  context.data.showMetrics = false
+  context._startTouched = false
+  context._endTouched = false
+
+  context.applyQrFields(parseQrFields('集合时间：11月8日', now))
+  assert.strictEqual(
+    context.data.form.startTimeHasClock,
+    false,
+    '只识别到日期时，表单应记录具体时间尚未明确'
+  )
+
+  context._startTouched = false
+  context.applyQrFields(parseQrFields('集合时间：11月8日 07:30', now))
+  assert.strictEqual(
+    context.data.form.startTimeHasClock,
+    true,
+    '识别到明确钟点时，表单应记录集合时间已明确'
+  )
+
+  const sameTimeContext = createPageContext(pageOptions[0])
+  sameTimeContext.data.showMetrics = false
+  sameTimeContext._startTouched = false
+  sameTimeContext._endTouched = false
+  const explicit = parseQrFields('集合时间：11月8日 08:00', now)
+  sameTimeContext.data.form.startTime = explicit.startTime
+  sameTimeContext.data.form.startTimeHasClock = false
+  sameTimeContext.applyQrFields(explicit)
+  assert.strictEqual(
+    sameTimeContext.data.form.startTimeHasClock,
+    true,
+    '识别出的明确钟点与系统默认值相同时，也应记录具体时间已明确'
+  )
+}
+
 function testActivityCardUsesCollectionClock() {
   const api = require(path.join(ROOT, 'services/api'))
   const startTime = new Date(2026, 10, 6, 8, 30, 0, 0).getTime()
@@ -334,6 +568,7 @@ function testActivityCardUsesCollectionClock() {
     types: ['hiking'],
     title: '周末徒步',
     startTime,
+    startTimeHasClock: true,
     endTime,
     joinedCount: 0,
     maxPeople: 10,
@@ -358,20 +593,134 @@ function testActivityCardUsesCollectionClock() {
   )
 }
 
+function testActivityCardHidesUneditedCollectionClock() {
+  const api = require(path.join(ROOT, 'services/api'))
+  const startTime = new Date(2026, 10, 6, 8, 0, 0, 0).getTime()
+  const endTime = new Date(2026, 10, 6, 18, 0, 0, 0).getTime()
+  const activity = api.decorate({
+    id: 'activity_time_hidden',
+    type: 'hiking',
+    types: ['hiking'],
+    title: '周末徒步',
+    startTime,
+    startTimeHasClock: false,
+    endTime,
+    joinedCount: 0,
+    maxPeople: 10,
+    difficulty: 3,
+    distance: 8,
+    elevationGain: 300,
+    feeMode: 'aa',
+    status: 'recruiting',
+    auditStatus: 'approved',
+    createTime: startTime - 86400000,
+  })
+
+  assert.strictEqual(
+    activity.dateText,
+    '11月06日 周五',
+    '用户未明确具体时间时，活动卡片只展示集合日期'
+  )
+}
+
+function testActivityCardTreatsMissingClockMarkerAsNotChosen() {
+  const api = require(path.join(ROOT, 'services/api'))
+  const startTime = new Date(2026, 10, 6, 8, 0, 0, 0).getTime()
+  const activity = api.decorate({
+    id: 'activity_time_missing_marker',
+    type: 'hiking',
+    types: ['hiking'],
+    title: '旧活动',
+    startTime,
+    endTime: new Date(2026, 10, 6, 18, 0, 0, 0).getTime(),
+    joinedCount: 0,
+    maxPeople: 10,
+    feeMode: 'aa',
+    status: 'recruiting',
+    auditStatus: 'approved',
+    createTime: startTime - 86400000,
+  })
+
+  assert.strictEqual(
+    activity.dateText,
+    '11月06日 周五',
+    '旧数据没有主动选择标记时，活动卡片也应只展示集合日期'
+  )
+}
+
+function testDetailHidesUneditedCollectionClock() {
+  const originalGetApp = global.getApp
+  const originalGlobalWx = global.wx
+  const startTime = new Date(2026, 10, 6, 8, 0, 0, 0).getTime()
+  const context = createPageContext(detailPageOptions[0])
+  context.loadComments = () => {}
+  global.getApp = () => ({ globalData: { user: null } })
+  global.wx = {
+    cloud: {},
+    setNavigationBarTitle() {},
+  }
+
+  try {
+    context.applyActivity({
+      id: 'activity_time_detail_hidden',
+      type: 'hiking',
+      types: ['hiking'],
+      title: '周末徒步',
+      bg: 'linear-gradient(#fff, #eee)',
+      startTime,
+      startTimeHasClock: false,
+      endTime: new Date(2026, 10, 6, 18, 0, 0, 0).getTime(),
+      joinedPeople: [],
+      joinedCount: 0,
+      maxPeople: 10,
+      organizer: {
+        nickName: '山野阿宽',
+        avatarColor: '#4ECDC4',
+        avatarText: '山',
+      },
+      feeMode: 'aa',
+      status: 'recruiting',
+      auditStatus: 'approved',
+      createTime: Date.now(),
+    })
+  } finally {
+    global.getApp = originalGetApp
+    global.wx = originalGlobalWx
+  }
+
+  assert.strictEqual(
+    context.data.activity.startLabel,
+    '11月06日 周五',
+    '用户未明确具体时间时，活动详情只展示集合日期'
+  )
+}
+
 async function run() {
   testRejectsPastCollectionTimeToday()
   testCollectionTimeMustBeStrictlyAfterNow()
+  testDateOnlyCollectionTimeDefaultsToEight()
   await testDateSelectionKeepsChosenClock()
+  await testCalendarReportsWhetherTimeWasEdited()
+  await testDateSelectionUsesRuleBasedDefaultClock()
   await testCalendarRejectsCollectionTimeNotAfterNow()
   await testReturnTimeMayEqualCollectionTime()
   testPublishOpensCalendarWithTimeAndCurrentThreshold()
   testActivityDateTimeFormatIncludesClock()
   testPublishLabelsShowSelectedClock()
+  testPublishMarksClockOnlyAfterTimeEdit()
+  await testEditFormRestoresWhetherClockWasExplicit()
+  await testEditFormTreatsMissingClockMarkerAsNotChosen()
   testNewActivityDefaultsToMorningClock()
   testNewActivityDefaultsReturnToEveningClock()
+  testNewActivityDefaultClockIsNotMarkedExplicit()
   testUntouchedReturnClockFollowsChangedCollectionDate()
   testQrCollectionTimeDefaultsUntouchedReturnToEighteen()
+  testTodayDateOnlyCollectionTimeDefaultsToOneHourLater()
+  testQrCollectionTimeTracksWhetherClockWasRecognized()
   testActivityCardUsesCollectionClock()
+  testActivityCardHidesUneditedCollectionClock()
+  testActivityCardTreatsMissingClockMarkerAsNotChosen()
+  testDetailHidesUneditedCollectionClock()
   console.log('活动时间选择测试通过')
 }
 

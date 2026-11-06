@@ -860,6 +860,7 @@ const flow = (async () => {
   log(created.city === '杭州', '发布：按集合地点自动匹配城市')
   log(created.status === 'recruiting' && created.joinedCount === 0, '发布：服务端补全状态与成员列表')
   log(created.organizer.openid === user.openid, '发布：写入发起人快照')
+  log(created.startTimeHasClock === false, '发布：保存集合时间是否已明确，供列表与详情决定是否展示钟点')
   log(created.auditStatus === 'pending', '发布：新活动进入待审核队列')
   log(created.machineCheck.text.suggest === 'review', '内容安全：疑似内容记录机器复核结论并留在人工队列')
 
